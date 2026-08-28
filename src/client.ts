@@ -591,16 +591,14 @@
         }
 
         const form = create === null ? null : e('div', { className: 'dbs-form' },
-          e('input', {
-            className: 'dbs-composerInput', style: { minHeight: 0, padding: '4px 6px', fontSize: 13, lineHeight: '20px' },
+          e(Input, {
             placeholder: create === 'bot' ? 'Bot 名称' : '群聊名称',
             value: name, autoFocus: true,
             onChange: (ev: any) => setName(ev.target.value),
             onKeyDown: (ev: any) => { if (ev.key === 'Enter') { ev.preventDefault(); void (create === 'bot' ? createBot() : createGroup()) } },
           }),
           create === 'bot'
-            ? e('input', {
-                className: 'dbs-composerInput', style: { minHeight: 0, padding: '4px 6px', fontSize: 13, lineHeight: '20px' },
+            ? e(Input, {
                 placeholder: '简介 / 人设（可选）', value: desc,
                 onChange: (ev: any) => setDesc(ev.target.value),
               })
@@ -629,7 +627,7 @@
             }),
             e(Button, {
               variant: 'ghost', size: 'sm', title: '新建群聊', 'aria-label': '新建群聊',
-              icon: Ico('IconUserOutline16', { size: 14 }),
+              icon: Ico('IconNewChatOutline16', { size: 14 }),
               onClick: () => { setCreate('group'); setName(''); setMembers({}) },
             })),
           form,

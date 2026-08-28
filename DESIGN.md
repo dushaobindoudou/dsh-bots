@@ -84,7 +84,18 @@
 | 开发 | 会话内重定义即热更 | 需装包，但一次性成型 |
 
 **结论**：动态插件留作**原型/探索**；稳定后收敛为**正式插件包**（对照 dsh-freeroute 的 `cordis.patch.yml` + `exports ./client` 结构），
-dsh-bots 的 peerDependencies 与正式 client 依赖应补上 `dsh-client-runtime / dsh-client-ui-slots / dsh-client-ui-primitives / dsh-client-ui-web`。
+~~dsh-bots 的 peerDependencies 与正式 client 依赖应补上 `dsh-client-runtime / dsh-client-ui-slots / dsh-client-ui-primitives / dsh-client-ui-web`。~~
+
+> **更正（2026-08-28，实测）**：**不要**加这些 peerDependencies，会导致安装失败。
+> `@deepseek-ai/dsh-client-ui-slots` 与 `dsh-client-ui-primitives` 在 profile 的 `node_modules` 里是**悬空软链**
+> （指向 dsh 包内不存在的路径）——它们只作为 `staticModules` 打包进了 web bundle，磁盘上没有实体包。
+>
+> 正确做法：继续走 `__ModuleLoader__` 的 `require`。shell 的静态模块表（web bundle `function Jd()`）实测暴露：
+> `react` · `react/jsx-runtime` · `react-dom` · `react-dom/client` · `@deepseek-ai/cordis` ·
+> `@deepseek-ai/dsh-client-ui-slots` · **`@deepseek-ai/dsh-client-ui-primitives`**。
+> 也就是说**原生组件可以直接 require 拿到**：`Button / Input / Pill / StateDot / Tooltip / Menu / Modal /
+> DisclosureRow / MarkdownText / MessageText / CodeBlock` 加全套 `Icon*`。
+> 这是「UI 与原生一致」的正解——比抄哈希类名和自绘 SVG 都更稳，且随 dsh 主题自动跟随。
 
 ---
 
@@ -199,7 +210,7 @@ src/
 
 | 项 | 说明 | 处置 |
 |---|---|---|
-| 正式 client 依赖版本 | 需 `dsh-client-ui-slots/primitives` 在浏览器 require 缓存可解析（dsh-freeroute 只 require react，其余走注入） | 先用动态原型锁定 API，再加 peer dep |
+| ~~正式 client 依赖版本~~ | **已证伪**：slots/primitives 在磁盘上是悬空软链，只存在于 web bundle 的 staticModules | 经 `__ModuleLoader__` 的 `require` 取用，**不加 peer dep**（见 §2.5 更正） |
 | `shell.overlay` 布局 | 原生载入层是 `absolute;pointer-events` 层，工作台需自行安排左侧定位 | M1.5 小步验证（仅迁入口 + 卡片样式） |
 | SSE 鉴权 gzip | `curl -sN --compressed` + Bearer header（§8 实测）；断线 `retry:1000` | Host 侧已具备条件 |
 | 哈希类名退役 | 正式插件若仍想 100% 原样可局部借用，但默认走 primitives | 以 CSS 变量为准 |
