@@ -1,0 +1,1046 @@
+/**
+ * dsh-plugin-bots — client half (web), formal-plugin runtime.
+ *
+ * Rendered by the dsh web shell through the standard slot system with full
+ * browser DOM access. Two rules keep the surface native rather than
+ * native-looking:
+ *
+ *  1. Components come from `@deepseek-ai/dsh-client-ui-primitives`, which the
+ *     shell publishes in its static module map alongside `react`. Buttons,
+ *     inputs, icons, state dots and the markdown renderer are therefore the
+ *     shipped ones, not reimplementations. Every lookup degrades to a local
+ *     fallback so a primitives reshuffle can never blank the plugin.
+ *  2. Our own CSS uses stable `dbs-` class names carrying the *values* read
+ *     out of the shipped stylesheets (row heights, radii, the composer var
+ *     family), expressed through dsh theme variables. No hashed class name is
+ *     borrowed, so a dsh rebuild cannot break the visuals.
+ *
+ * Sidebar integration: the left-nav workspace region (`sidebar.workspaces` is
+ * a single slot) is shadowed at a low priority — an officially supported move,
+ * the shell's own error text reads "register at a different priority to shadow
+ * it (lowest renders)" — and re-rendered as a two-group collapsible nav:
+ *   - 「工作区」 — delegates the ORIGINAL shipped workspace browser, with its
+ *                 child slots and its rail branch intact (see DelegatedBrowser).
+ *   - 「Bots」   — our bot/group tree; clicking opens the chat.
+ *
+ * Chat lives in the `shell.overlay` layer but is inset to the frame's centre
+ * column, so the sidebar stays visible and usable while a bot conversation is
+ * open — matching how a native session behaves.
+ *
+ * Live data: the host keeps an SSE ring fed from the sdk-bots `/events`
+ * channel. ONE bus drains it here and fans channels out to subscribers; no
+ * component owns the cursor and no component polls the gateway directly.
+ * @module dsh-plugin-bots/client
+ */
+
+;(() => {
+  const loader = (window as any).__ModuleLoader__
+  if (loader === undefined) return
+  loader.load({
+    id: 'dsh-plugin-bots',
+    factory: (require: (id: string) => any) => {
+      const module = { exports: {} as any }
+      const exports = module.exports
+      const React: any = require('react')
+      const e = React.createElement
+
+      /**
+       * Shipped primitives. Present in the shell's static module registry
+       * next to `react`; the guard keeps a missing/renamed package from
+       * taking the plugin down with it.
+       */
+      let NATIVE: any = {}
+      try { NATIVE = require('@deepseek-ai/dsh-client-ui-primitives') ?? {} } catch { NATIVE = {} }
+
+      /** Render a shipped icon by export name, or nothing if it is gone. */
+      function Ico(name: string, props?: any): any {
+        const C = NATIVE[name]
+        return C === undefined ? null : e(C, props ?? {})
+      }
+      /** Shipped component by export name, or a local stand-in. */
+      function nat(name: string, fallback: any): any {
+        return NATIVE[name] ?? fallback
+      }
+
+      // ---- Fallback stand-ins (only used if a primitive export disappears) ----
+      function FallbackButton(p: any) {
+        const { variant, size, icon, children, ...rest } = p
+        return e('button', { type: 'button', ...rest }, icon ?? null, children)
+      }
+      function FallbackInput(p: any) {
+        const { icon, ...rest } = p
+        return e('input', rest)
+      }
+      function FallbackText(p: any) {
+        return e('div', { className: 'dbs-plain' }, p.text)
+      }
+
+      const Button = nat('Button', FallbackButton)
+      const Input = nat('Input', FallbackInput)
+      const MarkdownText = nat('MarkdownText', FallbackText)
+      const MessageText = nat('MessageText', FallbackText)
+      const StateDot = NATIVE.StateDot ?? null
+
+      // ---- CSS: own stable class names, values mirrored from the shell ----
+      const CSS = `
+.dbs-nav{flex:1;min-height:0;display:flex;flex-direction:column;gap:2px;font-family:var(--dsw-font-family,inherit)}
+.dbs-navGroup{display:flex;flex-direction:column;min-height:0}
+.dbs-navGroup[data-open="true"]{flex:1 1 auto}
+.dbs-navGroup[data-open="false"]{flex:none}
+.dbs-navBody{display:flex;flex-direction:column;min-height:0;flex:1}
+.dbs-botsBody{overflow-y:auto;padding-right:var(--dsh-sidebar-inline-padding,8px)}
+.dbs-navBodyErr{padding:6px 12px;font-size:12px;line-height:20px;color:var(--dsw-alias-label-tertiary)}
+.dbs-prow,.dbs-srow{cursor:pointer;user-select:none;color:var(--dsw-alias-label-primary);border-radius:8px;align-items:center;gap:6px;padding:0 8px;display:flex;box-sizing:border-box}
+.dbs-prow:hover,.dbs-srow:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dbs-srow.dbs-selected{background:var(--dsw-alias-interactive-bg-hover)}
+.dbs-prow{height:34px}
+.dbs-srow{height:32px;gap:0}
+.dbs-slot{width:16px;height:20px;color:var(--dsw-alias-label-tertiary);flex:none;justify-content:center;align-items:center;display:inline-flex}
+.dbs-chevron{color:var(--dsw-alias-label-caption);display:inline-flex}
+.dbs-arrow{transition:transform .15s var(--ds-ease-in-out)}
+.dbs-arrowOpen{transform:rotate(90deg)}
+.dbs-title{text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:14px;line-height:20px;overflow:hidden;flex:1;margin:0 6px 0 4px}
+.dbs-prow .dbs-title{font-weight:500}
+.dbs-time{color:var(--dsw-alias-label-tertiary);flex:none;font-size:12px;line-height:20px}
+.dbs-meta{text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:20px;overflow:hidden}
+.dbs-rowActions{flex:none;align-items:center;gap:4px;display:none}
+.dbs-prow:hover .dbs-rowActions,.dbs-srow:hover .dbs-rowActions{display:inline-flex}
+.dbs-prow:hover .dbs-hideOnHover,.dbs-srow:hover .dbs-hideOnHover{display:none}
+.dbs-avatar{width:20px;height:20px;border-radius:6px;flex:none;display:grid;place-items:center;font-size:11px;line-height:1;font-weight:600;color:#fff;overflow:hidden;user-select:none}
+.dbs-avatar.dbs-group{border-radius:999px}
+.dbs-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.dbs-badge{min-width:16px;height:16px;padding:0 5px;border-radius:999px;background:var(--dsw-alias-state-business-primary,#1a6dff);color:#fff;font-size:11px;line-height:16px;text-align:center;flex:none;font-variant-numeric:tabular-nums}
+.dbs-railBtn{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border:none;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;padding:0}
+.dbs-railBtn:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dbs-railBtn[data-active="true"]{color:var(--dsw-alias-state-business-primary)}
+.dbs-rail{display:flex;flex-direction:column;align-items:center;gap:2px}
+.dbs-railWrap{display:flex;flex-direction:column;min-height:0;flex:1;gap:2px}
+.dbs-form{display:flex;flex-direction:column;gap:6px;padding:8px;border-radius:8px;margin:2px 0;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.2))}
+.dbs-formRow{display:flex;gap:6px;align-items:center}
+.dbs-members{display:flex;flex-direction:column;gap:2px;max-height:150px;overflow-y:auto}
+.dbs-member{display:flex;align-items:center;gap:6px;font-size:13px;line-height:20px;padding:3px 6px;border-radius:6px;color:var(--dsw-alias-label-primary);cursor:pointer}
+.dbs-member:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dbs-member.checked{color:var(--dsw-alias-state-business-primary,#1a6dff)}
+.dbs-error{margin:4px 8px;padding:5px 9px;border-radius:8px;font-size:12px;line-height:18px;cursor:pointer;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-state-error-primary,#f85149)}
+
+.dbs-chatview{position:absolute;top:0;bottom:0;pointer-events:auto;display:flex;flex-direction:column;background:var(--dsw-alias-bg-base);font-family:var(--dsw-font-family,inherit);z-index:2;--dsh-chat-content-width:748px;--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;--dsh-composer-text-max-height:336px;min-width:0}
+.dbs-chatbar{flex:none;display:flex;align-items:center;gap:8px;height:44px;padding:0 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.08))}
+.dbs-chatbarName{font-size:14px;line-height:20px;font-weight:600;color:var(--dsw-alias-label-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.dbs-scrollBody{scrollbar-gutter:stable;flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden auto}
+.dbs-scroll{min-height:0;padding:16px calc(var(--dsh-composer-side-clearance) + 16px);flex:auto}
+.dbs-column{max-width:var(--dsh-chat-content-width);flex-direction:column;gap:16px;width:100%;margin:0 auto;display:flex}
+.dbs-userRow{flex-direction:column;align-items:flex-end;gap:6px;display:flex}
+.dbs-userStack{flex-direction:column;align-items:flex-end;gap:8px;min-width:0;max-width:min(525px,82%);display:flex}
+.dbs-bubble{background:var(--dsw-specific-bubble);max-width:100%;color:var(--dsw-alias-label-primary);border-radius:22px;padding:10px 16px;font-size:16px;line-height:24px}
+.dbs-botRow{color:var(--dsw-alias-label-primary);flex-direction:column;font-size:16px;line-height:28px;display:flex;align-items:flex-start;gap:4px;width:100%}
+.dbs-author{font-size:12px;line-height:20px;color:var(--dsw-alias-label-tertiary);display:flex;align-items:center;gap:6px}
+.dbs-plain{white-space:pre-wrap;word-break:break-word}
+.dbs-toolCard{border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));background:var(--dsw-specific-bubble);border-radius:12px;padding:8px 12px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary);width:100%;box-sizing:border-box}
+.dbs-toolHdr{display:flex;align-items:center;gap:6px;color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px}
+.dbs-toolName{font:var(--dsw-font-markdown-code-block-small,inherit);font-size:13px}
+.dbs-toolBody{margin-top:4px;white-space:pre-wrap;word-break:break-word;max-height:190px;overflow:auto;color:var(--dsw-alias-label-tertiary)}
+.dbs-thinking{color:var(--dsw-alias-label-tertiary);font-size:14px;line-height:22px;white-space:pre-wrap;word-break:break-word;border-left:2px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));padding-left:10px}
+.dbs-turnStatus{height:26px;font-size:14px;font-weight:600;white-space:nowrap;background:linear-gradient(90deg,var(--dsw-static-deepseek-500,#4d6bfe) 0%,var(--dsw-static-deepseek-500,#4d6bfe) 40%,var(--dsw-static-deepseek-200,#b6c2ff) 50%,var(--dsw-static-deepseek-500,#4d6bfe) 60%,var(--dsw-static-deepseek-500,#4d6bfe) 100%);color:#0000;-webkit-text-fill-color:transparent;background-position:100% 0;background-size:250% 100%;-webkit-background-clip:text;background-clip:text;flex:none;align-self:flex-start;align-items:center;animation:1.8s linear infinite dbs-turn-status-shimmer;display:inline-flex}
+@keyframes dbs-turn-status-shimmer{to{background-position:0 0}}
+@media (prefers-reduced-motion:reduce){.dbs-turnStatus{background-position:0 0;background-size:100% 100%;animation:none}.dbs-arrow{transition:none}}
+.dbs-composerSeat{flex:none;display:flex;flex-direction:column;z-index:7;background:linear-gradient(180deg,color-mix(in srgb,var(--dsw-alias-bg-base) 0%,transparent) 0px,var(--dsw-alias-bg-base) 36px)}
+.dbs-composer{padding:0 var(--dsh-composer-side-clearance) 8px;flex-direction:column;align-items:center;display:flex}
+.dbs-composerCard{box-sizing:border-box;width:100%;max-width:var(--dsh-composer-card-max-width);border:1px solid var(--dsw-alias-border-l2-darkmode-thin,rgba(0,0,0,.12));background:var(--dsw-specific-input-major);box-shadow:var(--dsw-shadow-lv2);border-radius:22px;flex-direction:column;gap:12px;padding-top:10px;font-size:16px;line-height:24px;display:flex;position:relative}
+.dbs-composerScroll{max-height:var(--dsh-composer-text-max-height);overflow-y:auto}
+.dbs-composerRow{flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;min-width:0;padding:2px 8px 6px;display:flex}
+.dbs-composerTrailing{align-items:center;min-width:0;display:flex;flex:none;gap:8px;margin-left:auto}
+.dbs-composerInput{resize:none;width:100%;box-sizing:border-box;border:none;outline:none;background:transparent;font-family:var(--dsw-font-family);font-size:16px;line-height:24px;white-space:pre-wrap;word-break:break-word;padding:4px 12px 0 16px;min-height:52px;color:var(--dsw-alias-label-primary)}
+.dbs-composerInput::placeholder{color:var(--dsw-alias-label-caption);user-select:none}
+.dbs-send{background:var(--dsw-alias-button-info-fill,#1a6dff);color:#fff;cursor:pointer;border:none;border-radius:999px;flex:none;place-items:center;width:34px;height:34px;transition:background-color .1s;display:grid;transform:translateY(-2px)}
+.dbs-send:disabled{opacity:.4;cursor:default}
+.dbs-mention{position:absolute;bottom:calc(100% + 6px);left:12px;right:12px;max-height:180px;overflow-y:auto;background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:12px;box-shadow:var(--dsw-shadow-lv2);padding:4px;z-index:3}
+.dbs-mentionRow{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary)}
+.dbs-mentionRow[data-active="true"],.dbs-mentionRow:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dbs-empty{color:var(--dsw-alias-label-tertiary);font-size:14px;line-height:22px;text-align:center;padding:32px 0}
+
+.dbs-settings{padding:4px 0 24px;max-width:640px;font-family:var(--dsw-font-family,inherit)}
+.dbs-setcard{border:1px solid var(--dsw-alias-border-l,rgba(0,0,0,.12));border-radius:12px;padding:14px 16px;margin-top:14px}
+.dbs-setrow{display:flex;align-items:center;gap:8px;font-size:13px;line-height:22px;color:var(--dsw-alias-label-secondary);padding:3px 0}
+.dbs-setrow b{color:var(--dsw-alias-label-primary);font-weight:600;word-break:break-all}
+.dbs-sethead{display:flex;align-items:center;gap:8px;font-size:14px;line-height:22px;color:var(--dsw-alias-label-primary);font-weight:600}
+`
+
+      // =========================================================
+      // Module-level services and state.
+      // =========================================================
+      let ctx: any = null
+      let connectionSvc: any = null
+      let slotsSvc: any = null
+
+      /** Cadence for draining the host's in-memory SSE ring (no gateway hop). */
+      const RING_DRAIN_MS = 1000
+
+      async function botsCall<T = unknown>(method: string, request?: unknown): Promise<T> {
+        if (connectionSvc === null) throw new Error('连接服务尚未就绪')
+        const envelope = await connectionSvc.rpc.call('/api', 'bots/' + method, {
+          args: { request: request === undefined ? null : request },
+        })
+        if (envelope !== null && typeof envelope === 'object' && envelope.ok === false) {
+          throw new Error(envelope.error?.message ?? '调用失败')
+        }
+        if (envelope !== null && typeof envelope === 'object' && envelope.ok === true) return envelope.value
+        throw new Error('意外的 RPC 响应')
+      }
+
+      /**
+       * The single reader of the host's event ring.
+       *
+       * The cursor lives here and nowhere else. Components subscribe and get
+       * told which channels moved; they never call `eventsSince` themselves,
+       * so two consumers can no longer race for the same increment (the old
+       * design had a module-global cursor that whoever polled first would
+       * advance, silently starving everyone else).
+       */
+      const ring = (() => {
+        let seq = -1
+        let timer: any = null
+        let live: any = null
+        const subs = new Set<(channels: Set<string>, events: any[]) => void>()
+
+        async function drain(): Promise<void> {
+          let r: any
+          try { r = await botsCall('eventsSince', { seq }) }
+          catch { return /* gateway offline; the next tick retries */ }
+          if (r === null || typeof r !== 'object') return
+          if (Number.isFinite(r.nextSeq)) seq = Number(r.nextSeq)
+          if (r.state !== undefined) live = r.state
+          const events: any[] = Array.isArray(r.events) ? r.events : []
+          if (events.length === 0) return
+          const channels = new Set<string>()
+          for (const ev of events) if (ev !== null && typeof ev?.channel === 'string') channels.add(ev.channel)
+          for (const fn of [...subs]) { try { fn(channels, events) } catch { /* one bad subscriber must not stop the rest */ } }
+        }
+
+        return {
+          subscribe(fn: (channels: Set<string>, events: any[]) => void): () => void {
+            subs.add(fn)
+            if (timer === null) {
+              timer = setInterval(() => { void drain() }, RING_DRAIN_MS)
+              void drain()
+            }
+            return () => {
+              subs.delete(fn)
+              if (subs.size === 0 && timer !== null) { clearInterval(timer); timer = null }
+            }
+          },
+          state: () => live,
+        }
+      })()
+
+      /** Shared UI state; every mutation goes through `patch`. */
+      const state: any = {
+        agents: [] as any[],
+        agentsLoaded: false,
+        info: undefined as any,
+        error: null as string | null,
+        chatAgentId: null as string | null,
+        open: { workspaces: true, bots: true },
+      }
+      const stateSubs = new Set<() => void>()
+      function patch(next: any): void {
+        Object.assign(state, next)
+        for (const fn of [...stateSubs]) fn()
+      }
+      function useStore(): any {
+        const [, force] = React.useState(0)
+        React.useEffect(() => {
+          const fn = () => force((n: number) => n + 1)
+          stateSubs.add(fn)
+          return () => { stateSubs.delete(fn) }
+        }, [])
+        return state
+      }
+
+      async function refreshAgents(): Promise<void> {
+        try {
+          const list: any = await botsCall('list')
+          patch({ agents: Array.isArray(list) ? list : [], agentsLoaded: true, error: null })
+        } catch (err: any) {
+          patch({ agentsLoaded: true, error: String(err?.message ?? err) })
+        }
+      }
+      async function refreshInfo(): Promise<void> {
+        try { patch({ info: await botsCall('gatewayInfo', {}) }) } catch { /* keep the last good reading */ }
+      }
+
+      function openChat(id: string): void {
+        patch({ chatAgentId: id })
+        // Clear the badge at the source; the gateway owns unread state.
+        void botsCall('markRead', { id }).then(refreshAgents).catch(() => {})
+      }
+
+      function agentById(id: string | null): any {
+        if (id === null) return null
+        return state.agents.find((a: any) => a.id === id) ?? null
+      }
+
+      // =========================================================
+      // Delegation of the shipped workspace browser.
+      // =========================================================
+
+      /**
+       * `useSyncExternalStore` selector bound to one host observable, cached
+       * per source. The cache is not an optimization: a fresh hook identity on
+       * every render makes React tear down and re-create the child's
+       * subscription each pass, which is what the shell's own renderer avoids
+       * by caching the same way.
+       */
+      const warned = new Set<string>()
+      function warnOnce(message: string): void {
+        if (warned.has(message)) return
+        warned.add(message)
+        // eslint-disable-next-line no-console
+        console.warn('[dsh-plugin-bots] ' + message)
+        reportDiag('warn', { message })
+      }
+
+      /**
+       * Record a delegation milestone to the host's diagnostics file.
+       *
+       * Deduplicated by stage+detail, because these fire from render paths.
+       * Failure to record is never surfaced: diagnostics must not be able to
+       * break the thing they observe.
+       */
+      const diagSeen = new Set<string>()
+      function reportDiag(stage: string, detail?: unknown): void {
+        const key = stage + ':' + JSON.stringify(detail ?? null)
+        if (diagSeen.has(key)) return
+        diagSeen.add(key)
+        void botsCall('diag', { stage, detail: detail ?? null }).catch(() => {})
+      }
+
+      const hookCache = new WeakMap<object, any>()
+      function observableHook(source: any): any {
+        if (source === null || typeof source !== 'object') return undefined
+        const hit = hookCache.get(source)
+        if (hit !== undefined) return hit
+        const subscribe = (fn: () => void) => source.subscribe(fn)
+        const hook = function useSelector(sel: any) {
+          return React.useSyncExternalStore(subscribe, () => (sel === undefined ? source.getSnapshot() : sel(source.getSnapshot())))
+        }
+        hookCache.set(source, hook)
+        return hook
+      }
+
+      const Boundary = class extends React.Component {
+        constructor(props: any) { super(props); this.state = { failed: false } }
+        static getDerivedStateFromError() { return { failed: true } }
+        componentDidCatch(error: any) {
+          // eslint-disable-next-line no-console
+          console.error('[dsh-plugin-bots] delegated slot entry failed:', error)
+          reportDiag('delegate-crashed', { message: String(error?.message ?? error) })
+        }
+        render() { return this.state.failed ? this.props.fallback : this.props.children }
+      }
+
+      /** Live entries of a slot that are not ours, most-specific first. */
+      function foreignEntries(key: string): any[] {
+        if (slotsSvc === null) return []
+        let list: any[] = []
+        try { list = slotsSvc.entries(key) ?? [] } catch { return [] }
+        return list.filter((en: any) => en !== null && en.component !== undefined && en.registrant !== 'dsh-plugin-bots')
+      }
+
+      /**
+       * Render a shadowed entry the way the shell would.
+       *
+       * The shell's renderer assembles a "standard kit" before handing props
+       * to a slot component: global hooks, the entry's store and actions, its
+       * locale seat, and — when the registration declares `children` — a bound
+       * `renderSlot` so the component can fill its own holes. Taking over a
+       * single slot means taking over that assembly too. The previous version
+       * stubbed `renderSlot` to `() => null`, which silently blanked the
+       * workspace browser's directory-picker flow; here it recurses, so a
+       * delegated entry's children render exactly as they would natively.
+       */
+      function synthesizeProps(entry: any, ownerProps: any): any {
+        const props: any = {}
+        if (slotsSvc === null) return { ...props, ...ownerProps }
+        const host = slotsSvc.hostFace()
+
+        if (host.sessions !== undefined && host.workspaces !== undefined) {
+          props.useSessions = observableHook(host.sessions.list)
+          props.useWorkspaces = observableHook(host.workspaces.list)
+        }
+
+        let actions: any
+        if (entry.store !== undefined) {
+          try {
+            const store = host.storeOf(entry, undefined)
+            if (store !== undefined) {
+              props.useStore = observableHook(store)
+              props.actions = store.actions
+              actions = store.actions
+            }
+          } catch (err: any) {
+            // The entry still renders, just without its store — better than a
+            // blank region, but worth a record since it means degraded props.
+            reportDiag('delegate-store-failed', { message: String(err?.message ?? err) })
+          }
+        }
+
+        if (entry.locale !== undefined && host.locale !== undefined) {
+          try {
+            const bound = host.locale.bind(entry.locale)
+            props.t = (key: string, params?: unknown) => bound(key, params)
+          } catch { props.t = (key: string) => key }
+        }
+
+        if (entry.children !== undefined) {
+          props.renderSlot = renderChildSlot
+          // Two child-spec flavours need renderer internals we cannot mint from
+          // out here (chain composition, the session seat). Neither is used by
+          // any slot we delegate today; warn loudly if that ever changes, so it
+          // surfaces as a message instead of another silently empty region.
+          const specs: any[] = Object.values(entry.children)
+          if (specs.some((spec) => spec?.kind === 'chain' || spec?.scope === 'session')) {
+            warnOnce(`delegated entry '${String(entry.name)}' declares chain/session children that this shadow cannot synthesize`)
+          }
+        }
+
+        // The shell passes the entry's own actions into `inject`; matching that
+        // matters for registrations whose injected callbacks close over them.
+        if (typeof entry.inject === 'function') {
+          let injected: any
+          try { injected = entry.inject(actions) } catch { injected = undefined }
+          if (injected !== null && typeof injected === 'object') {
+            for (const key of Object.keys(injected)) {
+              if (key === 'hooks') continue
+              props[key] = injected[key]
+            }
+            if (injected.hooks !== null && typeof injected.hooks === 'object') {
+              for (const name of Object.keys(injected.hooks)) {
+                const source = injected.hooks[name]
+                const hook = observableHook(source)
+                if (hook !== undefined) props['use' + name[0].toUpperCase() + name.slice(1)] = hook
+              }
+            }
+          }
+        }
+
+        // Owner props win, exactly as in the shell's own merge order.
+        return { ...props, ...ownerProps }
+      }
+
+      /** Bound `renderSlot` handed to delegated entries (recursive). */
+      function renderChildSlot(key: string, ownerProps?: any): any {
+        const entries = foreignEntries(key)
+        if (entries.length === 0) return null
+        return entries.map((en: any, i: number) => e(Boundary, {
+          key: en.id ?? key + ':' + String(i),
+          fallback: null,
+          children: e(en.component, synthesizeProps(en, ownerProps ?? {})),
+        }))
+      }
+
+      /**
+       * Renders the shipped `sidebar.workspaces` entry underneath our shadow.
+       * `wide` is forwarded untouched so the shipped rail branch — search and
+       * add-workspace, which the plugin used to replace with two inert icons —
+       * keeps working when the sidebar is collapsed.
+       */
+      function DelegatedBrowser(p: { wide: boolean; expandSidebar?: () => void }) {
+        const [entry, setEntry] = React.useState(null)
+        const [status, setStatus] = React.useState('loading')
+        React.useEffect(() => {
+          let alive = true
+          const check = () => {
+            const found = foreignEntries('sidebar.workspaces')[0] ?? null
+            if (!alive) return
+            setEntry(found)
+            setStatus(found === null ? 'missing' : 'ready')
+            reportDiag(found === null ? 'delegate-missing' : 'delegate-ready', { slot: 'sidebar.workspaces' })
+          }
+          check()
+          const unsub = slotsSvc === null ? null : slotsSvc.subscribe('sidebar.workspaces', check)
+          return () => { alive = false; if (unsub) unsub() }
+        }, [])
+
+        const props = React.useMemo(
+          () => (entry === null ? null : synthesizeProps(entry, { wide: p.wide, expandSidebar: p.expandSidebar })),
+          [entry, p.wide, p.expandSidebar],
+        )
+
+        if (status === 'loading') return e('div', { className: 'dbs-navBodyErr' }, '加载中…')
+        if (entry === null || props === null) return e('div', { className: 'dbs-navBodyErr' }, '工作区视图不可用，请刷新页面。')
+        return e(Boundary, {
+          fallback: e('div', { className: 'dbs-navBodyErr' }, '工作区视图加载失败，Bots 不受影响。'),
+          children: e(entry.component, props),
+        })
+      }
+
+      // =========================================================
+      // Shared row pieces.
+      // =========================================================
+
+      /** Stable hue from an id, so an avatar keeps its colour across reloads. */
+      function hueOf(id: string): number {
+        let h = 0
+        for (let i = 0; i < id.length; i += 1) h = (h * 31 + id.charCodeAt(i)) % 360
+        return h
+      }
+
+      function Avatar(p: { agent: any; size?: number }) {
+        const a = p.agent
+        const size = p.size ?? 20
+        const style: any = { width: size, height: size }
+        if (typeof a.avatarDataUrl === 'string' && a.avatarDataUrl !== '') {
+          return e('span', { className: 'dbs-avatar' + (a.isGroup ? ' dbs-group' : ''), style },
+            e('img', { src: a.avatarDataUrl, alt: '' }))
+        }
+        style.background = typeof a.avatarColor === 'string' && a.avatarColor !== ''
+          ? a.avatarColor
+          : `hsl(${String(hueOf(a.id))} 52% 46%)`
+        if (size >= 24) style.fontSize = '13px'
+        const initial = (a.name ?? '').trim().slice(0, 1) || '·'
+        return e('span', {
+          className: 'dbs-avatar' + (a.isGroup ? ' dbs-group' : ''), style, 'aria-hidden': true,
+        }, initial)
+      }
+
+      /** Chevron matching the shipped project row (fills in if the icon moves). */
+      function Chevron(p: { open: boolean }) {
+        const cls = 'dbs-arrow' + (p.open ? ' dbs-arrowOpen' : '')
+        const native = NATIVE.IconTriangleRightFill14
+        return e('span', { className: 'dbs-chevron ' + cls },
+          native !== undefined
+            ? e(native, {})
+            : e('svg', { width: 14, height: 14, viewBox: '0 0 14 14', 'aria-hidden': true },
+                e('path', { d: 'M4.25 2.83v8.34c0 .49.59.74.94.39l4.17-4.17a.75.75 0 0 0 0-1.06L5.19 2.16c-.35-.35-.94-.1-.94.39Z', fill: 'currentColor' })))
+      }
+
+      // =========================================================
+      // Bots nav group.
+      // =========================================================
+      function BotsGroup() {
+        const s = useStore()
+        const [create, setCreate] = React.useState(null) // 'bot' | 'group' | null
+        const [name, setName] = React.useState('')
+        const [desc, setDesc] = React.useState('')
+        const [members, setMembers] = React.useState({})
+        const [working, setWorking] = React.useState(false)
+
+        async function createBot() {
+          const nm = name.trim()
+          if (nm === '' || working) return
+          setWorking(true)
+          try {
+            await botsCall('create', { name: nm, description: desc.trim() })
+            setCreate(null); setName(''); setDesc('')
+            await refreshAgents()
+          } catch (err: any) { patch({ error: String(err?.message ?? err) }) }
+          setWorking(false)
+        }
+        async function createGroup() {
+          const nm = name.trim()
+          const memberIds = Object.keys(members).filter((k) => members[k])
+          if (nm === '' || memberIds.length === 0 || working) return
+          setWorking(true)
+          try {
+            await botsCall('createGroup', { name: nm, memberIds })
+            setCreate(null); setName(''); setMembers({})
+            await refreshAgents()
+          } catch (err: any) { patch({ error: String(err?.message ?? err) }) }
+          setWorking(false)
+        }
+
+        // Hidden agents are hidden: the gateway owns that flag and the sidebar
+        // has to honour it, same as every other sdk-bots surface.
+        const visible = (s.agents as any[])
+          .filter((a) => a.isHiddenFromSidebar !== true)
+          .slice()
+          .sort((a, b) => (b.lastActivityAt ?? 0) - (a.lastActivityAt ?? 0))
+        const groups = visible.filter((a) => a.isGroup)
+        const singles = visible.filter((a) => !a.isGroup)
+        const connected = s.info?.ok === true
+
+        function row(a: any) {
+          const busy = a.isComposingMessage === true || a.isRunning === true
+          const unread = Number(a.unreadCount ?? 0)
+          return e('div', {
+            key: a.id,
+            className: 'dbs-srow' + (s.chatAgentId === a.id ? ' dbs-selected' : ''),
+            role: 'treeitem',
+            'aria-selected': s.chatAgentId === a.id,
+            tabIndex: 0,
+            onClick: () => openChat(a.id),
+            onKeyDown: (ev: any) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openChat(a.id) } },
+            title: a.description !== '' ? a.name + ' — ' + a.description : a.name,
+          },
+            e(Avatar, { agent: a }),
+            e('span', { className: 'dbs-title' }, a.name),
+            busy && StateDot !== null
+              ? e(StateDot, { state: 'ongoing', size: 10 })
+              : a.awaitingUserResponse !== null && a.awaitingUserResponse !== undefined && StateDot !== null
+                ? e(StateDot, { state: 'warning', size: 10 })
+                : unread > 0
+                  ? e('span', { className: 'dbs-badge' }, unread > 99 ? '99+' : String(unread))
+                  : null)
+        }
+
+        function sectionRows(label: string, list: any[]) {
+          if (list.length === 0) return null
+          return e('div', { key: label },
+            e('div', { className: 'dbs-navBodyErr', style: { padding: '4px 12px 2px' } }, label),
+            list.map(row))
+        }
+
+        const form = create === null ? null : e('div', { className: 'dbs-form' },
+          e('input', {
+            className: 'dbs-composerInput', style: { minHeight: 0, padding: '4px 6px', fontSize: 13, lineHeight: '20px' },
+            placeholder: create === 'bot' ? 'Bot 名称' : '群聊名称',
+            value: name, autoFocus: true,
+            onChange: (ev: any) => setName(ev.target.value),
+            onKeyDown: (ev: any) => { if (ev.key === 'Enter') { ev.preventDefault(); void (create === 'bot' ? createBot() : createGroup()) } },
+          }),
+          create === 'bot'
+            ? e('input', {
+                className: 'dbs-composerInput', style: { minHeight: 0, padding: '4px 6px', fontSize: 13, lineHeight: '20px' },
+                placeholder: '简介 / 人设（可选）', value: desc,
+                onChange: (ev: any) => setDesc(ev.target.value),
+              })
+            : e('div', { className: 'dbs-members' }, singles.map((m) => e('div', {
+                key: m.id,
+                className: 'dbs-member' + (members[m.id] ? ' checked' : ''),
+                onClick: () => setMembers((prev: any) => ({ ...prev, [m.id]: !prev[m.id] })),
+              }, e('input', { type: 'checkbox', checked: Boolean(members[m.id]), readOnly: true }), m.name))),
+          e('div', { className: 'dbs-formRow' },
+            e(Button, {
+              variant: 'primary', size: 'sm',
+              disabled: working || name.trim() === '' || (create === 'group' && Object.keys(members).filter((k) => members[k]).length === 0),
+              onClick: () => void (create === 'bot' ? createBot() : createGroup()),
+            }, '创建'),
+            e(Button, { variant: 'ghost', size: 'sm', disabled: working, onClick: () => setCreate(null) }, '取消')))
+
+        return e('div', { className: 'dbs-navBody dbs-botsBody' },
+          e('div', { className: 'dbs-srow', style: { cursor: 'default', background: 'transparent' } },
+            StateDot !== null ? e(StateDot, { state: connected ? 'done' : 'failed', size: 8 }) : null,
+            e('span', { className: 'dbs-meta', style: { flex: 1, marginLeft: 6 } },
+              connected ? '网关在线 :' + String(s.info.port) : '网关未连接'),
+            e(Button, {
+              variant: 'ghost', size: 'sm', title: '新建 Bot', 'aria-label': '新建 Bot',
+              icon: Ico('IconPlusOutline16', { size: 14 }),
+              onClick: () => { setCreate('bot'); setName('') },
+            }),
+            e(Button, {
+              variant: 'ghost', size: 'sm', title: '新建群聊', 'aria-label': '新建群聊',
+              icon: Ico('IconUserOutline16', { size: 14 }),
+              onClick: () => { setCreate('group'); setName(''); setMembers({}) },
+            })),
+          form,
+          s.error !== null
+            ? e('div', { className: 'dbs-error', onClick: () => patch({ error: null }) }, s.error)
+            : null,
+          !s.agentsLoaded
+            ? e('div', { className: 'dbs-navBodyErr' }, '加载中…')
+            : visible.length === 0
+              ? e('div', { className: 'dbs-navBodyErr' }, connected ? '还没有 Bot，点 ＋ 新建。' : '网关未连接，详见设置页。')
+              : null,
+          sectionRows('群聊', groups),
+          sectionRows('单聊', singles))
+      }
+
+      // =========================================================
+      // Sidebar nav: 「工作区」 and 「Bots」 as two collapsible groups.
+      // =========================================================
+      function SidebarNav(p: { wide?: boolean; expandSidebar?: () => void }) {
+        const wide = p.wide !== false
+        const s = useStore()
+
+        // One controller owns the data lifecycle for every Bots surface.
+        React.useEffect(() => {
+          void refreshAgents(); void refreshInfo()
+          return ring.subscribe((channels) => {
+            if (channels.has('agents') || channels.has('agent-upserted')) void refreshAgents()
+            if (channels.has('host-settings')) void refreshInfo()
+          })
+        }, [])
+
+        if (!wide) {
+          // Rail: the shipped browser draws its own icon column (search, add
+          // workspace); we append one Bots control instead of replacing it.
+          const busy = (s.agents as any[]).some((a) => a.isComposingMessage === true || a.isRunning === true)
+          const unread = (s.agents as any[])
+            .filter((a) => a.isHiddenFromSidebar !== true)
+            .reduce((n: number, a: any) => n + Number(a.unreadCount ?? 0), 0)
+          return e('div', { className: 'dbs-railWrap' },
+            e(DelegatedBrowser, { wide: false, expandSidebar: p.expandSidebar }),
+            e('div', { className: 'dbs-rail' },
+              e('button', {
+                type: 'button', className: 'dbs-railBtn', title: unread > 0 ? `Bots（${String(unread)} 条未读）` : 'Bots',
+                'aria-label': 'Bots', 'data-active': busy || unread > 0,
+                onClick: () => {
+                  patch({ open: { ...s.open, bots: true } })
+                  if (p.expandSidebar) p.expandSidebar()
+                },
+              }, Ico('IconAgentPresetOutline16', { size: 18 }) ?? '·')))
+        }
+
+        function group(key: 'workspaces' | 'bots', title: string, iconName: string, body: any) {
+          const isOpen = s.open[key] !== false
+          return e('div', { className: 'dbs-navGroup', 'data-open': isOpen },
+            e('div', {
+              className: 'dbs-prow', role: 'button', tabIndex: 0, 'aria-expanded': isOpen,
+              onClick: () => patch({ open: { ...s.open, [key]: !isOpen } }),
+              onKeyDown: (ev: any) => {
+                if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); patch({ open: { ...s.open, [key]: !isOpen } }) }
+              },
+            },
+              e(Chevron, { open: isOpen }),
+              e('span', { className: 'dbs-slot' }, Ico(iconName, { size: 16 })),
+              e('span', { className: 'dbs-title' }, title)),
+            isOpen ? body : null)
+        }
+
+        return e('div', { className: 'dbs-nav' },
+          group('workspaces', '工作区', 'IconFolderClose16',
+            e('div', { className: 'dbs-navBody' }, e(DelegatedBrowser, { wide, expandSidebar: p.expandSidebar }))),
+          group('bots', 'Bots', 'IconAgentPresetOutline16', e(BotsGroup, null)))
+      }
+
+      // =========================================================
+      // Chat surface.
+      // =========================================================
+
+      /**
+       * Pixel offsets of the frame's centre column.
+       *
+       * `shell.overlay` covers the whole AppFrame, so an `inset: 0` panel sits
+       * on top of the sidebar too — which is how the chat used to hide the very
+       * nav it is launched from. The frame is a CSS grid and
+       * `grid-template-columns` resolves to pixels, so the sidebar and details
+       * widths can be read straight off it. `[data-shell-overlay]` is a stable
+       * attribute (not a hashed class), and its parent is the frame.
+       */
+      function useCentreInset(): { left: number; right: number } {
+        const [inset, setInset] = React.useState({ left: 0, right: 0 })
+        React.useEffect(() => {
+          const layer = document.querySelector('[data-shell-overlay]')
+          const frame = layer === null ? null : layer.parentElement
+          if (frame === null) return undefined
+          const read = () => {
+            const cols = window.getComputedStyle(frame).gridTemplateColumns.split(/\s+/).filter((c) => c !== '')
+            const left = Number.parseFloat(cols[0]) || 0
+            const right = cols.length >= 3 ? (Number.parseFloat(cols[cols.length - 1]) || 0) : 0
+            setInset((prev: any) => (prev.left === left && prev.right === right ? prev : { left, right }))
+          }
+          read()
+          const ro = new ResizeObserver(read)
+          ro.observe(frame)
+          // Collapsing a column rewrites the inline grid template without
+          // resizing the frame, so watch the attribute as well.
+          const mo = new MutationObserver(read)
+          mo.observe(frame, { attributes: true, attributeFilter: ['style', 'data-details-collapsed'] })
+          return () => { ro.disconnect(); mo.disconnect() }
+        }, [])
+        return inset
+      }
+
+      function ToolCard(p: { entry: any }) {
+        const [open, setOpen] = React.useState(false)
+        const en = p.entry
+        const tone = en.toolStatus === 'error'
+          ? 'var(--dsw-alias-state-error-primary)'
+          : en.toolStatus === 'running'
+            ? 'var(--dsw-alias-state-warn-primary)'
+            : 'var(--dsw-alias-state-success-primary)'
+        return e('div', { className: 'dbs-toolCard' },
+          e('div', {
+            className: 'dbs-toolHdr', role: 'button', tabIndex: 0,
+            style: { cursor: en.content === '' ? 'default' : 'pointer' },
+            onClick: () => { if (en.content !== '') setOpen(!open) },
+            onKeyDown: (ev: any) => { if ((ev.key === 'Enter' || ev.key === ' ') && en.content !== '') { ev.preventDefault(); setOpen(!open) } },
+          },
+            StateDot !== null
+              ? e(StateDot, { state: en.toolStatus === 'running' ? 'ongoing' : en.toolStatus === 'error' ? 'error' : 'done', size: 10 })
+              : e('span', { style: { width: 10, height: 10, borderRadius: 999, background: tone, display: 'inline-block' } }),
+            e('span', { className: 'dbs-toolName' }, en.toolName ?? '工具'),
+            en.content !== '' ? e('span', { className: 'dbs-meta', style: { marginLeft: 'auto' } }, open ? '收起' : '展开') : null),
+          open && en.content !== '' ? e('div', { className: 'dbs-toolBody' }, en.content) : null)
+      }
+
+      function Entry(p: { entry: any; isGroup: boolean }) {
+        const en = p.entry
+        if (en.display === 'user') {
+          return e('div', { className: 'dbs-userRow' },
+            e('div', { className: 'dbs-userStack' },
+              e('div', { className: 'dbs-bubble' }, e(MessageText, { text: en.content }))))
+        }
+        if (en.display === 'tool') return e(ToolCard, { entry: en })
+        if (en.display === 'thinking') {
+          return e('div', { className: 'dbs-thinking' }, en.content)
+        }
+        if (en.display === 'event') {
+          if (en.content === '') return null
+          return e('div', { className: 'dbs-meta', style: { textAlign: 'center' } }, en.content)
+        }
+        return e('div', { className: 'dbs-botRow' },
+          p.isGroup && en.authorName !== null
+            ? e('div', { className: 'dbs-author' }, en.authorName)
+            : null,
+          e(MarkdownText, { text: en.content, streaming: en.isStreaming === true }))
+      }
+
+      function ChatView(p: { agentId: string }) {
+        const s = useStore()
+        const [entries, setEntries] = React.useState(null)
+        const [input, setInput] = React.useState('')
+        const [sending, setSending] = React.useState(false)
+        const [error, setError] = React.useState(null)
+        const [mention, setMention] = React.useState(null) // {query, index} | null
+        const scrollRef = React.useRef(null)
+        const inputRef = React.useRef(null)
+
+        const agent = agentById(p.agentId)
+        const isGroup = agent?.isGroup === true
+        // Authoritative, from the gateway — never a local "I just sent, so it
+        // must be running" guess, which had no path back to false.
+        const composing = agent?.isComposingMessage === true || agent?.isRunning === true
+
+        async function loadTranscript() {
+          try {
+            const r: any = await botsCall('transcriptTail', { id: p.agentId, limit: 80 })
+            setEntries(Array.isArray(r?.entries) ? r.entries : [])
+          } catch (err: any) { setError(String(err?.message ?? err)) }
+        }
+
+        React.useEffect(() => {
+          setEntries(null); setError(null); setInput(''); setMention(null)
+          void loadTranscript()
+          return ring.subscribe((channels) => {
+            if (channels.has('transcript') || channels.has('client-side-tool-v2')) void loadTranscript()
+          })
+          // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, [p.agentId])
+
+        // Keep the newest turn in view, the way a native conversation does.
+        React.useEffect(() => {
+          const node = scrollRef.current
+          if (node !== null && node !== undefined) node.scrollTop = node.scrollHeight
+        }, [entries, composing])
+
+        const memberNames = React.useMemo(() => {
+          if (!isGroup) return []
+          const ids: string[] = agent?.memberIds ?? []
+          return ids
+            .map((id) => (state.agents as any[]).find((a) => a.id === id))
+            .filter((a) => a !== undefined)
+          // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, [isGroup, agent, s.agents])
+
+        function onInputChange(value: string) {
+          setInput(value)
+          if (!isGroup) return
+          // `@` completion for directed group turns: only while the caret sits
+          // in the mention token being typed.
+          const upto = value.slice(0, (inputRef.current?.selectionStart ?? value.length))
+          const m = /@([^\s@]*)$/.exec(upto)
+          setMention(m === null ? null : { query: m[1], index: 0 })
+        }
+
+        const mentionHits = mention === null
+          ? []
+          : memberNames.filter((a: any) => a.name.toLowerCase().startsWith(mention.query.toLowerCase())).slice(0, 8)
+
+        function applyMention(a: any) {
+          const node = inputRef.current
+          const caret = node?.selectionStart ?? input.length
+          const before = input.slice(0, caret).replace(/@([^\s@]*)$/, '@' + a.name + ' ')
+          setInput(before + input.slice(caret))
+          setMention(null)
+          if (node !== null && node !== undefined) node.focus()
+        }
+
+        async function doSend() {
+          const text = input.trim()
+          if (text === '' || sending || composing) return
+          setSending(true); setError(null)
+          try {
+            await botsCall('send', { agentId: p.agentId, prompt: text })
+            setInput('')
+            await refreshAgents()
+            await loadTranscript()
+          } catch (err: any) { setError(String(err?.message ?? err)) }
+          setSending(false)
+        }
+
+        const list = (entries ?? []) as any[]
+        const inset = useCentreInset()
+
+        return e('div', { className: 'dbs-chatview', style: { left: inset.left, right: inset.right } },
+          e('div', { className: 'dbs-chatbar' },
+            e(Button, {
+              variant: 'ghost', size: 'sm', title: '关闭', 'aria-label': '关闭',
+              icon: Ico('IconCloseOutline16', { size: 16 }),
+              onClick: () => patch({ chatAgentId: null }),
+            }),
+            agent !== null ? e(Avatar, { agent, size: 24 }) : null,
+            e('span', { className: 'dbs-chatbarName' }, agent?.name ?? '会话'),
+            e('span', { className: 'dbs-meta' }, isGroup ? `群聊 · ${String(memberNames.length)} 名成员` : '单聊'),
+            e('span', { style: { flex: 1 } })),
+
+          error !== null
+            ? e('div', { className: 'dbs-error', onClick: () => setError(null) }, error)
+            : null,
+
+          e('div', { className: 'dbs-scrollBody', ref: scrollRef },
+            e('div', { className: 'dbs-scroll' },
+              e('div', { className: 'dbs-column' },
+                entries === null
+                  ? e('div', { className: 'dbs-empty' }, '加载中…')
+                  : list.length === 0
+                    ? e('div', { className: 'dbs-empty' }, '还没有消息，发一条开始对话')
+                    : list.map((en: any, i: number) => e(Entry, { key: en.id !== '' ? en.id : String(i), entry: en, isGroup })),
+                composing ? e('div', { className: 'dbs-turnStatus' }, '生成中') : null))),
+
+          e('div', { className: 'dbs-composerSeat' },
+            e('div', { className: 'dbs-composer' },
+              e('div', { className: 'dbs-composerCard' },
+                mentionHits.length > 0
+                  ? e('div', { className: 'dbs-mention' }, mentionHits.map((a: any, i: number) => e('div', {
+                      key: a.id, className: 'dbs-mentionRow', 'data-active': i === (mention?.index ?? 0),
+                      onMouseDown: (ev: any) => { ev.preventDefault(); applyMention(a) },
+                    }, e(Avatar, { agent: a, size: 18 }), a.name)))
+                  : null,
+                e('div', { className: 'dbs-composerScroll' },
+                  e('textarea', {
+                    ref: inputRef, className: 'dbs-composerInput', value: input, rows: 1,
+                    placeholder: isGroup ? '@名字 可定向，默认全员' : '给 ' + (agent?.name ?? '') + ' 发消息…',
+                    onChange: (ev: any) => onInputChange(ev.target.value),
+                    onKeyDown: (ev: any) => {
+                      if (mentionHits.length > 0 && (ev.key === 'Enter' || ev.key === 'Tab')) {
+                        ev.preventDefault(); applyMention(mentionHits[mention?.index ?? 0]); return
+                      }
+                      if (mentionHits.length > 0 && (ev.key === 'ArrowDown' || ev.key === 'ArrowUp')) {
+                        ev.preventDefault()
+                        const d = ev.key === 'ArrowDown' ? 1 : -1
+                        const n = mentionHits.length
+                        setMention({ ...mention, index: (((mention?.index ?? 0) + d) % n + n) % n })
+                        return
+                      }
+                      if (ev.key === 'Escape' && mention !== null) { ev.preventDefault(); setMention(null); return }
+                      if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); void doSend() }
+                    },
+                  })),
+                e('div', { className: 'dbs-composerRow' },
+                  e('span', { className: 'dbs-meta' },
+                    composing ? '正在生成，请稍候' : input.trim() !== '' ? String(input.trim().length) + ' 字' : ''),
+                  e('div', { className: 'dbs-composerTrailing' },
+                    e('button', {
+                      type: 'button', className: 'dbs-send',
+                      // sdk-bots exposes no interrupt over the gateway, so there
+                      // is no stop control to offer here: a button that only
+                      // flipped local state would claim a cancel that never
+                      // happened. Disabled-while-composing is the honest state.
+                      disabled: sending || composing || input.trim() === '',
+                      title: composing ? '生成中' : '发送',
+                      'aria-label': composing ? '生成中' : '发送',
+                      onClick: () => void doSend(),
+                    }, Ico(composing ? 'IconLoadingOutline16' : 'IconSendOutline16', { size: 16 }))))))))
+      }
+
+      // =========================================================
+      // Settings section.
+      // =========================================================
+      function BotsSettings() {
+        const [info, setInfo] = React.useState(undefined)
+        const [sse, setSse] = React.useState(null)
+        const [err, setErr] = React.useState(null)
+        async function refresh() {
+          setInfo(undefined); setErr(null)
+          try {
+            setInfo(await botsCall('gatewayInfo', {}))
+            setSse(await botsCall('sseState'))
+          } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
+        }
+        React.useEffect(() => { void refresh() }, [])
+        const ok = info?.ok === true
+        return e('div', { className: 'dbs-settings' },
+          e('div', { className: 'dbs-setrow' }, '多 Bot 工作台，桥接 sdk-bots 编排网关。'),
+          e('div', { className: 'dbs-setcard' },
+            e('div', { className: 'dbs-sethead' },
+              StateDot !== null ? e(StateDot, { state: ok ? 'done' : 'failed', size: 10 }) : null,
+              info === undefined ? '检测中…' : ok ? '网关在线' : '网关未连接',
+              e('span', { style: { flex: 1 } }),
+              e(Button, { variant: 'outline', size: 'sm', onClick: () => void refresh() }, '刷新')),
+            ok ? e('div', null,
+              e('div', { className: 'dbs-setrow' }, '地址：', e('b', null, info.baseUrl)),
+              e('div', { className: 'dbs-setrow' }, 'PID：', e('b', null, String(info.pid)), info.health?.isBusy === true ? ' · 忙' : ' · 闲'),
+              e('div', { className: 'dbs-setrow' }, '鉴权：', e('b', null, info.hasToken === true ? 'token（自动携带）' : '无（loopback 免鉴权）'))) : null,
+            info !== undefined && !ok ? e('div', { className: 'dbs-setrow' }, '原因：', e('b', null, info.reason ?? '未知')) : null,
+            err !== null ? e('div', { className: 'dbs-setrow' }, err) : null),
+          e('div', { className: 'dbs-setcard' },
+            e('div', { className: 'dbs-setrow' }, '数据目录：', e('b', null, info?.dataDir ?? '读取中…')),
+            e('div', { className: 'dbs-setrow' }, '实时事件：',
+              e('b', null, sse?.running === true ? `已连接 · 缓冲 ${String(sse.buffered ?? 0)} 条` : '未连接'),
+              sse?.lastError ? ' · ' + String(sse.lastError) : ''),
+            e('div', { className: 'dbs-setrow' }, '入口：', e('b', null, '左侧边栏「工作区 ｜ Bots」折叠导航'))))
+      }
+
+      // =========================================================
+      // Overlay root: hosts the chat surface only.
+      // =========================================================
+      function BotsLayer() {
+        const s = useStore()
+        React.useEffect(() => {
+          function onKey(ev: KeyboardEvent) {
+            if (ev.key === 'Escape' && state.chatAgentId !== null) patch({ chatAgentId: null })
+          }
+          window.addEventListener('keydown', onKey)
+          return () => { window.removeEventListener('keydown', onKey) }
+        }, [])
+        if (s.chatAgentId === null) return null
+        return e(ChatView, { agentId: s.chatAgentId, key: s.chatAgentId })
+      }
+
+      // =========================================================
+      // Slot registration (formal runtime contract).
+      // =========================================================
+      const inject = ['connection', 'slots']
+
+      function apply(c: any): void {
+        ctx = c
+        connectionSvc = c.get('connection')
+        slotsSvc = c.get('slots')
+        const slots = slotsSvc
+        if (slots === undefined || slots === null) return
+
+        c.effect(() => {
+          const styleEl = document.createElement('style')
+          styleEl.setAttribute('data-dsh-plugin', 'dsh-plugin-bots')
+          styleEl.textContent = CSS
+          document.head.appendChild(styleEl)
+          return () => { styleEl.remove() }
+        }, 'dsh-plugin-bots: styles')
+
+        c.effect(() => slots.inject('shell.overlay', () => slots.register(
+          { name: 'shell.overlay', id: 'dsh-plugin-bots.chat', order: 20, registrant: 'dsh-plugin-bots' },
+          () => e(BotsLayer),
+        )), 'dsh-plugin-bots: chat overlay')
+
+        // Shadow the single workspace slot at a lower priority (lowest renders);
+        // the shipped entry stays registered and is delegated to by name.
+        c.effect(() => slots.inject('sidebar.workspaces', () => slots.register(
+          { name: 'sidebar.workspaces', priority: -100, registrant: 'dsh-plugin-bots' },
+          (props: any) => e(SidebarNav, { wide: props.wide, expandSidebar: props.expandSidebar }),
+        )), 'dsh-plugin-bots: sidebar workspaces shadow')
+
+        c.effect(() => slots.inject('settings.section', () => slots.register(
+          { name: 'settings.section', id: 'bots', order: 40, label: 'Bots', registrant: 'dsh-plugin-bots' },
+          () => e(BotsSettings),
+        )), 'dsh-plugin-bots: settings section')
+
+        reportDiag('apply', { slots: ['shell.overlay', 'sidebar.workspaces', 'settings.section'] })
+      }
+
+      exports.apply = apply
+      exports.inject = inject
+      return module.exports
+    },
+  })
+})()
