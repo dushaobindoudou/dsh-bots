@@ -421,7 +421,12 @@ curl -sN --compressed "http://127.0.0.1:$PORT/events?token=$TOKEN"
 32. **侧边栏「工作区｜Bots」两折叠导航 = shadow `sidebar.workspaces`**（2026-08-28，沿 dsh-plugin-wfx 先例）：`sidebar.workspaces` 是 single 槽，
     以 `priority:-100` 抢占后自绘 accordion；「工作区」用 `slots.hostFace()` + `entry.inject()` 合成 props 委托渲染**原生** workspace browser（不改原组件），
     「Bots」渲染我们的 bot 树。rail（收窄）态给两个图标按钮。聊天经 `shell.overlay` 全屏承载。
+33. **Typert 源码模式描述符按「编译后形参」生成，零参方法拒绝统一信封**（2026-08-28 实证，0.1.5→0.1.6）：
+    gateway `assertExactArguments` 以形参名为白名单做精确校验（多余字段必拒，`src-json` 编解码容忍缺省）。
+    Client 按 wfx 惯例每调用都发 `{args:{request}}`，故 Host 全部 14 个远端方法必须声明单个名为 `request` 的纯形参
+    （无默认值/解构/rest，TS 类型会被擦除不影响 wire 名），否则报 `args fields do not match the descriptor: unexpected "request"`。
+    零参方法（list/workspaces/sessions/sseState）已补参修复。新增方法时照此约定。
 
 ---
 
-*文档版本：2026-08-28 · 基于 multibot-sdk 0.3.0 · M1.5 已收敛为正式插件并常驻 profile（类型化 `bots` 命名空间 + SSE 环 + 去哈希 UI + 侧边栏「工作区｜Bots」折叠导航）；M1 动态版 bots-1/pkg-11 保留作 dev 快迭代参照。架构详见 DESIGN.md*
+*文档版本：2026-08-28 · 基于 multibot-sdk 0.3.0 · 正式插件包 dsh-plugin-bots 0.1.6 已装入真实 profile（按 dsh-plugin-template 重构，44 单测 + 14 端点 marker 集成 + fresh-profile 冒烟全绿）；M1 动态版 bots-1/pkg-13 保留作 dev 快迭代参照，重启 web 验收后停用。架构详见 DESIGN.md*
