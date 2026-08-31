@@ -166,6 +166,14 @@
 .dbs-composerInput::placeholder{color:var(--dsw-alias-label-caption);user-select:none}
 .dbs-send{background:var(--dsw-alias-button-info-fill,#1a6dff);color:#fff;cursor:pointer;border:none;border-radius:999px;flex:none;place-items:center;width:34px;height:34px;transition:background-color .1s;display:grid;transform:translateY(-2px)}
 .dbs-send:disabled{opacity:.4;cursor:default}
+.dbs-modalBackdrop{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:24px;pointer-events:auto}
+.dbs-modalCard{position:relative;width:min(440px,92vw);max-height:88vh;overflow-y:auto;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;padding:18px 20px 22px;box-shadow:0 24px 80px rgba(0,0,0,.3);animation:dbs-modal-in .18s ease-out}
+@keyframes dbs-modal-in{from{opacity:0;transform:translateY(6px) scale(.985)}to{opacity:1;transform:none}}
+.dbs-modalTitleRow{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.dbs-modalTitle{font-size:16px;line-height:24px;font-weight:600;color:var(--dsw-alias-label-primary);flex:1;min-width:0}
+.dbs-modalBody{display:flex;flex-direction:column;gap:10px}
+.dbs-modalMembers{display:flex;flex-direction:column;gap:2px;max-height:220px;overflow-y:auto;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;padding:6px}
+.dbs-modalFooter{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:16px}
 .dbs-mention{position:absolute;bottom:calc(100% + 6px);left:12px;right:12px;max-height:180px;overflow-y:auto;background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:12px;box-shadow:var(--dsw-shadow-lv2);padding:4px;z-index:3}
 .dbs-mentionRow{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary)}
 .dbs-mentionRow[data-active="true"],.dbs-mentionRow:hover{background:var(--dsw-alias-interactive-bg-hover)}
@@ -402,6 +410,13 @@
         error: null as string | null,
         chatAgentId: null as string | null,
         open: { workspaces: true, bots: true },
+        /** Create dialog: 'bot' | 'group' | null — rendered as a system-style
+         *  modal from shell.overlay, so the form state lives in the store. */
+        create: null as string | null,
+        createName: '',
+        createDesc: '',
+        createMembers: {} as Record<string, boolean>,
+        createWorking: false,
         /** Bumped on a language switch so module-scope `t` output re-renders. */
         localeRev: 0,
       }
@@ -683,35 +698,6 @@
       // =========================================================
       function BotsGroup() {
         const s = useStore()
-        const [create, setCreate] = React.useState(null) // 'bot' | 'group' | null
-        const [name, setName] = React.useState('')
-        const [desc, setDesc] = React.useState('')
-        const [members, setMembers] = React.useState({})
-        const [working, setWorking] = React.useState(false)
-
-        async function createBot() {
-          const nm = name.trim()
-          if (nm === '' || working) return
-          setWorking(true)
-          try {
-            await botsCall('create', { name: nm, description: desc.trim() })
-            setCreate(null); setName(''); setDesc('')
-            await refreshAgents()
-          } catch (err: any) { patch({ error: String(err?.message ?? err) }) }
-          setWorking(false)
-        }
-        async function createGroup() {
-          const nm = name.trim()
-          const memberIds = Object.keys(members).filter((k) => members[k])
-          if (nm === '' || memberIds.length === 0 || working) return
-          setWorking(true)
-          try {
-            await botsCall('createGroup', { name: nm, memberIds })
-            setCreate(null); setName(''); setMembers({})
-            await refreshAgents()
-          } catch (err: any) { patch({ error: String(err?.message ?? err) }) }
-          setWorking(false)
-        }
 
         // Hidden agents are hidden: the gateway owns that flag and the sidebar
         // has to honour it, same as every other sdk-bots surface.
@@ -754,34 +740,10 @@
             list.map(row))
         }
 
-        const form = create === null ? null : e('div', { className: 'dbs-form' },
-          e(Input, {
-            placeholder: create === 'bot' ? t('bot.namePlaceholder') : t('group.namePlaceholder'),
-            value: name, autoFocus: true,
-            onChange: (ev: any) => setName(ev.target.value),
-            onKeyDown: (ev: any) => { if (ev.key === 'Enter') { ev.preventDefault(); void (create === 'bot' ? createBot() : createGroup()) } },
-          }),
-          create === 'bot'
-            ? e(Input, {
-                placeholder: t('bot.descPlaceholder'), value: desc,
-                onChange: (ev: any) => setDesc(ev.target.value),
-              })
-            : e('div', { className: 'dbs-members' }, singles.map((m) => e('div', {
-                key: m.id,
-                className: 'dbs-member' + (members[m.id] ? ' checked' : ''),
-                onClick: () => setMembers((prev: any) => ({ ...prev, [m.id]: !prev[m.id] })),
-              }, e('input', { type: 'checkbox', checked: Boolean(members[m.id]), readOnly: true }), m.name))),
-          e('div', { className: 'dbs-formRow' },
-            e(Button, {
-              variant: 'primary', size: 'sm',
-              disabled: working || name.trim() === '' || (create === 'group' && Object.keys(members).filter((k) => members[k]).length === 0),
-              onClick: () => void (create === 'bot' ? createBot() : createGroup()),
-            }, t('action.create')),
-            e(Button, { variant: 'ghost', size: 'sm', disabled: working, onClick: () => setCreate(null) }, t('action.cancel'))))
-
         // Footer: gateway status text plus the two create actions, pinned to
         // the bottom of the Bots body. The live dot itself lives on the
-        // group header (see SidebarNav).
+        // group header (see SidebarNav); the create actions open the
+        // system-style modal (see CreateModal).
         const footer = e('div', {
           className: 'dbs-srow', style: { cursor: 'default', background: 'transparent', marginTop: 'auto' },
         },
@@ -790,16 +752,15 @@
           e(Button, {
             variant: 'ghost', size: 'sm', title: t('bot.new'), 'aria-label': t('bot.new'),
             icon: Ico('IconPlusOutline16', { size: 14 }),
-            onClick: () => { setCreate('bot'); setName('') },
+            onClick: () => patch({ create: 'bot', createName: '', createDesc: '', createWorking: false, error: null }),
           }),
           e(Button, {
             variant: 'ghost', size: 'sm', title: t('group.new'), 'aria-label': t('group.new'),
             icon: Ico('IconNewChatOutline16', { size: 14 }),
-            onClick: () => { setCreate('group'); setName(''); setMembers({}) },
+            onClick: () => patch({ create: 'group', createName: '', createMembers: {}, createWorking: false, error: null }),
           }))
 
         return e('div', { className: 'dbs-navBody dbs-botsBody' },
-          form,
           s.error !== null
             ? e('div', { className: 'dbs-error', onClick: () => patch({ error: null }) }, s.error)
             : null,
@@ -1166,15 +1127,105 @@
       // =========================================================
       // Overlay root: hosts the chat surface only.
       // =========================================================
+      /**
+       * Create dialog ("新建 Bot" / "新建群聊") as a system-style modal:
+       * fixed backdrop + centred card rendered from shell.overlay, matching
+       * the wfx main-window modal parameters (rgba(0,0,0,.45), bg-layer-1,
+       * 14px radius, entrance animation). ESC and backdrop clicks dismiss.
+       */
+      function CreateModal() {
+        const s = useStore()
+        const [err, setErr] = React.useState(null as string | null)
+        const isGroup = s.create === 'group'
+        const singles = (s.agents as any[]).filter((a: any) => !a.isGroup && a.isHiddenFromSidebar !== true)
+        const picked = Object.keys(s.createMembers).filter((k) => s.createMembers[k])
+        const nameOk = s.createName.trim() !== ''
+        const valid = nameOk && (!isGroup || picked.length > 0)
+
+        async function submit() {
+          if (!valid || s.createWorking) return
+          patch({ createWorking: true, error: null }); setErr(null)
+          try {
+            if (isGroup) await botsCall('createGroup', { name: s.createName.trim(), memberIds: picked })
+            else await botsCall('create', { name: s.createName.trim(), description: s.createDesc.trim() })
+            patch({ create: null, createName: '', createDesc: '', createMembers: {}, createWorking: false })
+            await refreshAgents()
+            return
+          } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
+          patch({ createWorking: false })
+        }
+
+        return e('div', {
+          className: 'dbs-modalBackdrop',
+          onClick: () => { if (!s.createWorking) patch({ create: null }) },
+        },
+          e('div', {
+            className: 'dbs-modalCard', role: 'dialog', 'aria-modal': true,
+            'aria-label': isGroup ? t('group.new') : t('bot.new'),
+            onClick: (ev: any) => { ev.stopPropagation() },
+          },
+            e('div', { className: 'dbs-modalTitleRow' },
+              e('span', { className: 'dbs-modalTitle' }, isGroup ? t('group.new') : t('bot.new')),
+              e(Button, {
+                variant: 'ghost', size: 'sm', title: t('action.close'), 'aria-label': t('action.close'),
+                disabled: s.createWorking,
+                icon: Ico('IconCloseOutline16', { size: 16 }),
+                onClick: () => patch({ create: null }),
+              })),
+            e('div', { className: 'dbs-modalBody' },
+              e(Input, {
+                placeholder: isGroup ? t('group.namePlaceholder') : t('bot.namePlaceholder'),
+                value: s.createName, autoFocus: true, disabled: s.createWorking,
+                onChange: (ev: any) => patch({ createName: ev.target.value }),
+                onKeyDown: (ev: any) => { if (ev.key === 'Enter') { ev.preventDefault(); void submit() } },
+              }),
+              !isGroup
+                ? e(Input, {
+                    placeholder: t('bot.descPlaceholder'), value: s.createDesc, disabled: s.createWorking,
+                    onChange: (ev: any) => patch({ createDesc: ev.target.value }),
+                  })
+                : e('div', { className: 'dbs-modalMembers' },
+                    singles.length === 0
+                      ? e('div', { className: 'dbs-meta', style: { padding: '4px 6px' } }, t('list.loading'))
+                      : singles.map((m: any) => e('div', {
+                          key: m.id,
+                          className: 'dbs-member' + (s.createMembers[m.id] ? ' checked' : ''),
+                          style: { cursor: 'pointer', padding: '4px 6px', borderRadius: 8 },
+                          onClick: () => patch({ createMembers: { ...s.createMembers, [m.id]: !s.createMembers[m.id] } }),
+                        }, e('input', { type: 'checkbox', checked: Boolean(s.createMembers[m.id]), readOnly: true }),
+                          e(Avatar, { agent: m, size: 18 }),
+                          e('span', { className: 'dbs-title' }, m.name))),
+                    isGroup && singles.length > 0
+                      ? e('div', { className: 'dbs-meta', style: { padding: '6px 6px 0' } },
+                          t('chat.group', { n: picked.length }))
+                      : null),
+              err !== null
+                ? e('div', { className: 'dbs-error', onClick: () => { setErr(null) } }, err)
+                : null),
+            e('div', { className: 'dbs-modalFooter' },
+              e(Button, {
+                variant: 'ghost', size: 'sm', disabled: s.createWorking,
+                onClick: () => patch({ create: null }),
+              }, t('action.cancel')),
+              e(Button, {
+                variant: 'primary', size: 'sm', disabled: !valid || s.createWorking,
+                onClick: () => void submit(),
+              }, t('action.create')))))
+      }
+
       function BotsLayer() {
         const s = useStore()
         React.useEffect(() => {
           function onKey(ev: KeyboardEvent) {
-            if (ev.key === 'Escape' && state.chatAgentId !== null) patch({ chatAgentId: null })
+            if (ev.key !== 'Escape') return
+            // Modal first: it sits above the chat and owns ESC while open.
+            if (state.create !== null) { patch({ create: null }); return }
+            if (state.chatAgentId !== null) patch({ chatAgentId: null })
           }
           window.addEventListener('keydown', onKey)
           return () => { window.removeEventListener('keydown', onKey) }
         }, [])
+        if (s.create !== null) return e('div', null, e(CreateModal), s.chatAgentId !== null ? e(ChatView, { agentId: s.chatAgentId, key: s.chatAgentId }) : null)
         if (s.chatAgentId === null) return null
         return e(ChatView, { agentId: s.chatAgentId, key: s.chatAgentId })
       }
