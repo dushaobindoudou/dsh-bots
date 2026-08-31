@@ -159,11 +159,18 @@ export class BotsRemote extends TypertRemoteService {
     return { ...await discover(dataDir), dataDir }
   }
 
-  async list(): Promise<AgentInfo[]> {
+  /**
+   * Descriptor contract: every remote method declares exactly one plain
+   * `request` formal parameter (no defaults/destructuring/rest) — the
+   * source-mode descriptor derives its wire field from the parameter name,
+   * and the client always sends `{ args: { request } }`. A zero-param method
+   * would make the gateway reject the envelope with "unexpected request".
+   */
+  async list(request: unknown): Promise<AgentInfo[]> {
     return normalizeAgents(await callGateway<any>(this.cfg.dataDir, 'listAgents', {}))
   }
 
-  async workspaces(): Promise<{ workspaces: WorkspaceInfo[] }> {
+  async workspaces(request: unknown): Promise<{ workspaces: WorkspaceInfo[] }> {
     const registry = this.ctx.get('workspaceRegistry')
     if (registry === undefined || typeof registry.list !== 'function') return { workspaces: [] }
     try {
@@ -180,7 +187,7 @@ export class BotsRemote extends TypertRemoteService {
     }
   }
 
-  async sessions(): Promise<{ sessions: SessionInfo[] }> {
+  async sessions(request: unknown): Promise<{ sessions: SessionInfo[] }> {
     const q = this.ctx.get('sessionQuery')
     if (q === undefined || typeof q.listSessions !== 'function') return { sessions: [] }
     const records = await q.listSessions() as any[]
@@ -296,7 +303,7 @@ export class BotsRemote extends TypertRemoteService {
     return this.sse.eventsSince(Number(request?.seq) || 0)
   }
 
-  sseState(): SseState {
+  sseState(request: unknown): SseState {
     return this.sse.state()
   }
 
