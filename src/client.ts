@@ -57,6 +57,19 @@
         const C = NATIVE[name]
         return C === undefined ? null : e(C, props ?? {})
       }
+
+      /**
+       * The shipped composer's send glyph. It is not a named primitive —
+       * the official chatbar draws this SVG inline — so we replicate the
+       * path byte-exact from the shipped bundle (arrow-up, currentColor).
+       */
+      function SendUpIcon(): any {
+        return e('svg', { viewBox: '0 0 16 16', width: '16', height: '16', 'aria-hidden': true },
+          e('path', {
+            d: 'M8.3125 0.980183C8.66767 1.0531 8.97902 1.20418 9.2627 1.43233C9.48724 1.61297 9.73029 1.85793 9.97949 2.10714L14.707 6.83468L13.293 8.24874L9 3.95577V15.0417H7V3.95577L2.70703 8.24874L1.29297 6.83468L6.02051 2.10714C6.26971 1.85793 6.51277 1.61297 6.7373 1.43233C6.97662 1.23986 7.28445 1.04402 7.6875 0.980183C7.8973 0.947006 8.1031 0.95516 8.3125 0.980183Z',
+            fill: 'currentColor',
+          }))
+      }
       /** Shipped component by export name, or a local stand-in. */
       function nat(name: string, fallback: any): any {
         return NATIVE[name] ?? fallback
@@ -766,21 +779,26 @@
             }, t('action.create')),
             e(Button, { variant: 'ghost', size: 'sm', disabled: working, onClick: () => setCreate(null) }, t('action.cancel'))))
 
+        // Footer: gateway status text plus the two create actions, pinned to
+        // the bottom of the Bots body. The live dot itself lives on the
+        // group header (see SidebarNav).
+        const footer = e('div', {
+          className: 'dbs-srow', style: { cursor: 'default', background: 'transparent', marginTop: 'auto' },
+        },
+          e('span', { className: 'dbs-meta', style: { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
+            connected ? t('gateway.online', { port: s.info.port }) : t('gateway.offline')),
+          e(Button, {
+            variant: 'ghost', size: 'sm', title: t('bot.new'), 'aria-label': t('bot.new'),
+            icon: Ico('IconPlusOutline16', { size: 14 }),
+            onClick: () => { setCreate('bot'); setName('') },
+          }),
+          e(Button, {
+            variant: 'ghost', size: 'sm', title: t('group.new'), 'aria-label': t('group.new'),
+            icon: Ico('IconNewChatOutline16', { size: 14 }),
+            onClick: () => { setCreate('group'); setName(''); setMembers({}) },
+          }))
+
         return e('div', { className: 'dbs-navBody dbs-botsBody' },
-          e('div', { className: 'dbs-srow', style: { cursor: 'default', background: 'transparent' } },
-            StateDot !== null ? e(StateDot, { state: connected ? 'done' : 'failed', size: 8 }) : null,
-            e('span', { className: 'dbs-meta', style: { flex: 1, marginLeft: 6 } },
-              connected ? t('gateway.online', { port: s.info.port }) : t('gateway.offline')),
-            e(Button, {
-              variant: 'ghost', size: 'sm', title: t('bot.new'), 'aria-label': t('bot.new'),
-              icon: Ico('IconPlusOutline16', { size: 14 }),
-              onClick: () => { setCreate('bot'); setName('') },
-            }),
-            e(Button, {
-              variant: 'ghost', size: 'sm', title: t('group.new'), 'aria-label': t('group.new'),
-              icon: Ico('IconNewChatOutline16', { size: 14 }),
-              onClick: () => { setCreate('group'); setName(''); setMembers({}) },
-            })),
           form,
           s.error !== null
             ? e('div', { className: 'dbs-error', onClick: () => patch({ error: null }) }, s.error)
@@ -791,7 +809,8 @@
               ? e('div', { className: 'dbs-navBodyErr' }, connected ? t('list.empty') : t('gateway.offlineHint'))
               : null,
           sectionRows(t('section.groups'), groups),
-          sectionRows(t('section.singles'), singles))
+          sectionRows(t('section.singles'), singles),
+          footer)
       }
 
       // =========================================================
@@ -830,7 +849,7 @@
               }, Ico('IconAgentPresetOutline16', { size: 18 }) ?? '·')))
         }
 
-        function group(key: 'workspaces' | 'bots', title: string, iconName: string, body: any) {
+        function group(key: 'workspaces' | 'bots', title: string, iconName: string, body: any, trailing?: any) {
           const isOpen = s.open[key] !== false
           return e('div', { className: 'dbs-navGroup', 'data-open': isOpen },
             e('div', {
@@ -842,14 +861,27 @@
             },
               e(Chevron, { open: isOpen }),
               e('span', { className: 'dbs-slot' }, Ico(iconName, { size: 16 })),
-              e('span', { className: 'dbs-title' }, title)),
+              e('span', { className: 'dbs-title' }, title),
+              trailing ?? null),
             isOpen ? body : null)
         }
 
         return e('div', { className: 'dbs-nav' },
           group('workspaces', t('nav.workspaces'), 'IconFolderClose16',
-            e('div', { className: 'dbs-navBody' }, e(DelegatedBrowser, { wide, expandSidebar: p.expandSidebar }))),
-          group('bots', t('nav.bots'), 'IconAgentPresetOutline16', e(BotsGroup, null)))
+            // Clicking into the native browser (a session row, "new chat"…)
+            // is a navigation intent: dismiss the bot chat overlay so the
+            // main window the user asked for is actually visible.
+            e('div', {
+              className: 'dbs-navBody',
+              onClickCapture: () => { if (s.chatAgentId !== null) patch({ chatAgentId: null }) },
+            }, e(DelegatedBrowser, { wide, expandSidebar: p.expandSidebar }))),
+          group('bots', t('nav.bots'), 'IconAgentPresetOutline16', e(BotsGroup, null),
+            StateDot !== null
+              ? e('span', {
+                  title: s.info?.ok === true ? t('gateway.online', { port: s.info.port }) : t('gateway.offline'),
+                  style: { display: 'inline-flex', alignItems: 'center', flex: 'none' },
+                }, e(StateDot, { state: s.info?.ok === true ? 'done' : 'failed', size: 8 }))
+              : null))
       }
 
       // =========================================================
@@ -1090,7 +1122,7 @@
                       title: composing ? t('chat.composing') : t('action.send'),
                       'aria-label': composing ? t('chat.composing') : t('action.send'),
                       onClick: () => void doSend(),
-                    }, Ico(composing ? 'IconLoadingOutline16' : 'IconSendOutline16', { size: 16 }))))))))
+                    }, composing ? Ico('IconLoadingOutline16', { size: 16 }) : e(SendUpIcon, null))))))))
       }
 
       // =========================================================
