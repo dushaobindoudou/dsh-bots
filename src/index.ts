@@ -134,7 +134,8 @@ function markRemoteMethod(prototype: object, method: string): void {
  * host-backed lists (workspaces/sessions) and live SSE replay so the web
  * workbench renders natively without polling the transcript API.
  */
-class BotsRemote extends TypertRemoteService {
+/** Exported for diagnostics/tests: marker assertions need the prototype. */
+export class BotsRemote extends TypertRemoteService {
   private readonly cfg: Config
   private readonly sse: GatewaySseClient
 

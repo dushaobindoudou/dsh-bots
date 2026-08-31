@@ -336,9 +336,10 @@ Client 包首次运行会弹批准；单勾授权当前包，双勾授权后续�
 | **M1 Bots 插件 PoC** | dsh 动态插件：`sidebar.footer.action` 按钮 + `shell.overlay` 折叠面板；bot 列表 / 新建 / 选会话 / 发消息（单向收发） | ✅ `bots-1/pkg-11`：左侧坞三分区（工作区/会话/Bots-群聊单聊）可折叠 + 全屏会话 + 设置页 Bots 分区 + 右下角调试药丸；**UI 直接复用官方哈希类名与 DOM 结构（用户反馈 pkg-10 仿制样式「与官方差距过大」后的重写，见 §12-27/28）**。Host 链路实证（自检 ok + 8 bots + 87 sessions）。源码落盘 `plugin/bots-{host,client}.js` |
 | **M1.5 wfx 移除** | 用户要求去掉「工作流」tab（第三方 `dsh-plugin-wfx`，非内置） | 🔶 `~/.dsh/profiles/web/cordis.patch.yml` 已注释该 insert 行；**重启 dsh web 生效**（动态插件会同时失效，重启后用 `plugin/*.js` 重定义） |
 | **M1.5 架构收敛**（2026-08-28） | 收敛为 `src/lib` 正式插件并**落进 profile 常驻**（`dsh.profile.bundles` link 依赖，重启不丢）：Host 用标准 `@Remote` 装饰器暴露类型化 `bots` 命名空间 + SSE 环形缓冲（`bots.eventsSince(seq)`）；Client 去哈希类名（自有类名 + `--dsw-*`）、`sidebar.workspaces` shadow（priority -100）作「工作区｜Bots」两折叠组导航（工作区委托原生浏览器）、聊天改 overlay、移除调试药丸与 `[data-workflow-run]` hack | `pnpm build`/`typecheck`/`test` 全绿（21 用例）；架构依据见 `DESIGN.md` |
+| **M4a 正式插件包**（2026-08-28，按 zoahdev/dsh-plugin-template 重构） | 标准 TS 双半边包：`package.json`（`dsh.bundle.patch` + `dsh.client.platform=web` + `exports["./client"]`）、`cordis.patch.yml`（insert 行 `bots`）、`src/{index,gateway,sse,shared,version,client}.ts`、`tests/`（44 用例）、`scripts/{dsh-smoke.sh,integration-test.mjs}`。Host：`BotsRemote extends TypertRemoteService`（14 端点，`markRemoteMethod` 补标记）、SSE 环形缓冲、typert 模块同一性候选加载；`inject:[]` 全惰性 `ctx.get`。Client：`__ModuleLoader__.load` 工厂 + shell locale 运行时（`bots` 命名空间 zh/en） | ✅ `pnpm build`/`typecheck`/`test`（44）/`test:integration`（14 端点 marker）全绿；fresh-profile 冒烟 PASS（临时 `DSH_HOME` 装 tarball → 配置行 → web 启动 200）；**0.1.5 已 `dsh plugin --profile web add` 装进真实 profile，重启 dsh web 生效**（届时动态插件 bots-1 停用） |
 | **M2 聊天视图** | SSE 实时渲染：消息气泡、`client-side-tool-v2` 工具卡片、进行中状态、@提及菜单 | 群聊中 @指定成员 可定向回复 |
 | **M3 Bot 管理** | `updateAgent` 编辑（名称/简介/系统提示词字段确认）、头像、删除、群成员管理 | 免 reload 完成全套管理 |
-| **M4 产品化** | 动态插件 → 正式 dsh 插件包（dsh-plugin monorepo）；sdk-bots 常驻（`SAND_HOST_PORT` 固定 + 进程守护）；一键启动 | 重启后自动恢复。💡 真正「工作区内」打开 bot 会话的路径：正式插件注册 `conversation.view` 列表槽第三视图（与 聊天/轨迹 并排）——动态插件优先级抢不过 shipped 且视图需 per-session 注入，只能用全屏仿原生层（pkg-8~10 现状） |
+| **M4 产品化（剩余）** | 正式包已落地（见 M4a）；余：迁入 dsh-plugin monorepo（catalog.mjs 管理）、sdk-bots 常驻（`SAND_HOST_PORT` 固定 + 进程守护）、一键启动 | 重启后自动恢复。💡 真正「工作区内」打开 bot 会话的路径：正式插件注册 `conversation.view` 列表槽第三视图（与 聊天/轨迹 并排）——动态插件优先级抢不过 shipped 且视图需 per-session 注入，只能用全屏仿原生层（pkg-8~10 现状） |
 | **M5 增强** | per-bot 模型钉定、附件/知识库（`uploadAttachment`）、automations、MCP 路由工具暴露到 UI | 按需排期 |
 
 M1 实现顺序（实际执行）：Host 半边（gateway.json 发现 + `ctx.shell` curl 桥 + 8 个 RPC，pkg-1 已验证）→ Client 半边（按钮 + 面板骨架 + 列表，pkg-3）→ 收发闭环（3s 轮询 transcriptTail）→ M2 换 SSE 中转。
@@ -366,6 +367,11 @@ curl -s http://127.0.0.1:3080/freeroute/v1/models | jq '.data[].id'
 # 手工调网关（token 从 gateway.json 取）
 TOKEN=$(jq -r .token ~/.sdk-bots/gateway.json); PORT=$(jq -r .port ~/.sdk-bots/gateway.json)
 curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:$PORT/api/listAgents -X POST
+
+# dsh-plugin-bots 插件链路（~/workspaces/dsh-bots）
+pnpm build && pnpm test && pnpm test:integration && pnpm pack
+bash scripts/dsh-smoke.sh          # 临时 DSH_HOME 全链路冒烟
+dsh plugin --profile web add ./dsh-plugin-bots-<ver>.tgz   # 装进真实 profile（重启 web 生效）
 
 # SSE 手工观察（gzip，断线自动重连）
 curl -sN --compressed "http://127.0.0.1:$PORT/events?token=$TOKEN"
