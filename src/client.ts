@@ -166,6 +166,155 @@
 `
 
       // =========================================================
+      // Locale.
+      //
+      // Registered into the shell's own locale runtime under the `bots`
+      // namespace, so language follows the app-wide preference instead of
+      // stranding this plugin in one language. `zh` is the key-set source of
+      // truth; `en` mirrors it exactly. Wire error strings from the gateway
+      // pass through untranslated, matching how the shipped packages treat
+      // runtime failure text.
+      // =========================================================
+      const NS = 'bots'
+
+      const zh: Record<string, string> = {
+        'nav.workspaces': '工作区',
+        'nav.bots': 'Bots',
+        'nav.bots.aria': 'Bots',
+        'nav.bots.unread': 'Bots（{n} 条未读）',
+        'delegate.loading': '加载中…',
+        'delegate.unavailable': '工作区视图不可用，请刷新页面。',
+        'delegate.failed': '工作区视图加载失败，Bots 不受影响。',
+        'gateway.online': '网关在线 :{port}',
+        'gateway.offline': '网关未连接',
+        'gateway.offlineHint': '网关未连接，详见设置页。',
+        'bot.new': '新建 Bot',
+        'group.new': '新建群聊',
+        'bot.namePlaceholder': 'Bot 名称',
+        'group.namePlaceholder': '群聊名称',
+        'bot.descPlaceholder': '简介 / 人设（可选）',
+        'action.create': '创建',
+        'action.cancel': '取消',
+        'action.close': '关闭',
+        'action.send': '发送',
+        'action.refresh': '刷新',
+        'action.expand': '展开',
+        'action.collapse': '收起',
+        'list.loading': '加载中…',
+        'list.empty': '还没有 Bot，点 ＋ 新建。',
+        'section.groups': '群聊',
+        'section.singles': '单聊',
+        'chat.group': '群聊 · {n} 名成员',
+        'chat.single': '单聊',
+        'chat.loading': '加载中…',
+        'chat.empty': '还没有消息，发一条开始对话',
+        'chat.composing': '生成中',
+        'chat.composingHint': '正在生成，请稍候',
+        'chat.placeholder.group': '@名字 可定向，默认全员',
+        'chat.placeholder.single': '给 {name} 发消息…',
+        'chat.charCount': '{n} 字',
+        'tool.fallbackName': '工具',
+        'settings.summary': '多 Bot 工作台，桥接 sdk-bots 编排网关。',
+        'settings.probing': '检测中…',
+        'settings.address': '地址：',
+        'settings.pid': 'PID：',
+        'settings.busy': '忙',
+        'settings.idle': '闲',
+        'settings.auth': '鉴权：',
+        'settings.auth.token': 'token（自动携带）',
+        'settings.auth.none': '无（loopback 免鉴权）',
+        'settings.reason': '原因：',
+        'settings.reason.unknown': '未知',
+        'settings.dataDir': '数据目录：',
+        'settings.reading': '读取中…',
+        'settings.events': '实时事件：',
+        'settings.events.on': '已连接 · 缓冲 {n} 条',
+        'settings.events.off': '未连接',
+        'settings.entry': '入口：',
+        'settings.entry.value': '左侧边栏「工作区 ｜ Bots」折叠导航',
+        'error.noConnection': '连接服务尚未就绪',
+        'error.callFailed': '调用失败',
+        'error.badResponse': '意外的 RPC 响应',
+      }
+
+      const en: Record<string, string> = {
+        'nav.workspaces': 'Workspaces',
+        'nav.bots': 'Bots',
+        'nav.bots.aria': 'Bots',
+        'nav.bots.unread': 'Bots ({n} unread)',
+        'delegate.loading': 'Loading…',
+        'delegate.unavailable': 'Workspace view unavailable — reload the page.',
+        'delegate.failed': 'Workspace view failed to render; Bots is unaffected.',
+        'gateway.online': 'Gateway online :{port}',
+        'gateway.offline': 'Gateway not connected',
+        'gateway.offlineHint': 'Gateway not connected — see the settings page.',
+        'bot.new': 'New bot',
+        'group.new': 'New group chat',
+        'bot.namePlaceholder': 'Bot name',
+        'group.namePlaceholder': 'Group name',
+        'bot.descPlaceholder': 'Description / persona (optional)',
+        'action.create': 'Create',
+        'action.cancel': 'Cancel',
+        'action.close': 'Close',
+        'action.send': 'Send',
+        'action.refresh': 'Refresh',
+        'action.expand': 'Expand',
+        'action.collapse': 'Collapse',
+        'list.loading': 'Loading…',
+        'list.empty': 'No bots yet — use ＋ to create one.',
+        'section.groups': 'Groups',
+        'section.singles': 'Direct',
+        'chat.group': 'Group · {n} members',
+        'chat.single': 'Direct',
+        'chat.loading': 'Loading…',
+        'chat.empty': 'No messages yet — send one to start.',
+        'chat.composing': 'Generating',
+        'chat.composingHint': 'Generating, please wait',
+        'chat.placeholder.group': 'Use @name to direct a turn; everyone by default',
+        'chat.placeholder.single': 'Message {name}…',
+        'chat.charCount': '{n} chars',
+        'tool.fallbackName': 'Tool',
+        'settings.summary': 'Multi-bot workbench, bridged to the sdk-bots orchestration gateway.',
+        'settings.probing': 'Probing…',
+        'settings.address': 'Address: ',
+        'settings.pid': 'PID: ',
+        'settings.busy': 'busy',
+        'settings.idle': 'idle',
+        'settings.auth': 'Auth: ',
+        'settings.auth.token': 'token (sent automatically)',
+        'settings.auth.none': 'none (loopback, unauthenticated)',
+        'settings.reason': 'Reason: ',
+        'settings.reason.unknown': 'unknown',
+        'settings.dataDir': 'Data directory: ',
+        'settings.reading': 'reading…',
+        'settings.events': 'Live events: ',
+        'settings.events.on': 'connected · {n} buffered',
+        'settings.events.off': 'not connected',
+        'settings.entry': 'Entry point: ',
+        'settings.entry.value': 'Sidebar “Workspaces | Bots” collapsible nav',
+        'error.noConnection': 'Connection service is not ready yet',
+        'error.callFailed': 'Call failed',
+        'error.badResponse': 'Unexpected RPC response',
+      }
+
+      /**
+       * Namespace-bound translator.
+       *
+       * `locale.bind` returns a stable function that resolves against whatever
+       * locale is active at call time, so this can live at module scope; a
+       * switch re-renders through the subscription installed in `apply`.
+       * Falls back to the zh dictionary (then the key) if the locale service
+       * is unavailable, so no surface ever renders a bare key.
+       */
+      let boundT: ((key: string, params?: Record<string, unknown>) => string) | null = null
+      function t(key: string, params?: Record<string, unknown>): string {
+        if (boundT !== null) return boundT(key, params)
+        const template = zh[key] ?? key
+        if (params === undefined) return template
+        return template.replace(/\{(\w+)\}/g, (m, name) => (name in params ? String(params[name]) : m))
+      }
+
+      // =========================================================
       // Module-level services and state.
       // =========================================================
       let ctx: any = null
@@ -176,15 +325,15 @@
       const RING_DRAIN_MS = 1000
 
       async function botsCall<T = unknown>(method: string, request?: unknown): Promise<T> {
-        if (connectionSvc === null) throw new Error('连接服务尚未就绪')
+        if (connectionSvc === null) throw new Error(t('error.noConnection'))
         const envelope = await connectionSvc.rpc.call('/api', 'bots/' + method, {
           args: { request: request === undefined ? null : request },
         })
         if (envelope !== null && typeof envelope === 'object' && envelope.ok === false) {
-          throw new Error(envelope.error?.message ?? '调用失败')
+          throw new Error(envelope.error?.message ?? t('error.callFailed'))
         }
         if (envelope !== null && typeof envelope === 'object' && envelope.ok === true) return envelope.value
-        throw new Error('意外的 RPC 响应')
+        throw new Error(t('error.badResponse'))
       }
 
       /**
@@ -240,6 +389,8 @@
         error: null as string | null,
         chatAgentId: null as string | null,
         open: { workspaces: true, bots: true },
+        /** Bumped on a language switch so module-scope `t` output re-renders. */
+        localeRev: 0,
       }
       const stateSubs = new Set<() => void>()
       function patch(next: any): void {
@@ -466,10 +617,10 @@
           [entry, p.wide, p.expandSidebar],
         )
 
-        if (status === 'loading') return e('div', { className: 'dbs-navBodyErr' }, '加载中…')
-        if (entry === null || props === null) return e('div', { className: 'dbs-navBodyErr' }, '工作区视图不可用，请刷新页面。')
+        if (status === 'loading') return e('div', { className: 'dbs-navBodyErr' }, t('delegate.loading'))
+        if (entry === null || props === null) return e('div', { className: 'dbs-navBodyErr' }, t('delegate.unavailable'))
         return e(Boundary, {
-          fallback: e('div', { className: 'dbs-navBodyErr' }, '工作区视图加载失败，Bots 不受影响。'),
+          fallback: e('div', { className: 'dbs-navBodyErr' }, t('delegate.failed')),
           children: e(entry.component, props),
         })
       }
@@ -592,14 +743,14 @@
 
         const form = create === null ? null : e('div', { className: 'dbs-form' },
           e(Input, {
-            placeholder: create === 'bot' ? 'Bot 名称' : '群聊名称',
+            placeholder: create === 'bot' ? t('bot.namePlaceholder') : t('group.namePlaceholder'),
             value: name, autoFocus: true,
             onChange: (ev: any) => setName(ev.target.value),
             onKeyDown: (ev: any) => { if (ev.key === 'Enter') { ev.preventDefault(); void (create === 'bot' ? createBot() : createGroup()) } },
           }),
           create === 'bot'
             ? e(Input, {
-                placeholder: '简介 / 人设（可选）', value: desc,
+                placeholder: t('bot.descPlaceholder'), value: desc,
                 onChange: (ev: any) => setDesc(ev.target.value),
               })
             : e('div', { className: 'dbs-members' }, singles.map((m) => e('div', {
@@ -612,21 +763,21 @@
               variant: 'primary', size: 'sm',
               disabled: working || name.trim() === '' || (create === 'group' && Object.keys(members).filter((k) => members[k]).length === 0),
               onClick: () => void (create === 'bot' ? createBot() : createGroup()),
-            }, '创建'),
-            e(Button, { variant: 'ghost', size: 'sm', disabled: working, onClick: () => setCreate(null) }, '取消')))
+            }, t('action.create')),
+            e(Button, { variant: 'ghost', size: 'sm', disabled: working, onClick: () => setCreate(null) }, t('action.cancel'))))
 
         return e('div', { className: 'dbs-navBody dbs-botsBody' },
           e('div', { className: 'dbs-srow', style: { cursor: 'default', background: 'transparent' } },
             StateDot !== null ? e(StateDot, { state: connected ? 'done' : 'failed', size: 8 }) : null,
             e('span', { className: 'dbs-meta', style: { flex: 1, marginLeft: 6 } },
-              connected ? '网关在线 :' + String(s.info.port) : '网关未连接'),
+              connected ? t('gateway.online', { port: s.info.port }) : t('gateway.offline')),
             e(Button, {
-              variant: 'ghost', size: 'sm', title: '新建 Bot', 'aria-label': '新建 Bot',
+              variant: 'ghost', size: 'sm', title: t('bot.new'), 'aria-label': t('bot.new'),
               icon: Ico('IconPlusOutline16', { size: 14 }),
               onClick: () => { setCreate('bot'); setName('') },
             }),
             e(Button, {
-              variant: 'ghost', size: 'sm', title: '新建群聊', 'aria-label': '新建群聊',
+              variant: 'ghost', size: 'sm', title: t('group.new'), 'aria-label': t('group.new'),
               icon: Ico('IconNewChatOutline16', { size: 14 }),
               onClick: () => { setCreate('group'); setName(''); setMembers({}) },
             })),
@@ -635,12 +786,12 @@
             ? e('div', { className: 'dbs-error', onClick: () => patch({ error: null }) }, s.error)
             : null,
           !s.agentsLoaded
-            ? e('div', { className: 'dbs-navBodyErr' }, '加载中…')
+            ? e('div', { className: 'dbs-navBodyErr' }, t('list.loading'))
             : visible.length === 0
-              ? e('div', { className: 'dbs-navBodyErr' }, connected ? '还没有 Bot，点 ＋ 新建。' : '网关未连接，详见设置页。')
+              ? e('div', { className: 'dbs-navBodyErr' }, connected ? t('list.empty') : t('gateway.offlineHint'))
               : null,
-          sectionRows('群聊', groups),
-          sectionRows('单聊', singles))
+          sectionRows(t('section.groups'), groups),
+          sectionRows(t('section.singles'), singles))
       }
 
       // =========================================================
@@ -670,8 +821,8 @@
             e(DelegatedBrowser, { wide: false, expandSidebar: p.expandSidebar }),
             e('div', { className: 'dbs-rail' },
               e('button', {
-                type: 'button', className: 'dbs-railBtn', title: unread > 0 ? `Bots（${String(unread)} 条未读）` : 'Bots',
-                'aria-label': 'Bots', 'data-active': busy || unread > 0,
+                type: 'button', className: 'dbs-railBtn', title: unread > 0 ? t('nav.bots.unread', { n: unread }) : t('nav.bots'),
+                'aria-label': t('nav.bots.aria'), 'data-active': busy || unread > 0,
                 onClick: () => {
                   patch({ open: { ...s.open, bots: true } })
                   if (p.expandSidebar) p.expandSidebar()
@@ -696,9 +847,9 @@
         }
 
         return e('div', { className: 'dbs-nav' },
-          group('workspaces', '工作区', 'IconFolderClose16',
+          group('workspaces', t('nav.workspaces'), 'IconFolderClose16',
             e('div', { className: 'dbs-navBody' }, e(DelegatedBrowser, { wide, expandSidebar: p.expandSidebar }))),
-          group('bots', 'Bots', 'IconAgentPresetOutline16', e(BotsGroup, null)))
+          group('bots', t('nav.bots'), 'IconAgentPresetOutline16', e(BotsGroup, null)))
       }
 
       // =========================================================
@@ -757,8 +908,8 @@
             StateDot !== null
               ? e(StateDot, { state: en.toolStatus === 'running' ? 'ongoing' : en.toolStatus === 'error' ? 'error' : 'done', size: 10 })
               : e('span', { style: { width: 10, height: 10, borderRadius: 999, background: tone, display: 'inline-block' } }),
-            e('span', { className: 'dbs-toolName' }, en.toolName ?? '工具'),
-            en.content !== '' ? e('span', { className: 'dbs-meta', style: { marginLeft: 'auto' } }, open ? '收起' : '展开') : null),
+            e('span', { className: 'dbs-toolName' }, en.toolName ?? t('tool.fallbackName')),
+            en.content !== '' ? e('span', { className: 'dbs-meta', style: { marginLeft: 'auto' } }, open ? t('action.collapse') : t('action.expand')) : null),
           open && en.content !== '' ? e('div', { className: 'dbs-toolBody' }, en.content) : null)
       }
 
@@ -873,13 +1024,13 @@
         return e('div', { className: 'dbs-chatview', style: { left: inset.left, right: inset.right } },
           e('div', { className: 'dbs-chatbar' },
             e(Button, {
-              variant: 'ghost', size: 'sm', title: '关闭', 'aria-label': '关闭',
+              variant: 'ghost', size: 'sm', title: t('action.close'), 'aria-label': t('action.close'),
               icon: Ico('IconCloseOutline16', { size: 16 }),
               onClick: () => patch({ chatAgentId: null }),
             }),
             agent !== null ? e(Avatar, { agent, size: 24 }) : null,
-            e('span', { className: 'dbs-chatbarName' }, agent?.name ?? '会话'),
-            e('span', { className: 'dbs-meta' }, isGroup ? `群聊 · ${String(memberNames.length)} 名成员` : '单聊'),
+            e('span', { className: 'dbs-chatbarName' }, agent?.name ?? t('chat.loading')),
+            e('span', { className: 'dbs-meta' }, isGroup ? t('chat.group', { n: memberNames.length }) : t('chat.single')),
             e('span', { style: { flex: 1 } })),
 
           error !== null
@@ -890,11 +1041,11 @@
             e('div', { className: 'dbs-scroll' },
               e('div', { className: 'dbs-column' },
                 entries === null
-                  ? e('div', { className: 'dbs-empty' }, '加载中…')
+                  ? e('div', { className: 'dbs-empty' }, t('chat.loading'))
                   : list.length === 0
-                    ? e('div', { className: 'dbs-empty' }, '还没有消息，发一条开始对话')
+                    ? e('div', { className: 'dbs-empty' }, t('chat.empty'))
                     : list.map((en: any, i: number) => e(Entry, { key: en.id !== '' ? en.id : String(i), entry: en, isGroup })),
-                composing ? e('div', { className: 'dbs-turnStatus' }, '生成中') : null))),
+                composing ? e('div', { className: 'dbs-turnStatus' }, t('chat.composing')) : null))),
 
           e('div', { className: 'dbs-composerSeat' },
             e('div', { className: 'dbs-composer' },
@@ -908,7 +1059,7 @@
                 e('div', { className: 'dbs-composerScroll' },
                   e('textarea', {
                     ref: inputRef, className: 'dbs-composerInput', value: input, rows: 1,
-                    placeholder: isGroup ? '@名字 可定向，默认全员' : '给 ' + (agent?.name ?? '') + ' 发消息…',
+                    placeholder: isGroup ? t('chat.placeholder.group') : t('chat.placeholder.single', { name: agent?.name ?? '' }),
                     onChange: (ev: any) => onInputChange(ev.target.value),
                     onKeyDown: (ev: any) => {
                       if (mentionHits.length > 0 && (ev.key === 'Enter' || ev.key === 'Tab')) {
@@ -927,7 +1078,7 @@
                   })),
                 e('div', { className: 'dbs-composerRow' },
                   e('span', { className: 'dbs-meta' },
-                    composing ? '正在生成，请稍候' : input.trim() !== '' ? String(input.trim().length) + ' 字' : ''),
+                    composing ? t('chat.composingHint') : input.trim() !== '' ? t('chat.charCount', { n: input.trim().length }) : ''),
                   e('div', { className: 'dbs-composerTrailing' },
                     e('button', {
                       type: 'button', className: 'dbs-send',
@@ -936,8 +1087,8 @@
                       // flipped local state would claim a cancel that never
                       // happened. Disabled-while-composing is the honest state.
                       disabled: sending || composing || input.trim() === '',
-                      title: composing ? '生成中' : '发送',
-                      'aria-label': composing ? '生成中' : '发送',
+                      title: composing ? t('chat.composing') : t('action.send'),
+                      'aria-label': composing ? t('chat.composing') : t('action.send'),
                       onClick: () => void doSend(),
                     }, Ico(composing ? 'IconLoadingOutline16' : 'IconSendOutline16', { size: 16 }))))))))
       }
@@ -959,25 +1110,25 @@
         React.useEffect(() => { void refresh() }, [])
         const ok = info?.ok === true
         return e('div', { className: 'dbs-settings' },
-          e('div', { className: 'dbs-setrow' }, '多 Bot 工作台，桥接 sdk-bots 编排网关。'),
+          e('div', { className: 'dbs-setrow' }, t('settings.summary')),
           e('div', { className: 'dbs-setcard' },
             e('div', { className: 'dbs-sethead' },
               StateDot !== null ? e(StateDot, { state: ok ? 'done' : 'failed', size: 10 }) : null,
-              info === undefined ? '检测中…' : ok ? '网关在线' : '网关未连接',
+              info === undefined ? t('settings.probing') : ok ? t('gateway.online', { port: info.port }) : t('gateway.offline'),
               e('span', { style: { flex: 1 } }),
-              e(Button, { variant: 'outline', size: 'sm', onClick: () => void refresh() }, '刷新')),
+              e(Button, { variant: 'outline', size: 'sm', onClick: () => void refresh() }, t('action.refresh'))),
             ok ? e('div', null,
-              e('div', { className: 'dbs-setrow' }, '地址：', e('b', null, info.baseUrl)),
-              e('div', { className: 'dbs-setrow' }, 'PID：', e('b', null, String(info.pid)), info.health?.isBusy === true ? ' · 忙' : ' · 闲'),
-              e('div', { className: 'dbs-setrow' }, '鉴权：', e('b', null, info.hasToken === true ? 'token（自动携带）' : '无（loopback 免鉴权）'))) : null,
-            info !== undefined && !ok ? e('div', { className: 'dbs-setrow' }, '原因：', e('b', null, info.reason ?? '未知')) : null,
+              e('div', { className: 'dbs-setrow' }, t('settings.address'), e('b', null, info.baseUrl)),
+              e('div', { className: 'dbs-setrow' }, t('settings.pid'), e('b', null, String(info.pid)), ' · ' + (info.health?.isBusy === true ? t('settings.busy') : t('settings.idle'))),
+              e('div', { className: 'dbs-setrow' }, t('settings.auth'), e('b', null, info.hasToken === true ? t('settings.auth.token') : t('settings.auth.none')))) : null,
+            info !== undefined && !ok ? e('div', { className: 'dbs-setrow' }, t('settings.reason'), e('b', null, info.reason ?? t('settings.reason.unknown'))) : null,
             err !== null ? e('div', { className: 'dbs-setrow' }, err) : null),
           e('div', { className: 'dbs-setcard' },
-            e('div', { className: 'dbs-setrow' }, '数据目录：', e('b', null, info?.dataDir ?? '读取中…')),
-            e('div', { className: 'dbs-setrow' }, '实时事件：',
-              e('b', null, sse?.running === true ? `已连接 · 缓冲 ${String(sse.buffered ?? 0)} 条` : '未连接'),
+            e('div', { className: 'dbs-setrow' }, t('settings.dataDir'), e('b', null, info?.dataDir ?? t('settings.reading'))),
+            e('div', { className: 'dbs-setrow' }, t('settings.events'),
+              e('b', null, sse?.running === true ? t('settings.events.on', { n: sse.buffered ?? 0 }) : t('settings.events.off')),
               sse?.lastError ? ' · ' + String(sse.lastError) : ''),
-            e('div', { className: 'dbs-setrow' }, '入口：', e('b', null, '左侧边栏「工作区 ｜ Bots」折叠导航'))))
+            e('div', { className: 'dbs-setrow' }, t('settings.entry'), e('b', null, t('settings.entry.value')))))
       }
 
       // =========================================================
@@ -999,7 +1150,7 @@
       // =========================================================
       // Slot registration (formal runtime contract).
       // =========================================================
-      const inject = ['connection', 'slots']
+      const inject = ['connection', 'slots', 'locale']
 
       function apply(c: any): void {
         ctx = c
@@ -1016,20 +1167,32 @@
           return () => { styleEl.remove() }
         }, 'dsh-plugin-bots: styles')
 
+        // Dictionaries first: a slot may render on the same tick it registers.
+        const locale = c.get('locale')
+        if (locale !== undefined && locale !== null) {
+          c.effect(() => locale.register(NS, { zh, en }), 'dsh-plugin-bots: dictionaries')
+          boundT = locale.bind(NS)
+          // Our surfaces read `t` from module scope rather than from the prop
+          // the renderer hands the slot root, because the strings live six
+          // components deep. That means a language switch has to be pushed
+          // into our own store to re-render them.
+          c.effect(() => locale.subscribe(() => { patch({ localeRev: state.localeRev + 1 }) }), 'dsh-plugin-bots: locale refresh')
+        }
+
         c.effect(() => slots.inject('shell.overlay', () => slots.register(
-          { name: 'shell.overlay', id: 'dsh-plugin-bots.chat', order: 20, registrant: 'dsh-plugin-bots' },
+          { name: 'shell.overlay', id: 'dsh-plugin-bots.chat', order: 20, registrant: 'dsh-plugin-bots', locale: NS },
           () => e(BotsLayer),
         )), 'dsh-plugin-bots: chat overlay')
 
         // Shadow the single workspace slot at a lower priority (lowest renders);
         // the shipped entry stays registered and is delegated to by name.
         c.effect(() => slots.inject('sidebar.workspaces', () => slots.register(
-          { name: 'sidebar.workspaces', priority: -100, registrant: 'dsh-plugin-bots' },
+          { name: 'sidebar.workspaces', priority: -100, registrant: 'dsh-plugin-bots', locale: NS },
           (props: any) => e(SidebarNav, { wide: props.wide, expandSidebar: props.expandSidebar }),
         )), 'dsh-plugin-bots: sidebar workspaces shadow')
 
         c.effect(() => slots.inject('settings.section', () => slots.register(
-          { name: 'settings.section', id: 'bots', order: 40, label: 'Bots', registrant: 'dsh-plugin-bots' },
+          { name: 'settings.section', id: 'bots', order: 40, label: () => t('nav.bots'), registrant: 'dsh-plugin-bots', locale: NS },
           () => e(BotsSettings),
         )), 'dsh-plugin-bots: settings section')
 
