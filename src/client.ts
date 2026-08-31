@@ -174,6 +174,9 @@
 .dbs-modalBody{display:flex;flex-direction:column;gap:10px}
 .dbs-modalMembers{display:flex;flex-direction:column;gap:2px;max-height:220px;overflow-y:auto;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;padding:6px}
 .dbs-modalFooter{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:16px}
+.dbs-rowDel{display:none;border:none;background:transparent;cursor:pointer;color:var(--dsw-alias-label-tertiary);flex:none;justify-content:center;align-items:center;width:24px;height:24px;border-radius:6px;padding:0}
+.dbs-rowDel:hover{color:#f85149;background:rgba(248,81,73,.1)}
+.dbs-srow:hover .dbs-rowDel,.dbs-rowDel:focus-visible{display:inline-flex}
 .dbs-mention{position:absolute;bottom:calc(100% + 6px);left:12px;right:12px;max-height:180px;overflow-y:auto;background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:12px;box-shadow:var(--dsw-shadow-lv2);padding:4px;z-index:3}
 .dbs-mentionRow{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary)}
 .dbs-mentionRow[data-active="true"],.dbs-mentionRow:hover{background:var(--dsw-alias-interactive-bg-hover)}
@@ -217,6 +220,11 @@
         'action.create': '创建',
         'action.cancel': '取消',
         'action.close': '关闭',
+        'action.delete': '删除',
+        'delete.title.bot': '删除 Bot',
+        'delete.title.group': '删除群聊',
+        'delete.confirm': '将删除「{name}」及其全部会话记录，此操作不可恢复。',
+        'delete.working': '删除中…',
         'action.send': '发送',
         'action.refresh': '刷新',
         'action.expand': '展开',
@@ -277,6 +285,11 @@
         'action.create': 'Create',
         'action.cancel': 'Cancel',
         'action.close': 'Close',
+        'action.delete': 'Delete',
+        'delete.title.bot': 'Delete bot',
+        'delete.title.group': 'Delete group chat',
+        'delete.confirm': 'This permanently deletes "{name}" and its transcript.',
+        'delete.working': 'Deleting…',
         'action.send': 'Send',
         'action.refresh': 'Refresh',
         'action.expand': 'Expand',
@@ -417,6 +430,8 @@
         createDesc: '',
         createMembers: {} as Record<string, boolean>,
         createWorking: false,
+        /** Delete confirmation: { id, name, isGroup } | null (system modal). */
+        confirmDelete: null as any,
         /** Bumped on a language switch so module-scope `t` output re-renders. */
         localeRev: 0,
       }
@@ -730,7 +745,15 @@
                 ? e(StateDot, { state: 'warning', size: 10 })
                 : unread > 0
                   ? e('span', { className: 'dbs-badge' }, unread > 99 ? '99+' : String(unread))
-                  : null)
+                  : null,
+            e('button', {
+              type: 'button', className: 'dbs-rowDel',
+              title: t('action.delete'), 'aria-label': t('action.delete') + ' ' + a.name,
+              onClick: (ev: any) => {
+                ev.stopPropagation()
+                patch({ confirmDelete: { id: a.id, name: a.name, isGroup: a.isGroup === true } })
+              },
+            }, Ico('IconTrashOutline16', { size: 14 })))
         }
 
         function sectionRows(label: string, list: any[]) {
@@ -1213,21 +1236,81 @@
               }, t('action.create')))))
       }
 
+      /** Delete confirmation modal: same system-dialog chrome as CreateModal. */
+      function ConfirmDeleteModal() {
+        const s = useStore()
+        const target = s.confirmDelete
+        const [err, setErr] = React.useState(null as string | null)
+        const [working, setWorking] = React.useState(false)
+        const isGroup = target?.isGroup === true
+
+        async function doDelete() {
+          if (target === null || target === undefined || working) return
+          setWorking(true); setErr(null)
+          try {
+            await botsCall('remove', { id: target.id })
+            // The chat for a deleted bot must not survive its bot.
+            const closeChat = state.chatAgentId === target.id
+            patch({ confirmDelete: null })
+            if (closeChat) patch({ chatAgentId: null })
+            await refreshAgents()
+            return
+          } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
+          setWorking(false)
+        }
+
+        return e('div', {
+          className: 'dbs-modalBackdrop',
+          onClick: () => { if (!working) patch({ confirmDelete: null }) },
+        },
+          e('div', {
+            className: 'dbs-modalCard', role: 'dialog', 'aria-modal': true,
+            'aria-label': isGroup ? t('delete.title.group') : t('delete.title.bot'),
+            onClick: (ev: any) => { ev.stopPropagation() },
+          },
+            e('div', { className: 'dbs-modalTitleRow' },
+              e('span', { className: 'dbs-modalTitle' }, isGroup ? t('delete.title.group') : t('delete.title.bot')),
+              e(Button, {
+                variant: 'ghost', size: 'sm', title: t('action.close'), 'aria-label': t('action.close'),
+                disabled: working,
+                icon: Ico('IconCloseOutline16', { size: 16 }),
+                onClick: () => patch({ confirmDelete: null }),
+              })),
+            e('div', { className: 'dbs-modalBody' },
+              e('span', { className: 'dbs-meta', style: { fontSize: 14, lineHeight: 22 } },
+                t('delete.confirm', { name: target?.name ?? '' })),
+              err !== null
+                ? e('div', { className: 'dbs-error', onClick: () => { setErr(null) } }, err)
+                : null),
+            e('div', { className: 'dbs-modalFooter' },
+              e(Button, {
+                variant: 'ghost', size: 'sm', disabled: working,
+                onClick: () => patch({ confirmDelete: null }),
+              }, t('action.cancel')),
+              e(Button, {
+                variant: 'primary', size: 'sm', disabled: working,
+                onClick: () => void doDelete(),
+              }, working ? t('delete.working') : t('action.delete')))))
+      }
+
       function BotsLayer() {
         const s = useStore()
         React.useEffect(() => {
           function onKey(ev: KeyboardEvent) {
             if (ev.key !== 'Escape') return
-            // Modal first: it sits above the chat and owns ESC while open.
+            // Topmost dialog first: delete confirm, then create, then chat.
+            if (state.confirmDelete !== null) { patch({ confirmDelete: null }); return }
             if (state.create !== null) { patch({ create: null }); return }
             if (state.chatAgentId !== null) patch({ chatAgentId: null })
           }
           window.addEventListener('keydown', onKey)
           return () => { window.removeEventListener('keydown', onKey) }
         }, [])
-        if (s.create !== null) return e('div', null, e(CreateModal), s.chatAgentId !== null ? e(ChatView, { agentId: s.chatAgentId, key: s.chatAgentId }) : null)
-        if (s.chatAgentId === null) return null
-        return e(ChatView, { agentId: s.chatAgentId, key: s.chatAgentId })
+        const layers: any[] = []
+        if (s.chatAgentId !== null) layers.push(e(ChatView, { agentId: s.chatAgentId, key: s.chatAgentId }))
+        if (s.create !== null) layers.push(e(CreateModal, { key: 'create' }))
+        if (s.confirmDelete !== null) layers.push(e(ConfirmDeleteModal, { key: 'confirm-delete' }))
+        return layers.length === 0 ? null : e('div', null, layers)
       }
 
       // =========================================================
