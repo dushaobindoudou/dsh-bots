@@ -88,9 +88,100 @@
         return e('div', { className: 'dbs-plain' }, p.text)
       }
 
+      /**
+       * Local markdown renderer for the (observed-in-the-wild) case where the
+       * shell's static module map serves the primitives package without
+       * MarkdownText: block-level fenced code / headings / hr / blockquote /
+       * lists / paragraphs, inline bold / italic / code / links. Built from
+       * createElement only — no HTML string ever crosses in. Streaming-safe:
+       * an unterminated fence renders as a code block running to the tail.
+       */
+      function mdInline(text: string): any[] {
+        const out: any[] = []
+        let buf = ''
+        let i = 0
+        const push = () => { if (buf !== '') { out.push(buf); buf = '' } }
+        while (i < text.length) {
+          const rest = text.slice(i)
+          let m: RegExpExecArray | null
+          if (rest.startsWith('`') && (m = /^`([^`\n]+)`/.exec(rest)) !== null) {
+            push(); out.push(e('code', null, m[1])); i += m[0].length; continue
+          }
+          if (rest.startsWith('**') && (m = /^\*\*([\s\S]+?)\*\*/.exec(rest)) !== null) {
+            push(); out.push(e('strong', null, mdInline(m[1]))); i += m[0].length; continue
+          }
+          if (rest.startsWith('*') && (m = /^\*([^*\n]+)\*/.exec(rest)) !== null) {
+            push(); out.push(e('em', null, mdInline(m[1]))); i += m[0].length; continue
+          }
+          if ((m = /^\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/.exec(rest)) !== null) {
+            push(); out.push(e('a', { href: m[2], target: '_blank', rel: 'noreferrer' }, m[1])); i += m[0].length; continue
+          }
+          if ((m = /^(https?:\/\/[^\s<>()[\]{}'"]+)/.exec(rest)) !== null) {
+            push(); out.push(e('a', { href: m[1], target: '_blank', rel: 'noreferrer' }, m[1])); i += m[0].length; continue
+          }
+          buf += text[i]; i += 1
+        }
+        push()
+        return out
+      }
+
+      function mdBlocks(text: string): any[] {
+        const lines = text.split('\n')
+        const out: any[] = []
+        let i = 0
+        let para: string[] = []
+        const flushPara = () => { if (para.length > 0) { out.push(e('p', null, mdInline(para.join('\n')))); para = [] } }
+        while (i < lines.length) {
+          const line = lines[i]
+          const fence = /^\s*```(\w*)\s*$/.exec(line)
+          if (fence !== null) {
+            flushPara()
+            const body: string[] = []
+            i += 1
+            while (i < lines.length && /^\s*```\s*$/.test(lines[i]) === false) { body.push(lines[i]); i += 1 }
+            i += 1 // consume the closing fence; at EOF the block just ends open
+            out.push(e('pre', null, e('code', fence[1] !== '' ? { 'data-lang': fence[1] } : null, body.join('\n'))))
+            continue
+          }
+          const h = /^(#{1,4})\s+(.*)$/.exec(line)
+          if (h !== null) { flushPara(); out.push(e('h' + String(h[1].length), null, mdInline(h[2]))); i += 1; continue }
+          if (/^\s*(---+|\*\*\*+)\s*$/.test(line)) { flushPara(); out.push(e('hr', null)); i += 1; continue }
+          const q = /^>\s?(.*)$/.exec(line)
+          if (q !== null) {
+            flushPara()
+            const body = [q[1]]
+            i += 1
+            for (; i < lines.length; i += 1) { const m2 = /^>\s?(.*)$/.exec(lines[i]); if (m2 === null) break; body.push(m2[1]) }
+            out.push(e('blockquote', null, e('p', null, mdInline(body.join('\n')))))
+            continue
+          }
+          const isUl = /^\s*[-*+]\s+/.test(line)
+          const isOl = /^\s*\d+[.)]\s+/.test(line)
+          if (isUl || isOl) {
+            flushPara()
+            const items: any[] = []
+            for (; i < lines.length; i += 1) {
+              const m2 = isUl ? /^\s*[-*+]\s+(.*)$/.exec(lines[i]) : /^\s*\d+[.)]\s+(.*)$/.exec(lines[i])
+              if (m2 === null) break
+              items.push(e('li', null, mdInline(m2[1])))
+            }
+            out.push(e(isUl ? 'ul' : 'ol', null, items))
+            continue
+          }
+          if (line.trim() === '') { flushPara(); i += 1; continue }
+          para.push(line); i += 1
+        }
+        flushPara()
+        return out
+      }
+
+      function MarkdownFallback(p: any) {
+        return e('div', { className: 'dbs-md' }, mdBlocks(String(p.text ?? '')))
+      }
+
       const Button = nat('Button', FallbackButton)
       const Input = nat('Input', FallbackInput)
-      const MarkdownText = nat('MarkdownText', FallbackText)
+      const MarkdownText = nat('MarkdownText', MarkdownFallback)
       const MessageText = nat('MessageText', FallbackText)
       const StateDot = NATIVE.StateDot ?? null
 
@@ -146,7 +237,21 @@
 .dbs-userStack{flex-direction:column;align-items:flex-end;gap:8px;min-width:0;max-width:min(525px,82%);display:flex}
 .dbs-bubble{background:var(--dsw-specific-bubble);max-width:100%;color:var(--dsw-alias-label-primary);border-radius:22px;padding:10px 16px;font-size:16px;line-height:24px}
 .dbs-botRow{color:var(--dsw-alias-label-primary);flex-direction:column;font-size:16px;line-height:28px;display:flex;align-items:flex-start;gap:4px;width:100%}
-.dbs-author{font-size:12px;line-height:20px;color:var(--dsw-alias-label-tertiary);display:flex;align-items:center;gap:6px}
+.dbs-author{font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary);display:flex;align-items:center;gap:6px;font-weight:600;margin-bottom:2px;flex-wrap:wrap}
+.dbs-authorName{font-weight:600;letter-spacing:.2px}
+.dbs-md{min-width:0}
+.dbs-md p{margin:0 0 8px}
+.dbs-md p:last-child{margin-bottom:0}
+.dbs-md h1,.dbs-md h2,.dbs-md h3,.dbs-md h4{margin:12px 0 6px;line-height:1.35;font-weight:600}
+.dbs-md h1{font-size:20px}.dbs-md h2{font-size:18px}.dbs-md h3{font-size:16px}.dbs-md h4{font-size:15px}
+.dbs-md ul,.dbs-md ol{margin:0 0 8px;padding-left:22px}
+.dbs-md li{margin:2px 0}
+.dbs-md code{font-family:var(--dsw-font-family-mono,ui-monospace,monospace);font-size:.9em;background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06));border-radius:6px;padding:1px 5px}
+.dbs-md pre{margin:0 0 8px;background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06));border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));border-radius:10px;padding:10px 12px;overflow-x:auto}
+.dbs-md pre code{background:transparent;padding:0;font-size:.9em}
+.dbs-md blockquote{margin:0 0 8px;padding:2px 0 2px 10px;border-left:3px solid var(--dsw-alias-border-l2,rgba(0,0,0,.2));color:var(--dsw-alias-label-secondary)}
+.dbs-md a{color:var(--dsw-alias-state-business-primary,#1a6dff)}
+.dbs-md hr{border:none;border-top:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.15));margin:10px 0}
 .dbs-plain{white-space:pre-wrap;word-break:break-word}
 .dbs-toolCard{border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));background:var(--dsw-specific-bubble);border-radius:12px;padding:8px 12px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary);width:100%;box-sizing:border-box}
 .dbs-toolHdr{display:flex;align-items:center;gap:6px;color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px}
@@ -962,7 +1067,9 @@
       }
 
       /**
-       * The reply clock under one message.
+       * The reply clock under one message. Visible stamp carries the full
+       * date (Y-M-D HH:MM) per product call; the hover title keeps the
+       * locale-friendly "M 月 D 日 HH:MM" form.
        *
        * Suppressed while the entry is still streaming: a half-written turn has
        * no reply time yet, and stamping the tail would make the number twitch
@@ -971,7 +1078,10 @@
       function MsgTime(p: { entry: any }) {
         const ms = timeOf(p.entry)
         if (ms === null || p.entry.isStreaming === true) return null
-        return e('span', { className: 'dbs-msgTime', title: stampOf(ms) }, clockOf(ms))
+        const d = new Date(ms)
+        const p2 = (n: number) => String(n).padStart(2, '0')
+        return e('span', { className: 'dbs-msgTime', title: stampOf(ms) },
+          d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) + ' ' + clockOf(ms))
       }
 
       function ToolCard(p: { entry: any }) {
@@ -999,7 +1109,7 @@
           open && en.content !== '' ? e('div', { className: 'dbs-toolBody' }, en.content) : null)
       }
 
-      function Entry(p: { entry: any; isGroup: boolean }) {
+      function Entry(p: { entry: any; isGroup: boolean; agent: any }) {
         const en = p.entry
         if (en.display === 'user') {
           return e('div', { className: 'dbs-userRow' },
@@ -1015,12 +1125,27 @@
           if (en.content === '') return null
           return e('div', { className: 'dbs-meta', style: { textAlign: 'center' } }, en.content)
         }
+        // Bot message: avatar + prominent per-author name + full-datetime in
+        // one header row, so multi-member rooms read at a glance.
+        const authorKnown = typeof en.authorId === 'string' && en.authorId !== ''
+        const memberAgent = authorKnown ? agentById(en.authorId) : null
+        const avAgent = memberAgent ?? {
+          id: authorKnown ? en.authorId : (p.agent?.id ?? 'bot'),
+          name: en.authorName ?? p.agent?.name ?? '',
+          avatarColor: memberAgent?.avatarColor,
+          avatarDataUrl: memberAgent?.avatarDataUrl,
+          isGroup: false,
+        }
+        const displayName = p.isGroup ? en.authorName : p.agent?.name
+        const authorColor = 'hsl(' + String(hueOf(avAgent.id)) + ' 55% 45%)'
         return e('div', { className: 'dbs-botRow' },
-          p.isGroup && en.authorName !== null
-            ? e('div', { className: 'dbs-author' }, en.authorName)
-            : null,
-          e(MarkdownText, { text: en.content, streaming: en.isStreaming === true }),
-          e(MsgTime, { entry: en }))
+          e('div', { className: 'dbs-author' },
+            e(Avatar, { agent: avAgent, size: 18 }),
+            displayName != null && displayName !== ''
+              ? e('span', { className: 'dbs-authorName', style: { color: authorColor } }, displayName)
+              : null,
+            e(MsgTime, { entry: en })),
+          e(MarkdownText, { text: en.content, streaming: en.isStreaming === true }))
       }
 
       function ChatView(p: { agentId: string }) {
@@ -1181,7 +1306,7 @@
                 e('span', null, dayLabelOf(ms))))
             }
           }
-          thread.push(e(Entry, { key: en.id !== '' ? en.id : String(i), entry: en, isGroup }))
+          thread.push(e(Entry, { key: en.id !== '' ? en.id : String(i), entry: en, isGroup, agent }))
         })
 
         return e('div', { className: 'dbs-chatview', style: { left: inset.left, right: inset.right } },
