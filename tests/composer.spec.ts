@@ -57,6 +57,6 @@ describe('message clocks', () => {
   })
 
   it('stamps user turns, bot replies and tool cards', () => {
-    expect(SOURCE.match(/e\(MsgTime, \{ entry: en \}\)/g)?.length).toBe(3)
+    expect(SOURCE.match(/e\(MsgTime, \{ entry: en \}\)/g)?.length).toBe(4)
   })
 })

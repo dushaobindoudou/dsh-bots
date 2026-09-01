@@ -291,6 +291,33 @@
 .dbs-mentionRow{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary)}
 .dbs-mentionRow[data-active="true"],.dbs-mentionRow:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dbs-empty{color:var(--dsw-alias-label-tertiary);font-size:14px;line-height:22px;text-align:center;padding:32px 0}
+.dbs-scrollArea{position:relative;flex:1;min-height:0;display:flex;flex-direction:column}
+.dbs-scrollBody::-webkit-scrollbar{width:10px}
+.dbs-scrollBody::-webkit-scrollbar-thumb{background:var(--dsw-alias-border-l2,rgba(0,0,0,.18));border-radius:5px;border:3px solid transparent;background-clip:content-box}
+.dbs-scrollBody::-webkit-scrollbar-thumb:hover{background:var(--dsw-alias-label-caption,var(--dsw-alias-border-l2,rgba(0,0,0,.25)));border:3px solid transparent;background-clip:content-box}
+.dbs-scrollBody::-webkit-scrollbar-track{background:transparent}
+.dbs-jump{position:absolute;right:20px;bottom:12px;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));background:var(--dsw-specific-input-major,var(--dsw-alias-bg-layer-1,#fff));box-shadow:var(--dsw-shadow-lv2);color:var(--dsw-alias-label-secondary);cursor:pointer;z-index:5;transition:opacity .15s ease,transform .15s ease}
+.dbs-jump:hover{color:var(--dsw-alias-label-primary);transform:translateY(-1px)}
+.dbs-jump[data-show="false"]{opacity:0;pointer-events:none;transform:translateY(4px)}
+.dbs-typing{display:inline-flex;align-items:center;gap:4px;padding:6px 2px}
+.dbs-typing span{width:6px;height:6px;border-radius:999px;background:var(--dsw-alias-label-tertiary);animation:dbsTyping 1.2s ease-in-out infinite}
+.dbs-typing span:nth-child(2){animation-delay:.15s}
+.dbs-typing span:nth-child(3){animation-delay:.3s}
+@keyframes dbsTyping{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+.dbs-mdRow{display:flex;align-items:flex-start;gap:0;min-width:0;width:100%}
+.dbs-caret{flex:none;display:inline-block;width:3px;height:18px;margin-top:5px;border-radius:2px;background:var(--dsw-alias-label-primary);animation:dbsCaret 1s steps(2) infinite}
+@keyframes dbsCaret{0%,49%{opacity:1}50%,100%{opacity:0}}
+.dbs-botRow[data-compact="true"]{padding-left:26px}
+.dbs-compactTime{display:flex;justify-content:flex-end;width:100%}
+.dbs-compactTime .dbs-msgTime{padding:0}
+.dbs-welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:6px;padding:64px 24px 32px;min-height:50%}
+.dbs-welcomeName{font-size:18px;line-height:26px;font-weight:600;color:var(--dsw-alias-label-primary)}
+.dbs-welcomeDesc{font-size:14px;line-height:22px;color:var(--dsw-alias-label-secondary);max-width:420px}
+.dbs-welcomeHint{font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary);margin-top:12px}
+.dbs-skeleton{display:flex;flex-direction:column;gap:18px;padding:24px 0;max-width:560px}
+.dbs-skelRow{height:16px;border-radius:8px;background:linear-gradient(90deg,var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06)) 25%,var(--dsw-alias-border-l1,rgba(0,0,0,.08)) 50%,var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06)) 75%);background-size:200% 100%;animation:dbsShimmer 1.4s ease-in-out infinite}
+@keyframes dbsShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.dbs-composerCard:focus-within{border-color:var(--dsw-alias-state-business-primary,#1a6dff)}
 
 .dbs-settings{padding:4px 0 24px;max-width:640px;font-family:var(--dsw-font-family,inherit)}
 .dbs-setcard{border:1px solid var(--dsw-alias-border-l,rgba(0,0,0,.12));border-radius:12px;padding:14px 16px;margin-top:14px}
@@ -346,7 +373,9 @@
         'chat.group': '群聊 · {n} 名成员',
         'chat.single': '单聊',
         'chat.loading': '加载中…',
-        'chat.empty': '还没有消息，发一条开始对话',
+        'chat.empty.single': '给 {name} 发第一条消息，开始你们的对话',
+        'chat.empty.group': '在群里说点什么，成员们会接龙回复',
+        'chat.jump': '回到底部',
         'chat.composing': '生成中',
         'chat.composingHint': '正在生成，请稍候',
         'chat.placeholder.group': '@名字 可定向，默认全员',
@@ -415,7 +444,9 @@
         'chat.group': 'Group · {n} members',
         'chat.single': 'Direct',
         'chat.loading': 'Loading…',
-        'chat.empty': 'No messages yet — send one to start.',
+        'chat.empty.single': 'Send the first message to {name} and start the conversation.',
+        'chat.empty.group': 'Say something in the room — members will pick it up.',
+        'chat.jump': 'Jump to latest',
         'chat.composing': 'Generating',
         'chat.composingHint': 'Generating, please wait',
         'chat.placeholder.group': 'Use @name to direct a turn; everyone by default',
@@ -1109,7 +1140,7 @@
           open && en.content !== '' ? e('div', { className: 'dbs-toolBody' }, en.content) : null)
       }
 
-      function Entry(p: { entry: any; isGroup: boolean; agent: any }) {
+      function Entry(p: { entry: any; isGroup: boolean; agent: any; compact?: boolean }) {
         const en = p.entry
         if (en.display === 'user') {
           return e('div', { className: 'dbs-userRow' },
@@ -1124,6 +1155,16 @@
         if (en.display === 'event') {
           if (en.content === '') return null
           return e('div', { className: 'dbs-meta', style: { textAlign: 'center' } }, en.content)
+        }
+        // Compact continuation of the same author's run: the header already
+        // stands above; only the reply clock rides along, right-aligned and
+        // quiet — the way native IMs chain quick follow-ups under one name.
+        if (p.compact === true) {
+          return e('div', { className: 'dbs-botRow', 'data-compact': 'true' },
+            e('div', { className: 'dbs-mdRow' },
+              e(MarkdownText, { text: en.content, streaming: en.isStreaming === true }),
+              en.isStreaming === true ? e('span', { className: 'dbs-caret' }) : null),
+            e('div', { className: 'dbs-compactTime' }, e(MsgTime, { entry: en })))
         }
         // Bot message: avatar + prominent per-author name + full-datetime in
         // one header row, so multi-member rooms read at a glance.
@@ -1145,7 +1186,9 @@
               ? e('span', { className: 'dbs-authorName', style: { color: authorColor } }, displayName)
               : null,
             e(MsgTime, { entry: en })),
-          e(MarkdownText, { text: en.content, streaming: en.isStreaming === true }))
+          e('div', { className: 'dbs-mdRow' },
+            e(MarkdownText, { text: en.content, streaming: en.isStreaming === true }),
+            en.isStreaming === true ? e('span', { className: 'dbs-caret' }) : null))
       }
 
       function ChatView(p: { agentId: string }) {
@@ -1195,10 +1238,28 @@
 
         React.useEffect(() => { fitInput() }, [input, p.agentId])
 
-        // Keep the newest turn in view, the way a native conversation does.
+        // Stick-to-bottom: follow new output only while the reader already
+        // sits at the tail; the moment they scroll up to reread, the thread
+        // stops yanking them down and a jump-to-latest pill appears instead —
+        // the native conversation contract.
+        const stickRef = React.useRef(true)
+        const [showJump, setShowJump] = React.useState(false)
+        function onScrollBody(): void {
+          const el = scrollRef.current
+          if (el === null || el === undefined) return
+          const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+          stickRef.current = distance < 80
+          const next = distance > 240
+          setShowJump((prev: boolean) => (prev === next ? prev : next))
+        }
+        function jumpToLatest(): void {
+          const el = scrollRef.current
+          if (el !== null && el !== undefined) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+        }
         React.useEffect(() => {
-          const node = scrollRef.current
-          if (node !== null && node !== undefined) node.scrollTop = node.scrollHeight
+          const el = scrollRef.current
+          if (el === null || el === undefined) return
+          if (stickRef.current) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
         }, [entries, composing])
 
         const memberNames = React.useMemo(() => {
@@ -1294,19 +1355,29 @@
         // Day dividers, folded in during render: a bare `HH:MM` turns
         // ambiguous the moment a transcript crosses midnight, so the date is
         // stated once and the rows beneath it carry only the clock.
+        // Consecutive same-author bot messages within the window group under
+        // one header — follow-ups go compact, the native IM run pattern.
+        const GROUP_WINDOW_MS = 5 * 60 * 1000
         const thread: any[] = []
         let lastDay: number | null = null
+        let run: { authorId: string | null; at: number } | null = null
         list.forEach((en: any, i: number) => {
           const ms = timeOf(en)
           if (ms !== null) {
             const day = dayIndexOf(ms)
             if (day !== lastDay) {
               lastDay = day
+              run = null
               thread.push(e('div', { className: 'dbs-dayDivider', key: 'day:' + String(day) },
                 e('span', null, dayLabelOf(ms))))
             }
           }
-          thread.push(e(Entry, { key: en.id !== '' ? en.id : String(i), entry: en, isGroup, agent }))
+          const authorId = en.display === 'bot' && typeof en.authorId === 'string' ? en.authorId : null
+          const compact = authorId !== null && run !== null && run.authorId === authorId
+            && ms !== null && run.at !== null && ms - run.at >= 0 && ms - run.at <= GROUP_WINDOW_MS
+          if (authorId !== null) run = { authorId, at: ms ?? run?.at ?? 0 }
+          else run = null
+          thread.push(e(Entry, { key: en.id !== '' ? en.id : String(i), entry: en, isGroup, agent, compact }))
         })
 
         return e('div', { className: 'dbs-chatview', style: { left: inset.left, right: inset.right } },
@@ -1325,15 +1396,33 @@
             ? e('div', { className: 'dbs-error', onClick: () => setError(null) }, error)
             : null,
 
-          e('div', { className: 'dbs-scrollBody', ref: scrollRef },
-            e('div', { className: 'dbs-scroll' },
-              e('div', { className: 'dbs-column' },
-                entries === null
-                  ? e('div', { className: 'dbs-empty' }, t('chat.loading'))
-                  : list.length === 0
-                    ? e('div', { className: 'dbs-empty' }, t('chat.empty'))
-                    : thread,
-                composing ? e('div', { className: 'dbs-turnStatus' }, t('chat.composing')) : null))),
+          e('div', { className: 'dbs-scrollArea' },
+            e('div', { className: 'dbs-scrollBody', ref: scrollRef, onScroll: onScrollBody },
+              e('div', { className: 'dbs-scroll' },
+                e('div', { className: 'dbs-column' },
+                  entries === null
+                    ? e('div', { className: 'dbs-skeleton' },
+                        e('div', { className: 'dbs-skelRow', style: { width: '42%' } }),
+                        e('div', { className: 'dbs-skelRow', style: { width: '76%' } }),
+                        e('div', { className: 'dbs-skelRow', style: { width: '58%' } }))
+                    : list.length === 0
+                      ? e('div', { className: 'dbs-welcome' },
+                          agent !== null ? e(Avatar, { agent, size: 44 }) : null,
+                          e('div', { className: 'dbs-welcomeName' }, agent?.name ?? ''),
+                          typeof agent?.description === 'string' && agent.description !== ''
+                            ? e('div', { className: 'dbs-welcomeDesc' }, agent.description) : null,
+                          e('div', { className: 'dbs-welcomeHint' },
+                            isGroup ? t('chat.empty.group') : t('chat.empty.single', { name: agent?.name ?? '' })))
+                      : thread,
+                  composing
+                    ? e('div', { className: 'dbs-typing', 'aria-label': t('chat.composing'), title: t('chat.composing') },
+                        e('span', null), e('span', null), e('span', null))
+                    : null))),
+            e('button', {
+              type: 'button', className: 'dbs-jump', 'data-show': showJump ? 'true' : 'false',
+              'aria-label': t('chat.jump'), title: t('chat.jump'),
+              onClick: jumpToLatest,
+            }, Ico('IconChevronDownOutline14', { size: 16 }))),
 
           e('div', { className: 'dbs-composerSeat' },
             e('div', { className: 'dbs-composer' },
