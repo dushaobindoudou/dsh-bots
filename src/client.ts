@@ -982,14 +982,23 @@
               }, Ico('IconAgentPresetOutline16', { size: 18 }) ?? '·')))
         }
 
+        // Accordion: expanding one nav group collapses the other. The sidebar
+        // is one column of attention, not two stacked browsers — collapsing a
+        // group stays a plain collapse, only the expand is exclusive.
+        function toggleNav(key: 'workspaces' | 'bots', isOpen: boolean): any {
+          if (isOpen) return { ...s.open, [key]: false }
+          const other: 'workspaces' | 'bots' = key === 'workspaces' ? 'bots' : 'workspaces'
+          return { ...s.open, [key]: true, [other]: false }
+        }
+
         function group(key: 'workspaces' | 'bots', title: string, iconName: string, body: any, trailing?: any) {
           const isOpen = s.open[key] !== false
           return e('div', { className: 'dbs-navGroup', 'data-open': isOpen },
             e('div', {
               className: 'dbs-prow', role: 'button', tabIndex: 0, 'aria-expanded': isOpen,
-              onClick: () => patch({ open: { ...s.open, [key]: !isOpen } }),
+              onClick: () => patch({ open: toggleNav(key, isOpen) }),
               onKeyDown: (ev: any) => {
-                if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); patch({ open: { ...s.open, [key]: !isOpen } }) }
+                if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); patch({ open: toggleNav(key, isOpen) }) }
               },
             },
               e(Chevron, { open: isOpen }),
