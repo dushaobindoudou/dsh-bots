@@ -426,7 +426,18 @@ curl -sN --compressed "http://127.0.0.1:$PORT/events?token=$TOKEN"
     Client 按 wfx 惯例每调用都发 `{args:{request}}`，故 Host 全部 14 个远端方法必须声明单个名为 `request` 的纯形参
     （无默认值/解构/rest，TS 类型会被擦除不影响 wire 名），否则报 `args fields do not match the descriptor: unexpected "request"`。
     零参方法（list/workspaces/sessions/sseState）已补参修复。新增方法时照此约定。
+34. **中文输入法 + Enter 发送 = 半截消息（2026-09-01 修）**：`onKeyDown` 里裸判 `ev.key === 'Enter'` 会把 IME 候选窗的**确认键**当成发送，
+    中文用户每选一次候选就误发一条半截消息（英文输入完全无感，故极易漏测）。修复 = keydown 首行守卫
+    `imeRef.current || ev.nativeEvent?.isComposing === true || ev.keyCode === 229` 直接 return（三重信号：Chromium 给 `isComposing`，
+    部分引擎只给 229，`imeRef` 由 `onCompositionStart/End` 维护兜底）；且 `compositionend` 在 Firefox/Safari **晚于** 提交键的 keydown 触发，
+    所以提交后的文本必须在 `onCompositionEnd` 里重读一次，不能只靠 `onChange`。
+35. **原生输入卡的三个隐形交互（同批补齐）**：① textarea **自增高**（`height='auto'` 再取 `scrollHeight`），固定高会让草稿被困在单行取景框里；
+    ② 点卡片留白要落光标（`onMouseDown` 上 `preventDefault` + `focus`，但对 `button/textarea/.dbs-mention` 放行）；
+    ③ 补全菜单的 Esc 必须 `stopPropagation()` —— `BotsLayer` 的 Escape 监听挂在 `window` 上，不拦就「关菜单」连带「关聊天」。
+    React 合成事件的 `stopPropagation` 会调底层原生同名方法，能拦住挂在 root 容器之上的 window 监听。
+36. **transcript 时间戳字段不统一**：新条目给 `timestampMs`，老条目可能是 `timestamp`/`createdAt`/`time`，值可能是**秒**或 ISO 串。
+    `trimEntry` 统一走 `entryTimestamp`（< 1e11 视作秒，纯数字串走 Number，其余走 `Date.parse`），否则整段会话不显示时间且无任何报错。
 
 ---
 
-*文档版本：2026-08-28 · 基于 multibot-sdk 0.3.0 · 正式插件包 dsh-plugin-bots 0.1.6 已装入真实 profile（按 dsh-plugin-template 重构，44 单测 + 14 端点 marker 集成 + fresh-profile 冒烟全绿）；M1 动态版 bots-1/pkg-13 保留作 dev 快迭代参照，重启 web 验收后停用。架构详见 DESIGN.md*
+*文档版本：2026-09-01 · 基于 multibot-sdk 0.3.0 · 正式插件包 dsh-plugin-bots 0.1.10 已装入真实 profile（按 dsh-plugin-template 重构，56 单测 + 14 端点 marker 集成 + fresh-profile 冒烟全绿）；M1 动态版 bots-1/pkg-13 保留作 dev 快迭代参照，重启 web 验收后停用。架构详见 DESIGN.md*

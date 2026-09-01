@@ -115,3 +115,36 @@ describe('trimEntry', () => {
     expect(trimEntry({ kind: 'message', role: 'assistant', content: 'par', isStreaming: true }).isStreaming).toBe(true)
   })
 })
+
+/**
+ * The chat draws a reply clock straight off `timestampMs`. sdk-bots names and
+ * scales that field several ways depending on the entry's age, and every shape
+ * it misses renders as a message with no time at all.
+ */
+describe('trimEntry timestamps', () => {
+  it('reads the modern millisecond field', () => {
+    expect(trimEntry({ kind: 'send-message', timestampMs: 1787904514609 }).timestampMs).toBe(1787904514609)
+  })
+
+  it('accepts the older field names', () => {
+    expect(trimEntry({ kind: 'message', timestamp: 1787904514609 }).timestampMs).toBe(1787904514609)
+    expect(trimEntry({ kind: 'message', createdAt: 1787904514609 }).timestampMs).toBe(1787904514609)
+    expect(trimEntry({ kind: 'message', time: 1787904514609 }).timestampMs).toBe(1787904514609)
+  })
+
+  it('scales a seconds stamp up to milliseconds', () => {
+    expect(trimEntry({ kind: 'message', timestampMs: 1787904514 }).timestampMs).toBe(1787904514000)
+  })
+
+  it('parses an ISO string and a numeric string', () => {
+    expect(trimEntry({ kind: 'message', createdAt: '2026-08-31T06:48:34.609Z' }).timestampMs)
+      .toBe(Date.parse('2026-08-31T06:48:34.609Z'))
+    expect(trimEntry({ kind: 'message', timestamp: '1787904514609' }).timestampMs).toBe(1787904514609)
+  })
+
+  it('is null when the entry carries no readable time', () => {
+    expect(trimEntry({ kind: 'message' }).timestampMs).toBeNull()
+    expect(trimEntry({ kind: 'message', timestampMs: 0 }).timestampMs).toBeNull()
+    expect(trimEntry({ kind: 'message', timestamp: 'never' }).timestampMs).toBeNull()
+  })
+})

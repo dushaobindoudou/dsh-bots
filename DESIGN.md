@@ -181,7 +181,10 @@ src/
 ### 4.2 交互词汇（全用原生）
 - **入口**：侧栏底部原生「Bots」按钮（footer.action）；关闭 `Esc` / 点侧栏其他区域。
 - **会话流**：用户右对齐气泡、助手左对齐无气泡 `16px/28px`；流式尾部 `▊`；工具事件渲染为**卡片**（client-side-tool-v2）可折叠。
+- **消息时间**：每条用户/助手消息与工具卡片带 `HH:MM` 回复时间（tertiary 12px，hover 出完整日期）；跨天插入「今天/昨天/M 月 D 日」分隔条；流式中的尾条不打时间戳。
 - **Composer**：原生输入卡；空态发送钮置灰，生成中变**停止方块**；`@名字` 触发**成员补全菜单**（群聊定向）；Enter 发送 / Shift+Enter 换行。
+  输入框随内容**自增高**（上限 `--dsh-composer-text-max-height`，超出由卡片滚动），点卡片任意留白落光标，发送/切换会话后自动聚焦；
+  **中文输入法候选窗开启期间不响应 Enter/方向键/Esc**（`isComposing` + `keyCode 229` 双信号），补全菜单的 Esc 不外泄给关闭聊天的全局键。
 - **状态色**：运行中 `--dsw-alias-button-info-fill`（发送钮）、工具执行 `--dsw-specific-bubble` 卡片、错误 `--dsw-alias-state-error-primary`、
   完成 `--dsw-alias-state-success-primary`、冷却/告警 `--dsw-alias-state-warn-primary`。
 - **头像**：`/avatars/<id>` 独立 GET（相对 baseUrl）；群头像叠成员首字符。

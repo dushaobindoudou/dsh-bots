@@ -159,6 +159,36 @@ function entryText(en: any): string {
   return ''
 }
 
+/**
+ * Millisecond wall-clock time for one transcript entry, or null.
+ *
+ * sdk-bots is not consistent about the field name or the unit: newer entries
+ * carry `timestampMs`, older ones `timestamp`/`createdAt`/`time`, and either
+ * can arrive as an ISO string or as *seconds*. The chat draws a reply clock
+ * off this value, so reading only one shape silently renders a whole
+ * conversation with no times at all.
+ */
+function entryTimestamp(en: any): number | null {
+  for (const raw of [en?.timestampMs, en?.timestamp, en?.createdAt, en?.time]) {
+    const ms = toEpochMs(raw)
+    if (ms !== null) return ms
+  }
+  return null
+}
+
+/** Seconds/milliseconds/ISO -> epoch ms. Anything unreadable is null. */
+function toEpochMs(raw: unknown): number | null {
+  if (typeof raw === 'number') {
+    if (!Number.isFinite(raw) || raw <= 0) return null
+    // Below ~1973 in milliseconds is a seconds stamp, never a real date.
+    return Math.round(raw < 1e11 ? raw * 1000 : raw)
+  }
+  if (typeof raw !== 'string' || raw === '') return null
+  if (/^\d+$/.test(raw)) return toEpochMs(Number(raw))
+  const parsed = Date.parse(raw)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 /** Collapse a wire `kind` (plus role) onto the closed display union. */
 function entryDisplay(kind: string, role: string | null): TranscriptDisplay {
   if (kind.includes('tool')) return 'tool'
@@ -178,7 +208,7 @@ export function trimEntry(en: any): TranscriptEntry {
     id: String(en?.id ?? ''),
     kind,
     display,
-    timestampMs: Number.isFinite(en?.timestampMs) ? Number(en.timestampMs) : null,
+    timestampMs: entryTimestamp(en),
     role,
     content: entryText(en ?? {}),
     authorId: en?.author?.id ?? null,

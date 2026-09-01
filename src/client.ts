@@ -153,12 +153,17 @@
 .dbs-toolName{font:var(--dsw-font-markdown-code-block-small,inherit);font-size:13px}
 .dbs-toolBody{margin-top:4px;white-space:pre-wrap;word-break:break-word;max-height:190px;overflow:auto;color:var(--dsw-alias-label-tertiary)}
 .dbs-thinking{color:var(--dsw-alias-label-tertiary);font-size:14px;line-height:22px;white-space:pre-wrap;word-break:break-word;border-left:2px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));padding-left:10px}
+.dbs-msgTime{flex:none;font-size:12px;line-height:16px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;user-select:none;white-space:nowrap}
+.dbs-userRow .dbs-msgTime,.dbs-botRow .dbs-msgTime{padding:0 4px}
+.dbs-toolTrail{margin-left:auto;flex:none;display:inline-flex;align-items:center;gap:8px}
+.dbs-dayDivider{display:flex;align-items:center;justify-content:center}
+.dbs-dayDivider span{padding:2px 10px;border-radius:999px;background:var(--dsw-specific-bubble);color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;user-select:none}
 .dbs-turnStatus{height:26px;font-size:14px;font-weight:600;white-space:nowrap;background:linear-gradient(90deg,var(--dsw-static-deepseek-500,#4d6bfe) 0%,var(--dsw-static-deepseek-500,#4d6bfe) 40%,var(--dsw-static-deepseek-200,#b6c2ff) 50%,var(--dsw-static-deepseek-500,#4d6bfe) 60%,var(--dsw-static-deepseek-500,#4d6bfe) 100%);color:#0000;-webkit-text-fill-color:transparent;background-position:100% 0;background-size:250% 100%;-webkit-background-clip:text;background-clip:text;flex:none;align-self:flex-start;align-items:center;animation:1.8s linear infinite dbs-turn-status-shimmer;display:inline-flex}
 @keyframes dbs-turn-status-shimmer{to{background-position:0 0}}
 @media (prefers-reduced-motion:reduce){.dbs-turnStatus{background-position:0 0;background-size:100% 100%;animation:none}.dbs-arrow{transition:none}}
 .dbs-composerSeat{flex:none;display:flex;flex-direction:column;z-index:7;background:linear-gradient(180deg,color-mix(in srgb,var(--dsw-alias-bg-base) 0%,transparent) 0px,var(--dsw-alias-bg-base) 36px)}
 .dbs-composer{padding:0 var(--dsh-composer-side-clearance) 8px;flex-direction:column;align-items:center;display:flex}
-.dbs-composerCard{box-sizing:border-box;width:100%;max-width:var(--dsh-composer-card-max-width);border:1px solid var(--dsw-alias-border-l2-darkmode-thin,rgba(0,0,0,.12));background:var(--dsw-specific-input-major);box-shadow:var(--dsw-shadow-lv2);border-radius:22px;flex-direction:column;gap:12px;padding-top:10px;font-size:16px;line-height:24px;display:flex;position:relative}
+.dbs-composerCard{cursor:text;box-sizing:border-box;width:100%;max-width:var(--dsh-composer-card-max-width);border:1px solid var(--dsw-alias-border-l2-darkmode-thin,rgba(0,0,0,.12));background:var(--dsw-specific-input-major);box-shadow:var(--dsw-shadow-lv2);border-radius:22px;flex-direction:column;gap:12px;padding-top:10px;font-size:16px;line-height:24px;display:flex;position:relative}
 .dbs-composerScroll{max-height:var(--dsh-composer-text-max-height);overflow-y:auto}
 .dbs-composerRow{flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;min-width:0;padding:2px 8px 6px;display:flex}
 .dbs-composerTrailing{align-items:center;min-width:0;display:flex;flex:none;gap:8px;margin-left:auto}
@@ -242,6 +247,10 @@
         'chat.placeholder.group': '@名字 可定向，默认全员',
         'chat.placeholder.single': '给 {name} 发消息…',
         'chat.charCount': '{n} 字',
+        'time.today': '今天',
+        'time.yesterday': '昨天',
+        'time.date': '{m} 月 {d} 日',
+        'time.dateFull': '{y} 年 {m} 月 {d} 日',
         'tool.fallbackName': '工具',
         'settings.summary': '多 Bot 工作台，桥接 sdk-bots 编排网关。',
         'settings.probing': '检测中…',
@@ -307,6 +316,10 @@
         'chat.placeholder.group': 'Use @name to direct a turn; everyone by default',
         'chat.placeholder.single': 'Message {name}…',
         'chat.charCount': '{n} chars',
+        'time.today': 'Today',
+        'time.yesterday': 'Yesterday',
+        'time.date': '{m}/{d}',
+        'time.dateFull': '{y}/{m}/{d}',
         'tool.fallbackName': 'Tool',
         'settings.summary': 'Multi-bot workbench, bridged to the sdk-bots orchestration gateway.',
         'settings.probing': 'Probing…',
@@ -906,6 +919,61 @@
         return inset
       }
 
+      // =========================================================
+      // Message clocks.
+      //
+      // Formatted out of our own dictionary rather than `Intl.DateTimeFormat`,
+      // because the language every other string in this plugin follows is the
+      // shell's preference — not the browser's. 24-hour, tabular digits, same
+      // as the shipped surfaces.
+      // =========================================================
+
+      /** `HH:MM` for the message row. */
+      function clockOf(ms: number): string {
+        const d = new Date(ms)
+        return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
+      }
+
+      /** Local midnight index, so "same day" ignores the wall clock. */
+      function dayIndexOf(ms: number): number {
+        return Math.floor((ms - new Date(ms).getTimezoneOffset() * 60000) / 86400000)
+      }
+
+      /** 今天 / 昨天 / 8 月 30 日 / 2025 年 8 月 30 日 — the divider label. */
+      function dayLabelOf(ms: number): string {
+        const today = dayIndexOf(Date.now())
+        const day = dayIndexOf(ms)
+        if (day === today) return t('time.today')
+        if (day === today - 1) return t('time.yesterday')
+        const d = new Date(ms)
+        const params = { y: d.getFullYear(), m: d.getMonth() + 1, d: d.getDate() }
+        return d.getFullYear() === new Date().getFullYear() ? t('time.date', params) : t('time.dateFull', params)
+      }
+
+      /** Day + clock, for the hover title on a bare `HH:MM`. */
+      function stampOf(ms: number): string {
+        return dayLabelOf(ms) + ' ' + clockOf(ms)
+      }
+
+      /** Readable timestamp of an entry, or null when the gateway sent none. */
+      function timeOf(entry: any): number | null {
+        const ms = entry?.timestampMs
+        return typeof ms === 'number' && Number.isFinite(ms) ? ms : null
+      }
+
+      /**
+       * The reply clock under one message.
+       *
+       * Suppressed while the entry is still streaming: a half-written turn has
+       * no reply time yet, and stamping the tail would make the number twitch
+       * on every chunk.
+       */
+      function MsgTime(p: { entry: any }) {
+        const ms = timeOf(p.entry)
+        if (ms === null || p.entry.isStreaming === true) return null
+        return e('span', { className: 'dbs-msgTime', title: stampOf(ms) }, clockOf(ms))
+      }
+
       function ToolCard(p: { entry: any }) {
         const [open, setOpen] = React.useState(false)
         const en = p.entry
@@ -925,7 +993,9 @@
               ? e(StateDot, { state: en.toolStatus === 'running' ? 'ongoing' : en.toolStatus === 'error' ? 'error' : 'done', size: 10 })
               : e('span', { style: { width: 10, height: 10, borderRadius: 999, background: tone, display: 'inline-block' } }),
             e('span', { className: 'dbs-toolName' }, en.toolName ?? t('tool.fallbackName')),
-            en.content !== '' ? e('span', { className: 'dbs-meta', style: { marginLeft: 'auto' } }, open ? t('action.collapse') : t('action.expand')) : null),
+            e('span', { className: 'dbs-toolTrail' },
+              en.content !== '' ? e('span', { className: 'dbs-meta' }, open ? t('action.collapse') : t('action.expand')) : null,
+              e(MsgTime, { entry: en }))),
           open && en.content !== '' ? e('div', { className: 'dbs-toolBody' }, en.content) : null)
       }
 
@@ -934,7 +1004,8 @@
         if (en.display === 'user') {
           return e('div', { className: 'dbs-userRow' },
             e('div', { className: 'dbs-userStack' },
-              e('div', { className: 'dbs-bubble' }, e(MessageText, { text: en.content }))))
+              e('div', { className: 'dbs-bubble' }, e(MessageText, { text: en.content }))),
+            e(MsgTime, { entry: en }))
         }
         if (en.display === 'tool') return e(ToolCard, { entry: en })
         if (en.display === 'thinking') {
@@ -948,7 +1019,8 @@
           p.isGroup && en.authorName !== null
             ? e('div', { className: 'dbs-author' }, en.authorName)
             : null,
-          e(MarkdownText, { text: en.content, streaming: en.isStreaming === true }))
+          e(MarkdownText, { text: en.content, streaming: en.isStreaming === true }),
+          e(MsgTime, { entry: en }))
       }
 
       function ChatView(p: { agentId: string }) {
@@ -960,6 +1032,9 @@
         const [mention, setMention] = React.useState(null) // {query, index} | null
         const scrollRef = React.useRef(null)
         const inputRef = React.useRef(null)
+        // True between compositionstart/end: an IME candidate window owns the
+        // keyboard while it is open and must never see our Enter binding.
+        const imeRef = React.useRef(false)
 
         const agent = agentById(p.agentId)
         const isGroup = agent?.isGroup === true
@@ -983,6 +1058,18 @@
           // eslint-disable-next-line react-hooks/exhaustive-deps
         }, [p.agentId])
 
+        // The composer takes focus when a conversation opens, and keeps its
+        // height in step with programmatic edits (send, mention completion,
+        // agent switch) — user typing is fitted inline, without a frame gap.
+        React.useEffect(() => {
+          const node = inputRef.current
+          if (node === null || node === undefined) return undefined
+          node.focus()
+          return undefined
+        }, [p.agentId])
+
+        React.useEffect(() => { fitInput() }, [input, p.agentId])
+
         // Keep the newest turn in view, the way a native conversation does.
         React.useEffect(() => {
           const node = scrollRef.current
@@ -998,14 +1085,42 @@
           // eslint-disable-next-line react-hooks/exhaustive-deps
         }, [isGroup, agent, s.agents])
 
-        function onInputChange(value: string) {
-          setInput(value)
-          if (!isGroup) return
-          // `@` completion for directed group turns: only while the caret sits
-          // in the mention token being typed.
-          const upto = value.slice(0, (inputRef.current?.selectionStart ?? value.length))
+        /**
+         * Grow the textarea to its content, the way the shipped card does:
+         * one row when empty, taller line by line, and `.dbs-composerScroll`
+         * caps it at `--dsh-composer-text-max-height`. A fixed-height textarea
+         * scrolled its own body instead — the one thing the native card never
+         * does — so a long draft became a 1-line peephole.
+         */
+        function fitInput(node?: any): void {
+          const el = node ?? inputRef.current
+          if (el === null || el === undefined) return
+          el.style.height = 'auto'
+          el.style.height = String(el.scrollHeight) + 'px'
+        }
+
+        /**
+         * `@` completion for directed group turns, driven by the caret rather
+         * than by the keystroke: moving the caret back into a half-typed
+         * mention re-opens the menu, and moving out of it closes the menu.
+         */
+        function syncMention(node: any): void {
+          if (!isGroup || node === null || node === undefined) { setMention(null); return }
+          const value = String(node.value)
+          const upto = value.slice(0, node.selectionStart ?? value.length)
           const m = /@([^\s@]*)$/.exec(upto)
-          setMention(m === null ? null : { query: m[1], index: 0 })
+          // Identity-stable when nothing changed, so a caret sweep does not
+          // re-render the menu (and does not reset the highlighted row).
+          setMention((prev: any) => {
+            if (m === null) return null
+            return prev !== null && prev.query === m[1] ? prev : { query: m[1], index: 0 }
+          })
+        }
+
+        function onInputChange(node: any): void {
+          setInput(String(node.value))
+          fitInput(node)
+          syncMention(node)
         }
 
         const mentionHits = mention === null
@@ -1018,7 +1133,16 @@
           const before = input.slice(0, caret).replace(/@([^\s@]*)$/, '@' + a.name + ' ')
           setInput(before + input.slice(caret))
           setMention(null)
-          if (node !== null && node !== undefined) node.focus()
+          if (node === null || node === undefined) return
+          node.focus()
+          // React rewrites `value` on the next commit, which parks the caret at
+          // the end of the whole draft; put it back behind the name completed.
+          window.requestAnimationFrame(() => {
+            const live = inputRef.current
+            if (live === null || live === undefined) return
+            live.setSelectionRange(before.length, before.length)
+            fitInput(live)
+          })
         }
 
         async function doSend() {
@@ -1028,14 +1152,37 @@
           try {
             await botsCall('send', { agentId: p.agentId, prompt: text })
             setInput('')
+            setMention(null)
             await refreshAgents()
             await loadTranscript()
           } catch (err: any) { setError(String(err?.message ?? err)) }
           setSending(false)
+          // The caret stays in the composer after a send, as in every native
+          // thread: the next turn is typed without reaching for the mouse.
+          const node = inputRef.current
+          if (node !== null && node !== undefined) node.focus()
         }
 
         const list = (entries ?? []) as any[]
         const inset = useCentreInset()
+
+        // Day dividers, folded in during render: a bare `HH:MM` turns
+        // ambiguous the moment a transcript crosses midnight, so the date is
+        // stated once and the rows beneath it carry only the clock.
+        const thread: any[] = []
+        let lastDay: number | null = null
+        list.forEach((en: any, i: number) => {
+          const ms = timeOf(en)
+          if (ms !== null) {
+            const day = dayIndexOf(ms)
+            if (day !== lastDay) {
+              lastDay = day
+              thread.push(e('div', { className: 'dbs-dayDivider', key: 'day:' + String(day) },
+                e('span', null, dayLabelOf(ms))))
+            }
+          }
+          thread.push(e(Entry, { key: en.id !== '' ? en.id : String(i), entry: en, isGroup }))
+        })
 
         return e('div', { className: 'dbs-chatview', style: { left: inset.left, right: inset.right } },
           e('div', { className: 'dbs-chatbar' },
@@ -1060,12 +1207,25 @@
                   ? e('div', { className: 'dbs-empty' }, t('chat.loading'))
                   : list.length === 0
                     ? e('div', { className: 'dbs-empty' }, t('chat.empty'))
-                    : list.map((en: any, i: number) => e(Entry, { key: en.id !== '' ? en.id : String(i), entry: en, isGroup })),
+                    : thread,
                 composing ? e('div', { className: 'dbs-turnStatus' }, t('chat.composing')) : null))),
 
           e('div', { className: 'dbs-composerSeat' },
             e('div', { className: 'dbs-composer' },
-              e('div', { className: 'dbs-composerCard' },
+              e('div', {
+                className: 'dbs-composerCard',
+                // The whole card is the input's hit area natively — clicking
+                // its padding must land the caret, not swallow the click.
+                // Buttons and the mention menu keep their own targets.
+                onMouseDown: (ev: any) => {
+                  const node = inputRef.current
+                  if (node === null || node === undefined || node === ev.target) return
+                  if (typeof ev.target?.closest === 'function'
+                    && ev.target.closest('button, textarea, input, .dbs-mention') !== null) return
+                  ev.preventDefault()
+                  node.focus()
+                },
+              },
                 mentionHits.length > 0
                   ? e('div', { className: 'dbs-mention' }, mentionHits.map((a: any, i: number) => e('div', {
                       key: a.id, className: 'dbs-mentionRow', 'data-active': i === (mention?.index ?? 0),
@@ -1076,8 +1236,27 @@
                   e('textarea', {
                     ref: inputRef, className: 'dbs-composerInput', value: input, rows: 1,
                     placeholder: isGroup ? t('chat.placeholder.group') : t('chat.placeholder.single', { name: agent?.name ?? '' }),
-                    onChange: (ev: any) => onInputChange(ev.target.value),
+                    // Native chrome: no spellcheck squiggles, no autocomplete
+                    // dropdown over the card, and a plain multi-line seat.
+                    spellCheck: false, autoComplete: 'off', autoCorrect: 'off', autoCapitalize: 'off',
+                    onChange: (ev: any) => onInputChange(ev.target),
+                    // Caret moves (click, arrows, Home/End) re-evaluate the
+                    // mention token, so the menu tracks the caret, not typing.
+                    onSelect: (ev: any) => syncMention(ev.target),
+                    onCompositionStart: () => { imeRef.current = true },
+                    onCompositionEnd: (ev: any) => {
+                      imeRef.current = false
+                      // Firefox/Safari fire this *after* the keydown that
+                      // committed the candidate, so the committed value has to
+                      // be picked up here rather than in the change handler.
+                      onInputChange(ev.target)
+                    },
+                    onBlur: () => setMention(null),
                     onKeyDown: (ev: any) => {
+                      // While an IME candidate window is open it owns Enter,
+                      // the arrows and Escape. `isComposing` is the standard
+                      // signal; keyCode 229 covers the engines that omit it.
+                      if (imeRef.current || ev.nativeEvent?.isComposing === true || ev.keyCode === 229) return
                       if (mentionHits.length > 0 && (ev.key === 'Enter' || ev.key === 'Tab')) {
                         ev.preventDefault(); applyMention(mentionHits[mention?.index ?? 0]); return
                       }
@@ -1088,7 +1267,11 @@
                         setMention({ ...mention, index: (((mention?.index ?? 0) + d) % n + n) % n })
                         return
                       }
-                      if (ev.key === 'Escape' && mention !== null) { ev.preventDefault(); setMention(null); return }
+                      if (ev.key === 'Escape' && mention !== null) {
+                        // Dismissing the menu must not also reach the overlay's
+                        // window-level Escape, which would close the chat.
+                        ev.preventDefault(); ev.stopPropagation(); setMention(null); return
+                      }
                       if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); void doSend() }
                     },
                   })),
