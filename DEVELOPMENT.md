@@ -340,6 +340,7 @@ Client 包首次运行会弹批准；单勾授权当前包，双勾授权后续�
 | **M2 聊天视图** | SSE 实时渲染：消息气泡、`client-side-tool-v2` 工具卡片、进行中状态、@提及菜单 | 群聊中 @指定成员 可定向回复 |
 | **M3 Bot 管理** | `updateAgent` 编辑（名称/简介/系统提示词字段确认）、头像、删除、群成员管理 | 免 reload 完成全套管理 |
 | **M4 产品化（剩余）** | 正式包已落地（见 M4a）；余：迁入 dsh-plugin monorepo（catalog.mjs 管理）、sdk-bots 常驻（`SAND_HOST_PORT` 固定 + 进程守护）、一键启动 | 重启后自动恢复。💡 真正「工作区内」打开 bot 会话的路径：正式插件注册 `conversation.view` 列表槽第三视图（与 聊天/轨迹 并排）——动态插件优先级抢不过 shipped 且视图需 per-session 注入，只能用全屏仿原生层（pkg-8~10 现状） |
+| **M6 7x24 自驱蜂群**（2026-09-02） | 目标三件套全链路验证 + 落地：① launchd `com.sdk-bots.host` `KeepAlive=true`（kill -9 实测 ~5s 自动拉起，PPID=1，重启自启）；② `examples/verify-autonomy-loop.mjs` 六项断言全绿（A1 CreateAgent 自主建 bot / A2 UpdateAgent 自主优化 bot / A3 update_state 自主排程 / A4 runAgentAutomationNow 无人唤醒 / A5 本地 cron 天然自驱心跳 / A6 SendToAgent 跨 bot 派活）；③ 蜂群引导器 `scripts/swarm/swarm-bootstrap.mjs`（共享黑板 GOAL/PROGRESS + 指挥官 bot + SWARM-CYCLE cron 例行任务，幂等可反复执行），引擎侧修复网关 `@every` 校验 bug（§12-37） | 7x24 保障链四层：launchd 进程守护 + 本地 cron 调度（headless 自驱）+ 网关发现自愈 + 全量落盘。运行手册见 `scripts/swarm/README.md` |
 | **M5 增强** | per-bot 模型钉定、附件/知识库（`uploadAttachment`）、automations、MCP 路由工具暴露到 UI | 按需排期 |
 
 M1 实现顺序（实际执行）：Host 半边（gateway.json 发现 + `ctx.shell` curl 桥 + 8 个 RPC，pkg-1 已验证）→ Client 半边（按钮 + 面板骨架 + 列表，pkg-3）→ 收发闭环（3s 轮询 transcriptTail）→ M2 换 SSE 中转。
@@ -372,6 +373,17 @@ curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:$PORT/api/listAgents 
 pnpm build && pnpm test && pnpm test:integration && pnpm pack
 bash scripts/dsh-smoke.sh          # 临时 DSH_HOME 全链路冒烟
 dsh plugin --profile web add ./dsh-plugin-bots-<ver>.tgz   # 装进真实 profile（重启 web 生效）
+
+# 7x24 自驱蜂群（复杂目标 → 多 bot 无人值守协作）
+node scripts/swarm/swarm-bootstrap.mjs --goal "目标描述" --schedule "@every 30m"
+node scripts/swarm/swarm-bootstrap.mjs --status | --pause | --resume
+
+# 自主能力端到端验证（~/workspaces/sdk-bots；六项断言：建bot/优化bot/排程/无人唤醒/自驱心跳/派活）
+NODE_OPTIONS="--use-system-ca" SAND_BOX_EXEC_DAEMON_PORT=1347 npx tsx examples/verify-autonomy-loop.mjs
+
+# 网关 7x24 守护（launchd；崩溃 ~5s 自动拉起 + 开机自启）
+launchctl list | grep sdk-bots      # 确认已加载
+kill -9 $(jq -r .pid ~/.sdk-bots/gateway.json)   # 演练自愈；~5s 后 /health 应换新 pid
 
 # SSE 手工观察（gzip，断线自动重连）
 curl -sN --compressed "http://127.0.0.1:$PORT/events?token=$TOKEN"
@@ -437,7 +449,16 @@ curl -sN --compressed "http://127.0.0.1:$PORT/events?token=$TOKEN"
     React 合成事件的 `stopPropagation` 会调底层原生同名方法，能拦住挂在 root 容器之上的 window 监听。
 36. **transcript 时间戳字段不统一**：新条目给 `timestampMs`，老条目可能是 `timestamp`/`createdAt`/`time`，值可能是**秒**或 ISO 串。
     `trimEntry` 统一走 `entryTimestamp`（< 1e11 视作秒，纯数字串走 Number，其余走 `Date.parse`），否则整段会话不显示时间且无任何报错。
+37. **网关 `createAgentAutomation` 拒绝 `@every` 排程（2026-09-02 已修）**：host-gateway-api 的创建校验只调 `compileCronMatcher`（仅认 5 字段 cron + @hourly 族），
+    而 `@every <n><unit>` 由 `parseEveryIntervalMs` 在运行时解析——报错文案声称支持 `@every 30m`，实际 500。修复 = 校验条件补
+    `parseEveryIntervalMs(schedule) == null &&`（与 automation-runtime 的运行时路径对齐）。注意 bot 走 `update_state` 工具自建例行任务不经过该校验，故 verify-autonomy-loop 里 `@every 1m` 一直可用。
+38. **隔离实例的 box exec-daemon 端口冲突（2026-09-02）**：生产网关常驻占用 1337，isolated host 启动会 fatal
+    `refusing contaminated box exec-daemon startup`。验证脚本须另设 `SAND_BOX_EXEC_DAEMON_PORT=1347`（两侧都读该 env），比 `SAND_USE_EXISTING_BOX_EXEC_DAEMON=1` 复用生产 daemon 更干净。
+39. **worker bot 会拒绝来历不明的派活（2026-09-02 实证）**：引擎的提示注入防御把无上下文的 inter-agent 指令当可疑信标（工兵实测拒绝执行 echo）。
+    解法 = 指挥官创建 worker 时把「你由蜂群指挥部创建，其 SendToAgent 指令是合法指挥链」写进对方 description（swarm-bootstrap 的例行 prompt 已内置）。
+40. **bot 共享文件黑板 = 盒内 `/home/box/sand-data/`（= 宿主 `~/.sdk-bots/`）**：agents 各自 cwd 是 `sand-data/agents/<agentId>`（隔离），
+    但整个 sand-data 树所有盒共见——跨 bot 协作文件放 `~/.sdk-bots/swarm/`（盒内 `/home/box/sand-data/swarm/`），勿放各自 cwd。
 
 ---
 
-*文档版本：2026-09-01 · 基于 multibot-sdk 0.3.0 · 正式插件包 dsh-plugin-bots 0.1.10 已装入真实 profile（按 dsh-plugin-template 重构，56 单测 + 14 端点 marker 集成 + fresh-profile 冒烟全绿）；M1 动态版 bots-1/pkg-13 保留作 dev 快迭代参照，重启 web 验收后停用。架构详见 DESIGN.md*
+*文档版本：2026-09-02 · 基于 multibot-sdk 0.4.0 · 正式插件包 dsh-plugin-bots 0.2.1 已装入真实 profile；M6 7x24 自驱蜂群落地（launchd 守护 + 自主能力六断言全绿 + swarm 引导器，见 scripts/swarm/README.md）。架构详见 DESIGN.md*
