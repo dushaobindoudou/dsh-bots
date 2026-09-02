@@ -967,10 +967,24 @@
             }, Ico('IconTrashOutline16', { size: 14 })))
         }
 
-        function sectionRows(label: string, list: any[]) {
-          if (list.length === 0) return null
+        /**
+         * Section header + rows. The header always renders (even when the
+         * section is empty) so the far-right + is reachable from where you
+         * are: creating the first bot or group never requires a trip to the
+         * footer. `addAction` opens the same system-style modal as before.
+         */
+        function sectionRows(label: string, list: any[], addAction: { title: string; onClick: () => void }) {
           return e('div', { key: label },
-            e('div', { className: 'dbs-navBodyErr', style: { padding: '4px 12px 2px' } }, label),
+            e('div', {
+              className: 'dbs-navBodyErr',
+              style: { padding: '4px 8px 2px 12px', display: 'flex', alignItems: 'center' },
+            },
+              e('span', { style: { flex: 1 } }, label),
+              e(Button, {
+                variant: 'ghost', size: 'sm', title: addAction.title, 'aria-label': addAction.title,
+                icon: Ico('IconPlusOutline16', { size: 14 }),
+                onClick: addAction.onClick,
+              })),
             list.map(row))
         }
 
@@ -1003,8 +1017,18 @@
             : visible.length === 0
               ? e('div', { className: 'dbs-navBodyErr' }, connected ? t('list.empty') : t('gateway.offlineHint'))
               : null,
-          sectionRows(t('section.groups'), groups),
-          sectionRows(t('section.singles'), singles),
+          s.agentsLoaded
+            ? sectionRows(t('section.groups'), groups, {
+                title: t('group.new'),
+                onClick: () => patch({ create: 'group', createName: '', createMembers: {}, createWorking: false, error: null }),
+              })
+            : null,
+          s.agentsLoaded
+            ? sectionRows(t('section.singles'), singles, {
+                title: t('bot.new'),
+                onClick: () => patch({ create: 'bot', createName: '', createDesc: '', createWorking: false, error: null }),
+              })
+            : null,
           footer)
       }
 
