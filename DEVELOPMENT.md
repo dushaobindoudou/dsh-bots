@@ -479,6 +479,11 @@ curl -sN --compressed "http://127.0.0.1:$PORT/events?token=$TOKEN"
 43. **「暂停」的诚实边界（2026-09-02）**：引擎没有 bot 级 pause 概念（automations 只有 per-automation 开关）。
     当前「停止」= 中断当前 run；中断后 composing 态数秒~数十秒清除（免费池结算延迟，UI 停止期间禁用防双击即可）。
     bot 级「暂停接收新任务」需引擎侧新增字段，未做。
+44. **「UI 已更新但 RPC 404」= host 半边冻结，先查 dsh web 进程启动时间（2026-09-02 实证）**：dsh 对 profile 插件是
+    **client.js 按页面加载从磁盘现读**（`/plugins/<pkg>/client.js?rev=<hash>` 随文件变），**host 半边只在 dsh web 启动时加载一次**——
+    不重启就出现「新 UI 打旧 host」：管理成员/停止钮等新客户端功能可见，点保存却 `transport failure … HTTP 404`。
+    诊断：`lsof -iTCP:3080 -sTCP:LISTEN` 取 pid，`ps -p <pid> -o lstart=` 对比 profile 安装时间（`stat -f '%Sm' ~/.dsh/profiles/web/node_modules/dsh-plugin-bots/package.json`）；
+    进程早于安装时间 → 重启 dsh web 即愈。新增 host RPC 的版本发布提示必须强调「不重启 = 该 RPC 不存在」。
 
 ---
 
