@@ -11,6 +11,8 @@ const EXPECTED = [
   'gatewayInfo', 'list', 'workspaces', 'sessions',
   'create', 'createGroup', 'update', 'remove', 'send', 'transcriptTail',
   'markRead', 'diag', 'eventsSince', 'sseState',
+  'mcpServers', 'mcpTools', 'mcpAdd', 'mcpRemove', 'mcpRefresh', 'mcpExecute',
+  'workspaceList', 'workspaceGet', 'workspaceSet',
 ]
 
 let failed = 0

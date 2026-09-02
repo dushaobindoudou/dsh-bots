@@ -404,6 +404,30 @@
         'settings.events.off': '未连接',
         'settings.entry': '入口：',
         'settings.entry.value': '左侧边栏「工作区 ｜ Bots」折叠导航',
+        'settings.workspaceRoot': '工作区根目录：',
+        'settings.jail.title': 'Bot 工作区隔离',
+        'settings.jail.summary': '开启后，该 Bot 的每条 Shell 命令被 macOS Seatbelt 包裹：只允许写入自己的工作目录（工作区根/<名字>）与系统临时目录，越界写入被内核拒绝；读取不受限（共享黑板仍可读）。下次对话生效，无需重启。注意：同一名字的多个 Bot 会共享同一目录。',
+        'settings.jail.count': '已隔离：',
+        'settings.jail.on': '开启隔离',
+        'settings.jail.off': '解除',
+        'settings.jail.offConfirm': '确认解除？',
+        'settings.mcp': 'MCP 服务器',
+        'settings.mcp.summary': 'Bot 的工具扩展总线：服务器由 sdk-bots 引擎托管，所有 Bot 共享。',
+        'settings.mcp.empty': '未安装任何 MCP 服务器',
+        'settings.mcp.tools': '可用工具：',
+        'settings.mcp.add': '添加服务器',
+        'settings.mcp.adding': '添加中…',
+        'settings.mcp.namePlaceholder': '名称，例如 github',
+        'settings.mcp.configPlaceholder': '{"command": "npx", "args": ["-y", "server包"]} 或 {"url": "https://…/mcp"}',
+        'settings.mcp.exampleStdio': '填入本地 stdio 示例',
+        'settings.mcp.exampleUrl': '填入远程 URL 示例',
+        'settings.mcp.exampleStdioValue': '{"command": "node", "args": ["/path/to/server.mjs"]}',
+        'settings.mcp.exampleUrlValue': '{"url": "https://example.com/mcp", "headers": {"Authorization": "Bearer <token>"}}',
+        'settings.mcp.remove': '删除',
+        'settings.mcp.removeConfirm': '确认删除？',
+        'settings.mcp.restart': '重启连接',
+        'settings.mcp.restarting': '重启中…',
+        'settings.mcp.failed': '操作失败：',
         'error.noConnection': '连接服务尚未就绪',
         'error.callFailed': '调用失败',
         'error.badResponse': '意外的 RPC 响应',
@@ -475,6 +499,30 @@
         'settings.events.off': 'not connected',
         'settings.entry': 'Entry point: ',
         'settings.entry.value': 'Sidebar “Workspaces | Bots” collapsible nav',
+        'settings.workspaceRoot': 'Workspace root: ',
+        'settings.jail.title': 'Bot workspace jail',
+        'settings.jail.summary': 'When enabled, every shell command of that bot is wrapped in a macOS Seatbelt profile: writes are confined to its own workspace directory (workspace root /<name>) and the OS temp dir — out-of-bounds writes are denied by the kernel. Reads stay unrestricted (shared blackboards remain readable). Takes effect on the bot’s next turn, no restart. Note: bots sharing a name share one directory.',
+        'settings.jail.count': 'Jailed: ',
+        'settings.jail.on': 'Enable jail',
+        'settings.jail.off': 'Remove',
+        'settings.jail.offConfirm': 'Confirm removal?',
+        'settings.mcp': 'MCP servers',
+        'settings.mcp.summary': 'The tool-expansion bus for bots: servers are hosted by the sdk-bots engine and shared by every bot.',
+        'settings.mcp.empty': 'No MCP servers installed',
+        'settings.mcp.tools': 'Available tools: ',
+        'settings.mcp.add': 'Add server',
+        'settings.mcp.adding': 'Adding…',
+        'settings.mcp.namePlaceholder': 'Name, e.g. github',
+        'settings.mcp.configPlaceholder': '{"command": "npx", "args": ["-y", "package"]} or {"url": "https://…/mcp"}',
+        'settings.mcp.exampleStdio': 'Fill stdio example',
+        'settings.mcp.exampleUrl': 'Fill URL example',
+        'settings.mcp.exampleStdioValue': '{"command": "node", "args": ["/path/to/server.mjs"]}',
+        'settings.mcp.exampleUrlValue': '{"url": "https://example.com/mcp", "headers": {"Authorization": "Bearer <token>"}}',
+        'settings.mcp.remove': 'Remove',
+        'settings.mcp.removeConfirm': 'Confirm removal?',
+        'settings.mcp.restart': 'Restart connections',
+        'settings.mcp.restarting': 'Restarting…',
+        'settings.mcp.failed': 'Operation failed: ',
         'error.noConnection': 'Connection service is not ready yet',
         'error.callFailed': 'Call failed',
         'error.badResponse': 'Unexpected RPC response',
@@ -1558,6 +1606,184 @@
       // =========================================================
       // Settings section.
       // =========================================================
+      /**
+       * MCP servers card (DEVELOPMENT.md §13): the engine hosts the MCP
+       * stack, so this surface is a thin management view — list with live
+       * status, add (stdio or URL config JSON), remove (two-click confirm),
+       * restart. Tool try-run lives in the workbench, not here.
+       */
+      function McpCard() {
+        const [servers, setServers] = React.useState(null)
+        const [toolCount, setToolCount] = React.useState(null)
+        const [err, setErr] = React.useState(null)
+        const [busy, setBusy] = React.useState(false)
+        const [confirmId, setConfirmId] = React.useState(null)
+        const [adding, setAdding] = React.useState(false)
+        const [name, setName] = React.useState('')
+        const [configJson, setConfigJson] = React.useState('')
+        async function reload() {
+          setErr(null)
+          try {
+            const s = await botsCall<{ servers?: any[] }>('mcpServers', {})
+            setServers((s?.servers ?? []) as any[])
+            const tl = await botsCall<{ tools?: any[] }>('mcpTools', {})
+            setToolCount((tl?.tools ?? []).length)
+          } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
+        }
+        React.useEffect(() => { void reload() }, [])
+        async function run(fn: () => Promise<unknown>) {
+          setBusy(true); setErr(null)
+          try { await fn(); await reload() } catch (e2: any) { setErr(String(e2?.message ?? e2)) } finally { setBusy(false) }
+        }
+        function dotState(status: string): string {
+          if (status === 'connected') return 'done'
+          if (status === 'needsAuth') return 'warning'
+          if (status === 'error') return 'failed'
+          return 'ongoing'
+        }
+        async function submitAdd() {
+          if (busy || name.trim() === '' || configJson.trim() === '') return
+          await run(async () => {
+            await botsCall('mcpAdd', { name: name.trim(), configJson: configJson.trim() })
+            setAdding(false); setName(''); setConfigJson('')
+          })
+        }
+        return e('div', { className: 'dbs-setcard' },
+          e('div', { className: 'dbs-sethead' },
+            e('span', { className: 'dbs-title' }, t('settings.mcp')),
+            e('span', { style: { flex: 1 } }),
+            e(Button, { variant: 'ghost', size: 'sm', disabled: busy, onClick: () => void reload() }, t('action.refresh')),
+            e(Button, {
+              variant: 'ghost', size: 'sm', disabled: busy,
+              onClick: () => void run(() => botsCall('mcpRefresh', {})),
+            }, busy ? t('settings.mcp.restarting') : t('settings.mcp.restart')),
+            e(Button, { variant: 'outline', size: 'sm', disabled: busy, onClick: () => setAdding(!adding) }, t('settings.mcp.add'))),
+          e('div', { className: 'dbs-setrow' }, t('settings.mcp.summary')),
+          toolCount !== null
+            ? e('div', { className: 'dbs-setrow' }, t('settings.mcp.tools'), e('b', null, String(toolCount)))
+            : null,
+          adding ? e('div', { className: 'dbs-setcard', style: { margin: '6px 0' } },
+            e(Input, {
+              placeholder: t('settings.mcp.namePlaceholder'), value: name, disabled: busy,
+              onChange: (ev: any) => setName(ev.target.value),
+            }),
+            e('textarea', {
+              placeholder: t('settings.mcp.configPlaceholder'), value: configJson, disabled: busy,
+              rows: 3, onChange: (ev: any) => setConfigJson(ev.target.value),
+              style: {
+                width: '100%', marginTop: 6, padding: '6px 8px', fontSize: 12, lineHeight: '18px',
+                borderRadius: 8, border: '1px solid var(--dsw-alias-border-l, #ccc)', resize: 'vertical',
+                background: 'transparent', color: 'var(--dsw-alias-label-primary, inherit)', fontFamily: 'monospace',
+              },
+            }),
+            e('div', { className: 'dbs-setrow', style: { marginTop: 6 } },
+              e(Button, {
+                variant: 'ghost', size: 'sm', disabled: busy,
+                onClick: () => setConfigJson(t('settings.mcp.exampleStdioValue')),
+              }, t('settings.mcp.exampleStdio')),
+              e(Button, {
+                variant: 'ghost', size: 'sm', disabled: busy,
+                onClick: () => setConfigJson(t('settings.mcp.exampleUrlValue')),
+              }, t('settings.mcp.exampleUrl')),
+              e('span', { style: { flex: 1 } }),
+              e(Button, {
+                variant: 'primary', size: 'sm', disabled: busy || name.trim() === '' || configJson.trim() === '',
+                onClick: () => void submitAdd(),
+              }, busy ? t('settings.mcp.adding') : t('settings.mcp.add')))) : null,
+          servers === null
+            ? e('div', { className: 'dbs-setrow' }, t('settings.reading'))
+            : servers.length === 0
+              ? e('div', { className: 'dbs-setrow' }, t('settings.mcp.empty'))
+              : servers.map((sv: any) => e('div', {
+                  key: sv.id || sv.serverIdentifier, className: 'dbs-setrow',
+                  style: { alignItems: 'center' },
+                },
+                  StateDot !== null ? e(StateDot, { state: dotState(sv.status), size: 8 }) : null,
+                  e('b', null, sv.name || sv.serverIdentifier),
+                  e('span', { className: 'dbs-meta' },
+                    ` ${sv.status}${sv.transport !== '' ? ' · ' + sv.transport : ''} · ${sv.toolCount} tools`),
+                  sv.statusDetail ? e('span', { className: 'dbs-meta' }, ` · ${sv.statusDetail}`) : null,
+                  e('span', { style: { flex: 1 } }),
+                  e(Button, {
+                    variant: 'ghost', size: 'sm', disabled: busy,
+                    onClick: () => {
+                      if (confirmId !== sv.id) { setConfirmId(sv.id); return }
+                      setConfirmId(null)
+                      void run(() => botsCall('mcpRemove', { serverId: sv.id }))
+                    },
+                  }, confirmId === sv.id ? t('settings.mcp.removeConfirm') : t('settings.mcp.remove')))),
+          err !== null ? e('div', { className: 'dbs-setrow' }, t('settings.mcp.failed'), err) : null)
+      }
+
+      /**
+       * Workspace card: per-agent Seatbelt jail management (the engine owns
+       * the isolation; this surface edits each agent's settings.json jail
+       * keys — see DEVELOPMENT.md §14). Toggling writes the config; the jail
+       * arms on the bot's NEXT turn, no restart.
+       */
+      function WorkspaceCard() {
+        const [rows, setRows] = React.useState(null)
+        const [names, setNames] = React.useState({})
+        const [err, setErr] = React.useState(null)
+        const [busy, setBusy] = React.useState(false)
+        const [confirmId, setConfirmId] = React.useState(null)
+        async function reload() {
+          setErr(null)
+          try {
+            const ws = await botsCall<{ workspaces?: any[] }>('workspaceList', {})
+            setRows((ws?.workspaces ?? []) as any[])
+            const agents = await botsCall<{ agents?: any[] }>('list', {})
+            const map: Record<string, string> = {}
+            for (const a of agents?.agents ?? []) map[a.id] = a.name
+            setNames(map)
+          } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
+        }
+        React.useEffect(() => { void reload() }, [])
+        async function toggle(row: any) {
+          if (busy) return
+          setBusy(true); setErr(null)
+          try {
+            if (row.workspaceRoot === null) {
+              const slug = (names[row.agentId] ?? row.agentId).trim()
+              await botsCall('workspaceSet', { agentId: row.agentId, workspaceRoot: '/workspace/' + slug })
+            } else {
+              await botsCall('workspaceSet', { agentId: row.agentId, workspaceRoot: null })
+            }
+            await reload()
+          } catch (e2: any) { setErr(String(e2?.message ?? e2)) } finally { setBusy(false) }
+        }
+        const jailed = (rows ?? []).filter((r: any) => r.workspaceRoot !== null).length
+        return e('div', { className: 'dbs-setcard' },
+          e('div', { className: 'dbs-sethead' },
+            e('span', { className: 'dbs-title' }, t('settings.jail.title')),
+            e('span', { style: { flex: 1 } }),
+            e(Button, { variant: 'ghost', size: 'sm', disabled: busy, onClick: () => void reload() }, t('action.refresh'))),
+          e('div', { className: 'dbs-setrow' }, t('settings.jail.summary')),
+          rows !== null ? e('div', { className: 'dbs-setrow' }, t('settings.jail.count'), e('b', null, `${jailed} / ${rows.length}`)) : null,
+          rows === null
+            ? e('div', { className: 'dbs-setrow' }, t('settings.reading'))
+            : rows.map((row: any) => e('div', {
+                key: row.agentId, className: 'dbs-setrow', style: { alignItems: 'center' },
+              },
+                row.workspaceRoot !== null && StateDot !== null ? e(StateDot, { state: 'done', size: 8 }) : null,
+                e('b', null, names[row.agentId] ?? row.agentId),
+                row.workspaceRoot !== null
+                  ? e('span', { className: 'dbs-meta' }, ` ${row.workspaceRoot}${row.allowPaths.length > 0 ? ` · +${row.allowPaths.length}` : ''}`)
+                  : null,
+                e('span', { style: { flex: 1 } }),
+                e(Button, {
+                  variant: row.workspaceRoot !== null ? 'ghost' : 'outline', size: 'sm', disabled: busy,
+                  onClick: () => {
+                    if (row.workspaceRoot !== null && confirmId !== row.agentId) { setConfirmId(row.agentId); return }
+                    setConfirmId(null)
+                    void toggle(row)
+                  },
+                }, row.workspaceRoot !== null
+                  ? (confirmId === row.agentId ? t('settings.jail.offConfirm') : t('settings.jail.off'))
+                  : t('settings.jail.on')))),
+          err !== null ? e('div', { className: 'dbs-setrow' }, t('settings.mcp.failed'), err) : null)
+      }
+
       function BotsSettings() {
         const [info, setInfo] = React.useState(undefined)
         const [sse, setSse] = React.useState(null)
@@ -1587,10 +1813,15 @@
             err !== null ? e('div', { className: 'dbs-setrow' }, err) : null),
           e('div', { className: 'dbs-setcard' },
             e('div', { className: 'dbs-setrow' }, t('settings.dataDir'), e('b', null, info?.dataDir ?? t('settings.reading'))),
+            info?.workspaceRoot
+              ? e('div', { className: 'dbs-setrow' }, t('settings.workspaceRoot'), e('b', null, info.workspaceRoot))
+              : null,
             e('div', { className: 'dbs-setrow' }, t('settings.events'),
               e('b', null, sse?.running === true ? t('settings.events.on', { n: sse.buffered ?? 0 }) : t('settings.events.off')),
               sse?.lastError ? ' · ' + String(sse.lastError) : ''),
-            e('div', { className: 'dbs-setrow' }, t('settings.entry'), e('b', null, t('settings.entry.value')))))
+            e('div', { className: 'dbs-setrow' }, t('settings.entry'), e('b', null, t('settings.entry.value')))),
+          info?.ok === true ? e(WorkspaceCard) : null,
+          info?.ok === true ? e(McpCard) : null)
       }
 
       // =========================================================

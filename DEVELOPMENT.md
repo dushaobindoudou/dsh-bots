@@ -26,6 +26,7 @@
 11. [调试与验证手册](#11-调试与验证手册)
 12. [已知坑与注意事项](#12-已知坑与注意事项)
 13. [MCP 接入与实现方案（快速路径）](#13-mcp-接入与实现方案快速路径)
+14. [Per-agent 工作区隔离（workspace jail）](#14-per-agent-工作区隔离workspace-jail)
 
 ---
 
@@ -507,8 +508,8 @@ curl -sN --compressed "http://127.0.0.1:$PORT/events?token=$TOKEN"
 
 | 期 | 内容 | 工程量 |
 |---|---|---|
-| **P0 桥接** | Host 半边 6 个透传 RPC（全部 `callGateway` 现成命令）：`bots.mcpServers` / `bots.mcpTools` / `bots.mcpAdd {name, configJson}` / `bots.mcpRemove {serverId}` / `bots.mcpRefresh` / `bots.mcpExecute`。注意 §12-33 单 `request` 形参约定 | ~1 天 |
-| **P0 设置页** | 「MCP 服务器」分区：列表行（StateDot: connected/needsAuth/error + toolCount + transport）+ 添加（stdio command / URL 两栏，configJson 组装为 JSON 对象串）+ 删除（确认）+ 重启 + 自定义指令查看 | ~半天 |
+| **P0 桥接**（✅ 0.2.3 已落地） | Host 半边 6 个透传 RPC（全部 `callGateway` 现成命令）：`bots.mcpServers` / `bots.mcpTools` / `bots.mcpAdd {name, configJson}` / `bots.mcpRemove {serverId}` / `bots.mcpRefresh` / `bots.mcpExecute`。注意 §12-33 单 `request` 形参约定 | 23 端点集成断言全绿；网关只读冒烟通过（`{servers:[...]}` 包裹 + 裸数组工具行） |
+| **P0 设置页**（✅ 0.2.3 已落地） | 「MCP 服务器」分区：列表行（StateDot: connected/needsAuth/error + toolCount + transport）+ 添加（stdio / URL 示例一键填入的 configJson）+ 删除（两击确认）+ 重启 | ✅ |
 | **P1 工具面板** | 详情栏按 server 分组列 `mcpTools`（name/toolName/description/inputSchema）+ 单工具「试运行」（JSON args → `mcpExecute`，agentId 传当前 bot） | ~1 天 |
 | **P1 聊天卡片** | connector card（connect/connected 两态）渲染；MCP 工具调用经 `client-side-tool-v2` 卡片化；auth 完成 → `refreshMcp {completion}` 回执链 | ~1 天 |
 | **P2** | 插件市场 UI（listPlugins/install 已有 API）；box MCP 状态角标；per-bot 工具开关（引擎现为全局 `mcpDisabledToolsByServerId`，per-agent 需引擎小改） | 按需 |
@@ -530,4 +531,46 @@ curl -sN --compressed "http://127.0.0.1:$PORT/events?token=$TOKEN"
 
 ---
 
-*文档版本：2026-09-02 · 基于 multibot-sdk 0.4.0 · 正式插件包 dsh-plugin-bots 0.2.1 已装入真实 profile；M6 7x24 自驱蜂群落地（launchd 守护 + 自主能力六断言全绿 + swarm 引导器，见 scripts/swarm/README.md）；MCP 快速接入方案定稿（§13，引擎成品 + 插件暴露层）。架构详见 DESIGN.md*
+## 14. Per-agent 工作区隔离（workspace jail）
+
+> 需求：每个 agent 一个自己的工作目录，不能越界。**调查结论：引擎已有完整实现且生产在跑**——
+> 本插件零引擎改动，只做配置桥接 + 设置页 UI（0.2.3 落地）。
+
+### 14.1 引擎机制（源码锚点：`src/host/runner/agent-workspace-jail.ts`）
+
+| 环节 | 行为 |
+|---|---|
+| 配置面 | 每 agent 一份：`~/.sdk-bots/agents/<agentId>/settings.json` 的 `workspaceRoot`（`/workspace/<slug>`）+ 可选 `workspaceAllowPaths`（额外可写宿主路径） |
+| 隔离手段 | **macOS Seatbelt（`sandbox-exec`）内核级写隔离**：该 agent 的每条 Shell 命令被包成 `sandbox-exec -f <profile> /bin/sh -c '<原命令>'`，profile `(deny default)`，写白名单 = 自己的宿主目录（`<box-workspace>/<slug>`）+ allowPaths + OS 临时目录；**读取不受限**（共享黑板仍可读）；cwd 强制为该 agent 的虚拟根 |
+| 生效时机 | 每 turn 懒解析——改 settings.json 下一 turn 生效，**无需重启** |
+| profile 生成 | `~/.sdk-bots/workspace-jails/<agentId>.sb`，原子写、变更即更新 |
+| 失败语义 | **fail-closed**：配置存在但畸形（坏 slug / 越界绝对路径）直接抛错拒绝 turn，绝不静默裸奔 |
+| 限制条件 | darwin + `/usr/bin/sandbox-exec` 存在才启用；kill switch `SAND_AGENT_WORKSPACE_JAIL=0`；slug 允许 Unicode 字母（`录音师`/`编剧` 实证） |
+
+### 14.2 生产实证（2026-09-02）
+
+- `~/.sdk-bots/workspace-jails/` 已有 **5 份已武装 profile**（profile 只在 Shell 真正被 wrap 时写入）。
+- 实配样本：`录音师` → `/workspace/录音师` + allowPath `box-workspace/剧组共享`（剧组共享目录模式）；`编剧` profile 头实读
+  `(deny default)` + 仅自身目录写白名单。
+- 结论：隔离链路（配置 → 解析 → wrap → 内核强制）全链路真实运行，非纸面设计。
+
+### 14.3 插件桥接（0.2.3）
+
+| RPC | 语义 |
+|---|---|
+| `bots.workspaceList` | 扫 `<dataDir>/agents/*/settings.json`，返回每 bot 的 `{agentId, workspaceRoot, allowPaths}` |
+| `bots.workspaceGet {agentId}` | 单个读取 |
+| `bots.workspaceSet {agentId, workspaceRoot?, allowPaths?}` | 读-改-写 settings.json（保留其余字段）；`workspaceRoot: null` 解除隔离；slug 校验**镜像引擎规则**（引擎 fail-closed，坏配置会打断 bot turn，插件侧必须先行拦截） |
+
+设置页新增「Bot 工作区隔离」卡：根目录行 + 每 bot 一行（StateDot + slug + allowPaths 数）+ 开启（slug 默认取 bot 名）/两击确认解除。
+开启即写配置、下 turn 生效。**注意：同名的 bot 会共享同一工作目录**（slug 冲突），卡片文案已提示。
+
+### 14.4 边界声明（诚实约束）
+
+1. **读不受限**是设计而非缺陷：蜂群黑板（§12-40）、共享道具目录都依赖跨 bot 读。
+2. **Shell 命令内容**在 loopback 盒 = 宿主可信进程（§12-8）——Seatbelt 从内核面拦**写**，但 bot 若刻意请求宿主信任何级别的操作，仍属既有信任模型，不在本机制承诺内。
+3. 非 darwin 平台自动退化为「不隔离」（daemon 根级守卫仍在）。
+
+---
+
+*文档版本：2026-09-02 · 基于 multibot-sdk 0.4.0 · 正式插件包 dsh-plugin-bots 0.2.3 已装入真实 profile（MCP 桥接 §13 P0 + 工作区隔离桥接 §14）；M6 7x24 自驱蜂群落地（launchd 守护 + 自主能力六断言全绿 + swarm 引导器，见 scripts/swarm/README.md）。架构详见 DESIGN.md*

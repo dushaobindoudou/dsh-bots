@@ -238,6 +238,14 @@ src/
 | 工具浏览与试运行 → 放工作台详情栏（不在设置页） | 动作 | `listRoutedMcpTools` / `executeRoutedMcpTool` |
 | 聊天内自助安装 → 零开发，只补 connector card 渲染 | 只读 | transcript + `client-side-tool-v2` |
 
+**B⁺⁺. Bot 工作区隔离**（2026-09-02 追加；引擎已有 Seatbelt jail，方案见 DEVELOPMENT.md §14）
+
+| 条目 | 性质 | 数据源 |
+|---|---|---|
+| 每 bot 隔离状态行（StateDot + slug + allowPaths 数）+ 开启/解除 | 可写 | `bots.workspaceList/Get/Set`（写 agents/<id>/settings.json） |
+| 工作区根目录展示 | 只读 | `gatewayInfo.workspaceRoot` |
+| 生效语义说明（下 turn 生效、读不受限、同名共享目录） | 只读文案 | 静态 |
+
 **C. 数据与沙盒**
 
 | 条目 | 性质 | 数据源 | 优先级 |

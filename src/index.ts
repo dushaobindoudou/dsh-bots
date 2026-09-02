@@ -25,12 +25,13 @@ import { dirname, join } from 'node:path'
 import { appendFileSync, realpathSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import type {
-  AgentInfo, Config, EventsSinceResult, GatewayInfo, SessionInfo,
-  SseState, TranscriptEntry, WorkspaceInfo,
+  AgentInfo, Config, EventsSinceResult, GatewayInfo, McpServerInfo, McpToolInfo,
+  SessionInfo, SseState, TranscriptEntry, WorkspaceInfo,
 } from './shared.js'
 import { callGateway, discover, expandHome, nextNonce, normalizeAgents, readDiscovery, trimAgent, trimEntry } from './gateway.js'
 import { GatewaySseClient, SseRingBuffer } from './sse.js'
 import { UnreadStore } from './unread.js'
+import { listAgentWorkspaces, readAgentWorkspace, setAgentWorkspace } from './workspace.js'
 import { satisfiesCaret } from './version.js'
 
 export const name = 'dsh-plugin-bots'
@@ -205,7 +206,15 @@ export class BotsRemote extends TypertRemoteService {
     const dataDir = request?.dataDir ?? this.cfg.dataDir
     // Report the CONFIGURED directory, so the settings page stops showing a
     // hardcoded default after the operator overrides `dataDir` in cordis.yml.
-    return { ...await discover(dataDir), dataDir }
+    // workspaceRoot mirrors the engine's exec-daemon default (`<dataDir>/
+    // box-workspace`); once the engine exposes the authoritative value on
+    // /health we prefer it — the plugin-side fallback stays for older engines.
+    const discovered = await discover(dataDir)
+    const healthRoot = (discovered.health as any)?.workspaceRoot
+    const root = typeof healthRoot === 'string' && healthRoot.trim() !== ''
+      ? healthRoot
+      : join(expandHome(dataDir), 'box-workspace')
+    return { ...discovered, dataDir, workspaceRoot: root }
   }
 
   /**
@@ -323,6 +332,128 @@ export class BotsRemote extends TypertRemoteService {
     })
   }
 
+  // ==========================================================
+  // MCP bridge (DEVELOPMENT.md §13): the engine already ships a
+  // full MCP stack — management, routed tools, OAuth — so the
+  // plugin only forwards. Every method is a thin `callGateway`
+  // passthrough honoring the single-`request` descriptor rule.
+  // ==========================================================
+
+  /** Trim a gateway MCP server row to the settings-page projection. */
+  private trimMcpServer(row: any): McpServerInfo {
+    return {
+      id: String(row?.id ?? ''),
+      serverIdentifier: String(row?.serverIdentifier ?? row?.id ?? ''),
+      name: String(row?.name ?? ''),
+      status: String(row?.status ?? 'unknown'),
+      accountKey: String(row?.accountKey ?? ''),
+      transport: String(row?.transport ?? ''),
+      toolCount: Number(row?.toolCount ?? 0) || 0,
+      ...(row?.disabledToolCount == null ? {} : { disabledToolCount: Number(row.disabledToolCount) || 0 }),
+      ...(row?.statusDetail == null ? {} : { statusDetail: String(row.statusDetail) }),
+      ...(row?.customInstructions == null ? {} : { customInstructions: String(row.customInstructions) }),
+    }
+  }
+
+  /** Trim a routed MCP tool row (schema passed through verbatim). */
+  private trimMcpTool(row: any): McpToolInfo {
+    return {
+      name: String(row?.name ?? ''),
+      providerIdentifier: String(row?.providerIdentifier ?? ''),
+      toolName: String(row?.toolName ?? ''),
+      ...(row?.description == null ? {} : { description: String(row.description) }),
+      ...(row?.inputSchema == null ? {} : { inputSchema: row.inputSchema }),
+    }
+  }
+
+  /** Installed MCP servers (engine `management.listInstalled`). */
+  async mcpServers(request: unknown): Promise<{ servers: McpServerInfo[] }> {
+    const res = await callGateway<any>(this.cfg.dataDir, 'listMcpServers', {})
+    const rows: any[] = Array.isArray(res) ? res : Array.isArray(res?.servers) ? res.servers : []
+    return { servers: rows.map((r) => this.trimMcpServer(r)) }
+  }
+
+  /** All routed MCP tools across servers (engine `mcp.listTools`). */
+  async mcpTools(request: unknown): Promise<{ tools: McpToolInfo[] }> {
+    const res = await callGateway<any>(this.cfg.dataDir, 'listRoutedMcpTools', {})
+    const rows: any[] = Array.isArray(res) ? res : Array.isArray(res?.tools) ? res.tools : []
+    return { tools: rows.map((r) => this.trimMcpTool(r)) }
+  }
+
+  /**
+   * Register one MCP server. `configJson` must decode to a JSON object —
+   * either a stdio config (`{"command": "…", "args": […]}`) or a remote URL
+   * config; the gateway JSON.parses and re-validates it.
+   */
+  async mcpAdd(request: { name?: string; configJson?: string } | null): Promise<{ servers: McpServerInfo[] }> {
+    const name = String(request?.name ?? '').trim()
+    const configJson = String(request?.configJson ?? '').trim()
+    if (name === '') throw new Error('mcpAdd 需要 name')
+    if (configJson === '') throw new Error('mcpAdd 需要 configJson（stdio 或 URL 配置的 JSON 对象串）')
+    try { JSON.parse(configJson) } catch (e) {
+      throw new Error(`configJson 不是合法 JSON：${String((e as any)?.message ?? e)}`)
+    }
+    const res = await callGateway<any>(this.cfg.dataDir, 'addMcpServer', { name, configJson })
+    const rows: any[] = Array.isArray(res?.servers) ? res.servers : []
+    return { servers: rows.map((r) => this.trimMcpServer(r)) }
+  }
+
+  async mcpRemove(request: { serverId?: string } | null): Promise<unknown> {
+    const serverId = String(request?.serverId ?? '').trim()
+    if (serverId === '') throw new Error('mcpRemove 需要 serverId')
+    return callGateway(this.cfg.dataDir, 'removeMcpServer', { serverId })
+  }
+
+  /** Restart / reconnect all MCP servers (engine `management.restart`). */
+  async mcpRefresh(request: unknown): Promise<unknown> {
+    return callGateway(this.cfg.dataDir, 'refreshMcp', {})
+  }
+
+  /**
+   * Execute one routed MCP tool outside a bot turn (tool try-run panel).
+   * Passthrough of the gateway wire shape — note the engine swaps `name`/
+   * `toolName` on the way into the executor (DEVELOPMENT.md §13.5), so the
+   * caller maps `{name: row.toolName, toolName: row.name}` until实测 confirmed.
+   */
+  async mcpExecute(request: {
+    agentId?: string; name?: string; toolName?: string
+    providerIdentifier?: string; args?: unknown; toolCallId?: string
+  } | null): Promise<unknown> {
+    return callGateway(this.cfg.dataDir, 'executeRoutedMcpTool', {
+      agentId: request?.agentId,
+      name: request?.name,
+      toolName: request?.toolName,
+      providerIdentifier: request?.providerIdentifier,
+      args: request?.args ?? {},
+      toolCallId: request?.toolCallId ?? `dsh-try-${Date.now()}`,
+    })
+  }
+
+  // ==========================================================
+  // Per-agent workspace jail bridge. The ENGINE owns the isolation
+  // (macOS Seatbelt write confinement, engine `agent-workspace-jail.ts`);
+  // these methods only read/write the per-agent settings.json contract.
+  // ==========================================================
+
+  async workspaceList(request: unknown) {
+    return { workspaces: listAgentWorkspaces(expandHome(this.cfg.dataDir)) }
+  }
+
+  async workspaceGet(request: { agentId?: string } | null) {
+    const config = readAgentWorkspace(expandHome(this.cfg.dataDir), String(request?.agentId ?? ''))
+    if (config === null) throw new Error(`workspaceGet: agent 不存在或 id 不合法`)
+    return config
+  }
+
+  async workspaceSet(request: {
+    agentId?: string; workspaceRoot?: string | null; allowPaths?: string[]
+  } | null) {
+    return setAgentWorkspace(expandHome(this.cfg.dataDir), String(request?.agentId ?? ''), {
+      workspaceRoot: request?.workspaceRoot,
+      allowPaths: request?.allowPaths,
+    })
+  }
+
   /**
    * Append one diagnostic record to `<dataDir>/dsh-bots-diag.jsonl`.
    *
@@ -368,6 +499,8 @@ export class BotsRemote extends TypertRemoteService {
 for (const m of [
   'gatewayInfo', 'list', 'workspaces', 'sessions',
   'create', 'createGroup', 'update', 'remove', 'send', 'transcriptTail', 'markRead', 'diag',
+  'mcpServers', 'mcpTools', 'mcpAdd', 'mcpRemove', 'mcpRefresh', 'mcpExecute',
+  'workspaceList', 'workspaceGet', 'workspaceSet',
   'eventsSince', 'sseState',
 ]) {
   markRemoteMethod(BotsRemote.prototype, m)

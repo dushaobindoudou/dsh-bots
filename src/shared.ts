@@ -69,6 +69,13 @@ export interface GatewayInfo {
   reason?: string
   /** Effective sdk-bots data directory (from plugin config, not a constant). */
   dataDir?: string
+  /**
+   * Box workspace root the engine's exec-daemon guards paths against
+   * (plugin-computed default `<dataDir>/box-workspace`; the engine's
+   * `/health` value wins once the engine exposes it). Per-agent working
+   * directories live at `<root>/agents/<agentId>`.
+   */
+  workspaceRoot?: string
   health?: {
     pid: number | null
     isBusy: boolean
@@ -176,4 +183,34 @@ export interface EventsSinceResult {
    * semantics and never accumulates headless). Only non-zero entries appear.
    */
   unread?: Record<string, number>
+}
+
+/**
+ * One installed MCP server row (gateway `listMcpServers` projection).
+ * `status` is the runtime state reported by the engine — `connected`,
+ * `needsAuth`, `error`, … — the settings page maps it onto StateDot states.
+ */
+export interface McpServerInfo {
+  id: string
+  serverIdentifier: string
+  name: string
+  status: string
+  accountKey: string
+  transport: string
+  toolCount: number
+  disabledToolCount?: number
+  statusDetail?: string
+  customInstructions?: string
+  [key: string]: unknown
+}
+
+/** One routed MCP tool row (gateway `listRoutedMcpTools` projection). */
+export interface McpToolInfo {
+  /** Dynamic registration name the model addresses. */
+  name: string
+  providerIdentifier: string
+  /** Underlying tool name on the server. */
+  toolName: string
+  description?: string
+  inputSchema?: unknown
 }
