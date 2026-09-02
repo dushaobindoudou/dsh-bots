@@ -268,6 +268,7 @@ Client 包首次运行会弹批准；单勾授权当前包，双勾授权后续�
 | `uploadAttachment` / `readAttachment*` | | 附件上传/读取（M5 知识库用） |
 | `listMcpServers` / `addMcpServer` / `removeMcpServer` / `refreshMcp` | MCP 服务器管理（`addMcpServer {name, configJson}` 支持本地 stdio 与远程 URL） |
 | `listRoutedMcpTools` / `executeRoutedMcpTool {agentId,…}` / `listBoxMcpServers` | MCP 工具清单 / 定向执行 / 沙盒侧状态——全表与快速接入方案见 §13 |
+| `interruptAgent {id, reason?}` → `{hadActiveRun}` | 中断 agent 活动 run（composer 停止钮）。引擎 API 链路早已存在但**命令表漏注册**，2026-09-02 一行补丁接通（§12-41），隔离实例 e2e 四断言全绿（A1 空闲 no-op / A2 生成态到达 / A3 `hadActiveRun:true` / A4 状态清除） |
 | `createAgentAutomation` / `createAgentWorkflow` 系列 | | 定时/工作流（M5） |
 
 ### 7.3 群聊语义（实测自 `gateway-console.html`）
@@ -470,6 +471,14 @@ curl -sN --compressed "http://127.0.0.1:$PORT/events?token=$TOKEN"
     已读标记「上次读到哪」持久化 `<dataDir>/dsh-bots-unread.json`；每次 SSE (重)连 `onConnected` 拉全量 tail rebase 自愈（SSE 无重放，停机期间的事件靠这个找回）；
     首次启用把现有历史种子为已读（升级不炸出一墙积压徽章）；计数搭 `eventsSince.unread` 顺风车下发，零新增 RPC。
     Client：打开会话乐观清零 + 打开期间对本会话新到达去抖 1.2s markRead；离开视图时 pending 定时器随 effect 清理销毁（离开瞬间到达的消息保持未读语义）。
+42. **「API 面有 ≠ 网关能调」：`interruptAgent` 曾整链路存在却 404（2026-09-02）**：`host-gateway-api.ts` 实现齐全
+    （`manager.interruptAgentRun` → `runner-registry` → `turn-run-shell.interrupt`，AbortController `{intentional:true}` 取消），
+    但 `gateway-protocol.ts` 命令表漏注册，线上 `unknown gateway method`；且 dist 是陈旧构建（`interruptAgent` 从未编入）。
+    修复 = 命令表一行注册 + 规范全量重建（含 clean-dist）。**教训：给网关加能力必须 (a) 查命令表注册 (b) 确认 dist 含该方法。**
+    隔离实例 e2e 四断言全绿：A1 空闲中断诚实 `hadActiveRun:false` / A2 生成态到达 / A3 生成中 `hadActiveRun:true` / A4 中断后状态清除。
+43. **「暂停」的诚实边界（2026-09-02）**：引擎没有 bot 级 pause 概念（automations 只有 per-automation 开关）。
+    当前「停止」= 中断当前 run；中断后 composing 态数秒~数十秒清除（免费池结算延迟，UI 停止期间禁用防双击即可）。
+    bot 级「暂停接收新任务」需引擎侧新增字段，未做。
 
 ---
 
@@ -573,4 +582,4 @@ curl -sN --compressed "http://127.0.0.1:$PORT/events?token=$TOKEN"
 
 ---
 
-*文档版本：2026-09-02 · 基于 multibot-sdk 0.4.0 · 正式插件包 dsh-plugin-bots 0.2.3 已装入真实 profile（MCP 桥接 §13 P0 + 工作区隔离桥接 §14）；M6 7x24 自驱蜂群落地（launchd 守护 + 自主能力六断言全绿 + swarm 引导器，见 scripts/swarm/README.md）。架构详见 DESIGN.md*
+*文档版本：2026-09-02 · 基于 multibot-sdk 0.4.0 · 正式插件包 dsh-plugin-bots 0.2.6 已装入真实 profile（MCP 桥接 §13 P0 + 工作区隔离桥接 §14 + 成员管理 + composer 停止钮/interruptAgent 接通）；M6 7x24 自驱蜂群落地（launchd 守护 + 自主能力六断言全绿 + swarm 引导器，见 scripts/swarm/README.md）。架构详见 DESIGN.md*
