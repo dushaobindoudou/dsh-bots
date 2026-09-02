@@ -21,8 +21,9 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
-import { appendFileSync, realpathSync } from 'node:fs'
+import { dirname, extname, join, resolve, sep } from 'node:path'
+import { appendFileSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { spawn } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import type {
   AgentInfo, Config, EventsSinceResult, GatewayInfo, McpServerInfo, McpToolInfo,
@@ -301,6 +302,47 @@ export class BotsRemote extends TypertRemoteService {
     return trimAgent(updated?.agent ?? updated)
   }
 
+  /**
+   * Resolve a bot-written path against the media allowlist: only files inside
+   * the gateway data dir (agent dirs, box-workspace, swarm blackboard…) may
+   * be served or opened — the workbench must never become a disk-wide file
+   * reader. Symlinks resolve before the check so escapes fail closed.
+   */
+  private resolveMediaPath(raw: unknown): { resolved: string; ext: string } {
+    const p = String(raw ?? '').trim()
+    if (p === '') throw new Error('path is required')
+    const root = realpathSync(expandHome(this.cfg.dataDir))
+    let resolved = resolve(expandHome(p))
+    try { resolved = realpathSync(resolved) } catch { /* missing → prefix-check the literal path */ }
+    if (resolved !== root && !resolved.startsWith(root + sep)) {
+      throw new Error('path is outside the gateway data dir: ' + resolved)
+    }
+    return { resolved, ext: extname(resolved).toLowerCase() }
+  }
+
+  /** Inline-preview support: read a bot-written image as base64 for a data URL. */
+  async readImage(request: { path?: string } | null): Promise<{ mime: string; dataBase64: string; sizeBytes: number }> {
+    const { resolved, ext } = this.resolveMediaPath(request?.path)
+    const mime: string | undefined = ({
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+      '.webp': 'image/webp', '.bmp': 'image/bmp', '.svg': 'image/svg+xml',
+    } as Record<string, string>)[ext]
+    if (mime === undefined) throw new Error('not a supported image: ' + ext)
+    const stat = statSync(resolved)
+    if (!stat.isFile()) throw new Error('not a file: ' + resolved)
+    if (stat.size > 8 * 1024 * 1024) throw new Error('image exceeds the 8MB preview cap (' + stat.size + ' bytes)')
+    return { mime, dataBase64: readFileSync(resolved).toString('base64'), sizeBytes: stat.size }
+  }
+
+  /** Open a bot-written file with the desktop default app (macOS `open`). */
+  async openFile(request: { path?: string } | null): Promise<{ opened: boolean }> {
+    const { resolved } = this.resolveMediaPath(request?.path)
+    statSync(resolved) // missing → honest error instead of a silent no-op
+    const cmd = process.platform === 'darwin' ? 'open' : 'xdg-open'
+    spawn(cmd, [resolved], { detached: true, stdio: 'ignore' }).unref()
+    return { opened: true }
+  }
+
   async update(request: { id?: string; profile?: Record<string, unknown> } | null): Promise<AgentInfo | null> {
     const updated = await callGateway<any>(this.cfg.dataDir, 'updateAgent', {
       id: request?.id,
@@ -526,7 +568,7 @@ export class BotsRemote extends TypertRemoteService {
 
 for (const m of [
   'gatewayInfo', 'list', 'workspaces', 'sessions',
-  'create', 'createGroup', 'setGroupMembers', 'update', 'remove', 'send', 'interrupt', 'transcriptTail', 'markRead', 'diag',
+  'create', 'createGroup', 'setGroupMembers', 'update', 'remove', 'send', 'interrupt', 'readImage', 'openFile', 'transcriptTail', 'markRead', 'diag',
   'mcpServers', 'mcpTools', 'mcpAdd', 'mcpRemove', 'mcpRefresh', 'mcpExecute',
   'workspaceList', 'workspaceGet', 'workspaceSet',
   'eventsSince', 'sseState',

@@ -265,6 +265,12 @@
 .dbs-error{margin:4px 8px;padding:5px 9px;border-radius:8px;font-size:12px;line-height:18px;cursor:pointer;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-state-error-primary,#f85149)}
 
 .dbs-chatview{position:absolute;top:0;bottom:0;pointer-events:auto;display:flex;flex-direction:column;background:var(--dsw-alias-bg-base);font-family:var(--dsw-font-family,inherit);z-index:2;--dsh-chat-content-width:748px;--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;--dsh-composer-text-max-height:336px;min-width:0}
+.dbs-mediaRefs{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;align-items:center}
+.dbs-mediaImg{max-width:280px;max-height:210px;border-radius:10px;cursor:zoom-in;display:block;border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.08))}
+.dbs-mediaLoading{width:28px;height:20px;display:inline-flex;align-items:center;color:var(--dsw-alias-label-tertiary)}
+.dbs-fileChip{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;background:var(--dsw-alias-interactive-bg-hover);font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);cursor:pointer;max-width:100%;user-select:none}
+.dbs-fileChip:hover{color:var(--dsw-alias-label-primary)}
+.dbs-fileChipName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dbs-chatbar{flex:none;display:flex;align-items:center;gap:8px;height:44px;padding:0 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.08))}
 .dbs-chatbarName{font-size:14px;line-height:20px;font-weight:600;color:var(--dsw-alias-label-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .dbs-scrollBody{scrollbar-gutter:stable;flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden auto}
@@ -400,6 +406,7 @@
         'action.saving': '保存中…',
         'action.stop': '停止生成',
         'chat.stop.noop': '当前没有进行中的生成',
+        'media.openFailed': '打开失败，文件可能已移动或被删除',
         'chat.members.manage': '管理成员',
         'modal.members.title': '管理群成员',
         'modal.members.hint': '勾选的 Bot 为群成员；保存后立即生效（可随时再改）。',
@@ -502,6 +509,7 @@
         'action.saving': 'Saving…',
         'action.stop': 'Stop generating',
         'chat.stop.noop': 'No generation in progress',
+        'media.openFailed': 'Open failed — the file may have moved or been deleted',
         'chat.members.manage': 'Manage members',
         'modal.members.title': 'Manage group members',
         'modal.members.hint': 'Checked bots are members; changes apply immediately on save (editable again anytime).',
@@ -1251,6 +1259,82 @@
           d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) + ' ' + clockOf(ms))
       }
 
+      // ---- Media references: bot-written local files in message text. ----
+      // Images render inline (host readImage → data URL, session-cached);
+      // documents/media render as a click-to-open chip (host openFile). The
+      // host enforces the real boundary — gateway data dir only, ≤8MB, image
+      // extension allowlist — so the client regexes are UX filters, not trust.
+      const MEDIA_IMG_RE = /\.(png|jpe?g|gif|webp|bmp|svg)$/i
+      const MEDIA_FILE_RE = /\.(pdf|mp3|wav|m4a|mp4|mov|zip|csv|xlsx|docx|pptx|md|txt|json)$/i
+      const MEDIA_PATH_RE = /\/[^\s，。；、！？：；""''（）【】《》<>"'`\\|]+/g
+      const MEDIA_MAX_REFS = 6
+      const mediaUrlCache = new Map<string, string>()
+
+      function mediaPathsOf(text: string): string[] {
+        if (typeof text !== 'string' || text.indexOf('/') === -1) return []
+        const out: string[] = []
+        for (const m of text.matchAll(MEDIA_PATH_RE)) {
+          const p = m[0].replace(/[.,;:!?、。，；：！？）)】\]>}]+$/, '')
+          if (p.length < 4 || p.startsWith('//')) continue // //… = URL fragment
+          if (!MEDIA_IMG_RE.test(p) && !MEDIA_FILE_RE.test(p)) continue
+          if (out.indexOf(p) !== -1) continue
+          out.push(p)
+          if (out.length >= MEDIA_MAX_REFS) break
+        }
+        return out
+      }
+
+      function FileChip(p: { path: string }) {
+        const [failed, setFailed] = React.useState(false)
+        const base = p.path.slice(p.path.lastIndexOf('/') + 1) || p.path
+        const open = () => { botsCall('openFile', { path: p.path }).catch(() => setFailed(true)) }
+        return e('span', {
+          className: 'dbs-fileChip', title: p.path, role: 'button', tabIndex: 0,
+          onClick: open,
+          onKeyDown: (ev: any) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open() } },
+        },
+          Ico('IconFolderClose16', { size: 12 }),
+          e('span', { className: 'dbs-fileChipName' }, base),
+          failed === true ? e('span', { className: 'dbs-meta' }, t('media.openFailed')) : null)
+      }
+
+      function MediaImage(p: { path: string }) {
+        const [url, setUrl] = React.useState(mediaUrlCache.get(p.path) ?? null)
+        const [err, setErr] = React.useState(false)
+        React.useEffect(() => {
+          if (mediaUrlCache.has(p.path)) return
+          let alive = true
+          botsCall<{ mime: string; dataBase64: string }>('readImage', { path: p.path })
+            .then((r: { mime: string; dataBase64: string }) => {
+              const u = 'data:' + r.mime + ';base64,' + r.dataBase64
+              mediaUrlCache.set(p.path, u)
+              if (alive) setUrl(u)
+            })
+            .catch(() => { if (alive) setErr(true) })
+          return () => { alive = false }
+          // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, [p.path])
+        if (url !== null) {
+          return e('img', {
+            className: 'dbs-mediaImg', src: url, alt: p.path, title: p.path,
+            onClick: () => { botsCall('openFile', { path: p.path }).catch(() => undefined) },
+          })
+        }
+        if (err === true) return e(FileChip, { path: p.path })
+        return e('span', { className: 'dbs-mediaLoading' }, Ico('IconLoadingOutline16', { size: 14 }))
+      }
+
+      function MediaRefs(p: { text: string; files?: boolean }) {
+        const refs = mediaPathsOf(p.text)
+        if (refs.length === 0) return null
+        const imgs = refs.filter((r: string) => MEDIA_IMG_RE.test(r))
+        const files = p.files === true ? refs.filter((r: string) => !MEDIA_IMG_RE.test(r)) : []
+        if (imgs.length === 0 && files.length === 0) return null
+        return e('div', { className: 'dbs-mediaRefs' },
+          imgs.map((r: string) => e(MediaImage, { key: r, path: r })),
+          files.map((r: string) => e(FileChip, { key: r, path: r })))
+      }
+
       function ToolCard(p: { entry: any }) {
         const [open, setOpen] = React.useState(false)
         const en = p.entry
@@ -1273,7 +1357,7 @@
             e('span', { className: 'dbs-toolTrail' },
               en.content !== '' ? e('span', { className: 'dbs-meta' }, open ? t('action.collapse') : t('action.expand')) : null,
               e(MsgTime, { entry: en }))),
-          open && en.content !== '' ? e('div', { className: 'dbs-toolBody' }, en.content) : null)
+          open && en.content !== '' ? e('div', { className: 'dbs-toolBody' }, en.content, e(MediaRefs, { text: en.content })) : null)
       }
 
       function Entry(p: { entry: any; isGroup: boolean; agent: any; compact?: boolean }) {
@@ -1281,7 +1365,9 @@
         if (en.display === 'user') {
           return e('div', { className: 'dbs-userRow' },
             e('div', { className: 'dbs-userStack' },
-              e('div', { className: 'dbs-bubble' }, e(MessageText, { text: en.content }))),
+              e('div', { className: 'dbs-bubble' },
+                e(MessageText, { text: en.content }),
+                e(MediaRefs, { text: en.content, files: true }))),
             e(MsgTime, { entry: en }))
         }
         if (en.display === 'tool') return e(ToolCard, { entry: en })
@@ -1299,7 +1385,8 @@
           return e('div', { className: 'dbs-botRow', 'data-compact': 'true' },
             e('div', { className: 'dbs-mdRow' },
               e(MarkdownText, { text: en.content, streaming: en.isStreaming === true }),
-              en.isStreaming === true ? e('span', { className: 'dbs-caret' }) : null),
+              en.isStreaming === true ? e('span', { className: 'dbs-caret' }) : null,
+              en.isStreaming === true ? null : e(MediaRefs, { text: en.content, files: true })),
             e('div', { className: 'dbs-compactTime' }, e(MsgTime, { entry: en })))
         }
         // Bot message: avatar + prominent per-author name + full-datetime in
@@ -1324,7 +1411,8 @@
             e(MsgTime, { entry: en })),
           e('div', { className: 'dbs-mdRow' },
             e(MarkdownText, { text: en.content, streaming: en.isStreaming === true }),
-            en.isStreaming === true ? e('span', { className: 'dbs-caret' }) : null))
+            en.isStreaming === true ? e('span', { className: 'dbs-caret' }) : null,
+            en.isStreaming === true ? null : e(MediaRefs, { text: en.content, files: true })))
       }
 
       function ChatView(p: { agentId: string }) {
