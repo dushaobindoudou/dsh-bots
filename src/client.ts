@@ -1013,25 +1013,15 @@
             list.map(row))
         }
 
-        // Footer: gateway status text plus the two create actions, pinned to
-        // the bottom of the Bots body. The live dot itself lives on the
-        // group header (see SidebarNav); the create actions open the
-        // system-style modal (see CreateModal).
+        // Footer: gateway status text only, pinned to the bottom of the Bots
+        // body. The create actions live on the section headers (群聊/单聊 +,
+        // see sectionRows) — the footer duplicates were removed in 0.2.7.
+        // The live dot itself lives on the group header (see SidebarNav).
         const footer = e('div', {
           className: 'dbs-srow', style: { cursor: 'default', background: 'transparent', marginTop: 'auto' },
         },
           e('span', { className: 'dbs-meta', style: { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
-            connected ? t('gateway.online', { port: s.info.port }) : t('gateway.offline')),
-          e(Button, {
-            variant: 'ghost', size: 'sm', title: t('bot.new'), 'aria-label': t('bot.new'),
-            icon: Ico('IconPlusOutline16', { size: 14 }),
-            onClick: () => patch({ create: 'bot', createName: '', createDesc: '', createWorking: false, error: null }),
-          }),
-          e(Button, {
-            variant: 'ghost', size: 'sm', title: t('group.new'), 'aria-label': t('group.new'),
-            icon: Ico('IconNewChatOutline16', { size: 14 }),
-            onClick: () => patch({ create: 'group', createName: '', createMembers: {}, createWorking: false, error: null }),
-          }))
+            connected ? t('gateway.online', { port: s.info.port }) : t('gateway.offline')))
 
         return e('div', { className: 'dbs-navBody dbs-botsBody' },
           s.error !== null
