@@ -321,6 +321,21 @@ export class BotsRemote extends TypertRemoteService {
     })
   }
 
+  /**
+   * Interrupt an agent's active run (the composer's stop button). Returns the
+   * gateway's honest `{hadActiveRun}` so the UI can tell "stopped it" from
+   * "there was nothing to stop" — never a fake success.
+   */
+  async interrupt(request: { id?: string } | null): Promise<{ hadActiveRun: boolean }> {
+    const id = String(request?.id ?? '').trim()
+    if (id === '') throw new Error('interrupt requires an agent id')
+    const res = await callGateway<any>(this.cfg.dataDir, 'interruptAgent', {
+      id, reason: '用户在 dsh Bots 工作台停止了生成',
+    })
+    const body = res?.result ?? res ?? {}
+    return { hadActiveRun: body.hadActiveRun === true }
+  }
+
   async transcriptTail(request: { id?: string; limit?: number } | null): Promise<{ entries: TranscriptEntry[] }> {
     const res = await callGateway<any>(this.cfg.dataDir, 'getAgentTranscriptTail', {
       id: request?.id,
@@ -511,7 +526,7 @@ export class BotsRemote extends TypertRemoteService {
 
 for (const m of [
   'gatewayInfo', 'list', 'workspaces', 'sessions',
-  'create', 'createGroup', 'setGroupMembers', 'update', 'remove', 'send', 'transcriptTail', 'markRead', 'diag',
+  'create', 'createGroup', 'setGroupMembers', 'update', 'remove', 'send', 'interrupt', 'transcriptTail', 'markRead', 'diag',
   'mcpServers', 'mcpTools', 'mcpAdd', 'mcpRemove', 'mcpRefresh', 'mcpExecute',
   'workspaceList', 'workspaceGet', 'workspaceSet',
   'eventsSince', 'sseState',

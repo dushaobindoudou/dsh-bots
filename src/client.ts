@@ -70,6 +70,15 @@
             fill: 'currentColor',
           }))
       }
+      /**
+       * The official chatbar morphs send into a stop square while a run is
+       * active (§12-29); replicate that glyph byte-simple — a rounded rect,
+       * currentColor — so the stop affordance reads native.
+       */
+      function StopSquareIcon(): any {
+        return e('svg', { viewBox: '0 0 16 16', width: '16', height: '16', 'aria-hidden': true },
+          e('rect', { x: 3, y: 3, width: 10, height: 10, rx: 2.5, fill: 'currentColor' }))
+      }
       /** Shipped component by export name, or a local stand-in. */
       function nat(name: string, fallback: any): any {
         return NATIVE[name] ?? fallback
@@ -359,6 +368,8 @@
         'action.close': '关闭',
         'action.save': '保存',
         'action.saving': '保存中…',
+        'action.stop': '停止生成',
+        'chat.stop.noop': '当前没有进行中的生成',
         'chat.members.manage': '管理成员',
         'modal.members.title': '管理群成员',
         'modal.members.hint': '勾选的 Bot 为群成员；保存后立即生效（可随时再改）。',
@@ -459,6 +470,8 @@
         'action.close': 'Close',
         'action.save': 'Save',
         'action.saving': 'Saving…',
+        'action.stop': 'Stop generating',
+        'chat.stop.noop': 'No generation in progress',
         'chat.members.manage': 'Manage members',
         'modal.members.title': 'Manage group members',
         'modal.members.hint': 'Checked bots are members; changes apply immediately on save (editable again anytime).',
@@ -1304,6 +1317,7 @@
         const [entries, setEntries] = React.useState(null)
         const [input, setInput] = React.useState('')
         const [sending, setSending] = React.useState(false)
+        const [stopping, setStopping] = React.useState(false)
         const [error, setError] = React.useState(null)
         const [mention, setMention] = React.useState(null) // {query, index} | null
         const scrollRef = React.useRef(null)
@@ -1462,6 +1476,19 @@
             live.setSelectionRange(before.length, before.length)
             fitInput(live)
           })
+        }
+
+        /** Stop the active run: real gateway interrupt, honest no-op feedback. */
+        async function doStop() {
+          if (stopping) return
+          setStopping(true); setError(null)
+          try {
+            const r = await botsCall<{ hadActiveRun?: boolean }>('interrupt', { id: p.agentId })
+            if (r?.hadActiveRun !== true) setError(t('chat.stop.noop'))
+            await refreshAgents()
+            await loadTranscript()
+          } catch (err: any) { setError(String(err?.message ?? err)) }
+          setStopping(false)
         }
 
         async function doSend() {
@@ -1632,17 +1659,25 @@
                   e('span', { className: 'dbs-meta' },
                     composing ? t('chat.composingHint') : input.trim() !== '' ? t('chat.charCount', { n: input.trim().length }) : ''),
                   e('div', { className: 'dbs-composerTrailing' },
-                    e('button', {
-                      type: 'button', className: 'dbs-send',
-                      // sdk-bots exposes no interrupt over the gateway, so there
-                      // is no stop control to offer here: a button that only
-                      // flipped local state would claim a cancel that never
-                      // happened. Disabled-while-composing is the honest state.
-                      disabled: sending || composing || input.trim() === '',
-                      title: composing ? t('chat.composing') : t('action.send'),
-                      'aria-label': composing ? t('chat.composing') : t('action.send'),
-                      onClick: () => void doSend(),
-                    }, composing ? Ico('IconLoadingOutline16', { size: 16 }) : e(SendUpIcon, null))))))))
+                    composing
+                      ? e('button', {
+                          type: 'button', className: 'dbs-send',
+                          // Native contract (§12-29): the send button morphs
+                          // into a stop square while a run is active. The
+                          // gateway now exposes interruptAgent (engine patch,
+                          // e2e-verified), so the stop is real — `hadActiveRun`
+                          // tells "stopped" from "nothing to stop".
+                          disabled: stopping,
+                          title: t('action.stop'), 'aria-label': t('action.stop'),
+                          onClick: () => void doStop(),
+                        }, e(StopSquareIcon, null))
+                      : e('button', {
+                          type: 'button', className: 'dbs-send',
+                          disabled: sending || input.trim() === '',
+                          title: t('action.send'),
+                          'aria-label': t('action.send'),
+                          onClick: () => void doSend(),
+                        }, e(SendUpIcon, null))))))))
       }
 
       // =========================================================
