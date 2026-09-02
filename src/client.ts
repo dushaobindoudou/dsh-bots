@@ -105,6 +105,25 @@
        * createElement only — no HTML string ever crosses in. Streaming-safe:
        * an unterminated fence renders as a code block running to the tail.
        */
+      /**
+       * Inline image preview. `![alt](url)` and bare image URLs render as a
+       * clickable thumbnail (click opens the full image in a new tab); a
+       * failed load degrades to the browser's broken-image box inside the
+       * same link, so the URL is never lost. Extension-based detection plus
+       * an allowlist for extension-less media hosts the crew actually posts
+       * (Pollinations MCP tool results).
+       */
+      const IMG_EXT = /\.(png|jpe?g|gif|webp|avif|bmp|svg)(\?[^)\s]*)?$/i
+      const IMG_HOSTS = new Set(['media.pollinations.ai', 'image.pollinations.ai'])
+      function isImageUrl(url: string): boolean {
+        if (IMG_EXT.test(url)) return true
+        try { return IMG_HOSTS.has(new URL(url).hostname) } catch { return false }
+      }
+      function imgLink(src: string, alt: string): any {
+        return e('a', { href: src, target: '_blank', rel: 'noreferrer', className: 'dbs-imglink' },
+          e('img', { src, alt: alt !== '' ? alt : src, loading: 'lazy' }))
+      }
+
       function mdInline(text: string): any[] {
         const out: any[] = []
         let buf = ''
@@ -122,11 +141,16 @@
           if (rest.startsWith('*') && (m = /^\*([^*\n]+)\*/.exec(rest)) !== null) {
             push(); out.push(e('em', null, mdInline(m[1]))); i += m[0].length; continue
           }
+          if ((m = /^!\[([^\]\n]*)\]\((https?:\/\/[^)\s]+)\)/.exec(rest)) !== null) {
+            push(); out.push(imgLink(m[2], m[1])); i += m[0].length; continue
+          }
           if ((m = /^\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/.exec(rest)) !== null) {
             push(); out.push(e('a', { href: m[2], target: '_blank', rel: 'noreferrer' }, m[1])); i += m[0].length; continue
           }
           if ((m = /^(https?:\/\/[^\s<>()[\]{}'"]+)/.exec(rest)) !== null) {
-            push(); out.push(e('a', { href: m[1], target: '_blank', rel: 'noreferrer' }, m[1])); i += m[0].length; continue
+            push()
+            if (isImageUrl(m[1])) { out.push(imgLink(m[1], m[1])); i += m[0].length; continue }
+            out.push(e('a', { href: m[1], target: '_blank', rel: 'noreferrer' }, m[1])); i += m[0].length; continue
           }
           buf += text[i]; i += 1
         }
@@ -201,9 +225,13 @@
 .dbs-navGroup[data-open="true"]{flex:1 1 auto}
 .dbs-navGroup[data-open="false"]{flex:none}
 .dbs-navBody{display:flex;flex-direction:column;min-height:0;flex:1}
-.dbs-botsBody{overflow-y:auto;padding-right:var(--dsh-sidebar-inline-padding,8px)}
+.dbs-botsBody{overflow-y:auto;scrollbar-gutter:stable;padding-right:var(--dsh-sidebar-inline-padding,8px)}
 .dbs-navBodyErr{padding:6px 12px;font-size:12px;line-height:20px;color:var(--dsw-alias-label-tertiary)}
 .dbs-prow,.dbs-srow{cursor:pointer;user-select:none;color:var(--dsw-alias-label-primary);border-radius:8px;align-items:center;gap:6px;padding:0 8px;display:flex;box-sizing:border-box}
+/* Native mirror (dsh-client-ui-sidebar/workspace): header-class rows outdent
+   their label 4px (pl:4 → x=16 from the window edge) while list rows keep
+   pl:8 (→ x=20, identical to the native sessionRow). */
+.dbs-prow{padding-left:4px}
 .dbs-prow:hover,.dbs-srow:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dbs-srow.dbs-selected{background:var(--dsw-alias-interactive-bg-hover)}
 .dbs-prow{height:34px}
@@ -257,6 +285,8 @@
 .dbs-md li{margin:2px 0}
 .dbs-md code{font-family:var(--dsw-font-family-mono,ui-monospace,monospace);font-size:.9em;background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06));border-radius:6px;padding:1px 5px}
 .dbs-md pre{margin:0 0 8px;background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06));border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));border-radius:10px;padding:10px 12px;overflow-x:auto}
+.dbs-md .dbs-imglink{display:inline-block;max-width:min(320px,100%);border-radius:10px;overflow:hidden;margin:4px 0;box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:zoom-in}
+.dbs-md .dbs-imglink img{display:block;width:100%;height:auto}
 .dbs-md pre code{background:transparent;padding:0;font-size:.9em}
 .dbs-md blockquote{margin:0 0 8px;padding:2px 0 2px 10px;border-left:3px solid var(--dsw-alias-border-l2,rgba(0,0,0,.2));color:var(--dsw-alias-label-secondary)}
 .dbs-md a{color:var(--dsw-alias-state-business-primary,#1a6dff)}
@@ -1002,7 +1032,11 @@
           return e('div', { key: label },
             e('div', {
               className: 'dbs-navBodyErr',
-              style: { padding: '4px 8px 2px 12px', display: 'flex', alignItems: 'center' },
+              // Native sectionHeader outdent: label at x=16 (12 sidebar
+              // padding + 4), aligned with the group headers. The previous
+              // 12px here pushed section labels 8px right of the native
+              // baseline, making both sections read horizontally off.
+              style: { padding: '4px 8px 2px 4px', display: 'flex', alignItems: 'center' },
             },
               e('span', { style: { flex: 1 } }, label),
               e(Button, {
