@@ -1,5 +1,5 @@
 - insert:
     - id: bots
-      name: dsh-plugin-bots
+      name: dsh-bots
       config:
         dataDir: '~/.sdk-bots'

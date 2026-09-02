@@ -1,5 +1,5 @@
 /**
- * dsh-plugin-bots — client half (web), formal-plugin runtime.
+ * dsh-bots — client half (web), formal-plugin runtime.
  *
  * Rendered by the dsh web shell through the standard slot system with full
  * browser DOM access. Two rules keep the surface native rather than
@@ -30,14 +30,14 @@
  * Live data: the host keeps an SSE ring fed from the sdk-bots `/events`
  * channel. ONE bus drains it here and fans channels out to subscribers; no
  * component owns the cursor and no component polls the gateway directly.
- * @module dsh-plugin-bots/client
+ * @module dsh-bots/client
  */
 
 ;(() => {
   const loader = (window as any).__ModuleLoader__
   if (loader === undefined) return
   loader.load({
-    id: 'dsh-plugin-bots',
+    id: 'dsh-bots',
     factory: (require: (id: string) => any) => {
       const module = { exports: {} as any }
       const exports = module.exports
@@ -753,7 +753,7 @@
         if (warned.has(message)) return
         warned.add(message)
         // eslint-disable-next-line no-console
-        console.warn('[dsh-plugin-bots] ' + message)
+        console.warn('[dsh-bots] ' + message)
         reportDiag('warn', { message })
       }
 
@@ -790,7 +790,7 @@
         static getDerivedStateFromError() { return { failed: true } }
         componentDidCatch(error: any) {
           // eslint-disable-next-line no-console
-          console.error('[dsh-plugin-bots] delegated slot entry failed:', error)
+          console.error('[dsh-bots] delegated slot entry failed:', error)
           reportDiag('delegate-crashed', { message: String(error?.message ?? error) })
         }
         render() { return this.state.failed ? this.props.fallback : this.props.children }
@@ -801,7 +801,7 @@
         if (slotsSvc === null) return []
         let list: any[] = []
         try { list = slotsSvc.entries(key) ?? [] } catch { return [] }
-        return list.filter((en: any) => en !== null && en.component !== undefined && en.registrant !== 'dsh-plugin-bots')
+        return list.filter((en: any) => en !== null && en.component !== undefined && en.registrant !== 'dsh-bots')
       }
 
       /**
@@ -2186,40 +2186,40 @@
 
         c.effect(() => {
           const styleEl = document.createElement('style')
-          styleEl.setAttribute('data-dsh-plugin', 'dsh-plugin-bots')
+          styleEl.setAttribute('data-dsh-plugin', 'dsh-bots')
           styleEl.textContent = CSS
           document.head.appendChild(styleEl)
           return () => { styleEl.remove() }
-        }, 'dsh-plugin-bots: styles')
+        }, 'dsh-bots: styles')
 
         // Dictionaries first: a slot may render on the same tick it registers.
         const locale = c.get('locale')
         if (locale !== undefined && locale !== null) {
-          c.effect(() => locale.register(NS, { zh, en }), 'dsh-plugin-bots: dictionaries')
+          c.effect(() => locale.register(NS, { zh, en }), 'dsh-bots: dictionaries')
           boundT = locale.bind(NS)
           // Our surfaces read `t` from module scope rather than from the prop
           // the renderer hands the slot root, because the strings live six
           // components deep. That means a language switch has to be pushed
           // into our own store to re-render them.
-          c.effect(() => locale.subscribe(() => { patch({ localeRev: state.localeRev + 1 }) }), 'dsh-plugin-bots: locale refresh')
+          c.effect(() => locale.subscribe(() => { patch({ localeRev: state.localeRev + 1 }) }), 'dsh-bots: locale refresh')
         }
 
         c.effect(() => slots.inject('shell.overlay', () => slots.register(
-          { name: 'shell.overlay', id: 'dsh-plugin-bots.chat', order: 20, registrant: 'dsh-plugin-bots', locale: NS },
+          { name: 'shell.overlay', id: 'dsh-bots.chat', order: 20, registrant: 'dsh-bots', locale: NS },
           () => e(BotsLayer),
-        )), 'dsh-plugin-bots: chat overlay')
+        )), 'dsh-bots: chat overlay')
 
         // Shadow the single workspace slot at a lower priority (lowest renders);
         // the shipped entry stays registered and is delegated to by name.
         c.effect(() => slots.inject('sidebar.workspaces', () => slots.register(
-          { name: 'sidebar.workspaces', priority: -100, registrant: 'dsh-plugin-bots', locale: NS },
+          { name: 'sidebar.workspaces', priority: -100, registrant: 'dsh-bots', locale: NS },
           (props: any) => e(SidebarNav, { wide: props.wide, expandSidebar: props.expandSidebar }),
-        )), 'dsh-plugin-bots: sidebar workspaces shadow')
+        )), 'dsh-bots: sidebar workspaces shadow')
 
         c.effect(() => slots.inject('settings.section', () => slots.register(
-          { name: 'settings.section', id: 'bots', order: 40, label: () => t('nav.bots'), registrant: 'dsh-plugin-bots', locale: NS },
+          { name: 'settings.section', id: 'bots', order: 40, label: () => t('nav.bots'), registrant: 'dsh-bots', locale: NS },
           () => e(BotsSettings),
-        )), 'dsh-plugin-bots: settings section')
+        )), 'dsh-bots: settings section')
 
         reportDiag('apply', { slots: ['shell.overlay', 'sidebar.workspaces', 'settings.section'] })
       }

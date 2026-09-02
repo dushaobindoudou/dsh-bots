@@ -1,4 +1,4 @@
-# dsh-plugin-bots
+# dsh-bots
 
 Multi-bot workbench for DeepSeek Harness (dsh): bridges the sdk-bots orchestration
 gateway (single bots, group chats, transcripts, live SSE) into the dsh web shell.

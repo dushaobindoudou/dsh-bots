@@ -7,7 +7,7 @@
  * The wire uses `Accept-Encoding: identity` to sidestep gzip/deflate handling
  * in the host fetch layer (the gateway also supports `?token=` for the old
  * browser path, but we always send the `authorization` header).
- * @module dsh-plugin-bots/sse
+ * @module dsh-bots/sse
  */
 
 import type { EventsSinceResult, SseEvent, SseState } from './shared.js'

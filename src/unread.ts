@@ -22,7 +22,7 @@
  *     so a rebase from transcript tails reconstructs the counts exactly.
  *   - First run (no marker file yet) treats all existing history as read —
  *     an upgrade must not light up 30 badges of backlog.
- * @module dsh-plugin-bots/unread
+ * @module dsh-bots/unread
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'

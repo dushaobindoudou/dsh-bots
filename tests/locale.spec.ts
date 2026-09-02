@@ -85,7 +85,7 @@ describe('locale dictionaries', () => {
 
   it('declares the locale namespace on every slot registration', () => {
     const registrations = [...SOURCE.matchAll(/\{ name: '([^']+)'[^}]*\}/g)]
-      .filter((m) => m[0].includes("registrant: 'dsh-plugin-bots'"))
+      .filter((m) => m[0].includes("registrant: 'dsh-bots'"))
     expect(registrations.length).toBeGreaterThanOrEqual(3)
     for (const r of registrations) {
       expect(r[0], `${r[1]} must declare locale: NS`).toContain('locale: NS')

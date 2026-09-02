@@ -373,10 +373,10 @@ curl -s http://127.0.0.1:3080/freeroute/v1/models | jq '.data[].id'
 TOKEN=$(jq -r .token ~/.sdk-bots/gateway.json); PORT=$(jq -r .port ~/.sdk-bots/gateway.json)
 curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:$PORT/api/listAgents -X POST
 
-# dsh-plugin-bots 插件链路（~/workspaces/dsh-bots）
+# dsh-bots 插件链路（~/workspaces/dsh-bots）
 pnpm build && pnpm test && pnpm test:integration && pnpm pack
 bash scripts/dsh-smoke.sh          # 临时 DSH_HOME 全链路冒烟
-dsh plugin --profile web add ./dsh-plugin-bots-<ver>.tgz   # 装进真实 profile（重启 web 生效）
+dsh plugin --profile web add ./dsh-bots-<ver>.tgz   # 装进真实 profile（重启 web 生效）
 
 # 7x24 自驱蜂群（复杂目标 → 多 bot 无人值守协作）
 node scripts/swarm/swarm-bootstrap.mjs --goal "目标描述" --schedule "@every 30m"
@@ -482,7 +482,7 @@ curl -sN --compressed "http://127.0.0.1:$PORT/events?token=$TOKEN"
 44. **「UI 已更新但 RPC 404」= host 半边冻结，先查 dsh web 进程启动时间（2026-09-02 实证）**：dsh 对 profile 插件是
     **client.js 按页面加载从磁盘现读**（`/plugins/<pkg>/client.js?rev=<hash>` 随文件变），**host 半边只在 dsh web 启动时加载一次**——
     不重启就出现「新 UI 打旧 host」：管理成员/停止钮等新客户端功能可见，点保存却 `transport failure … HTTP 404`。
-    诊断：`lsof -iTCP:3080 -sTCP:LISTEN` 取 pid，`ps -p <pid> -o lstart=` 对比 profile 安装时间（`stat -f '%Sm' ~/.dsh/profiles/web/node_modules/dsh-plugin-bots/package.json`）；
+    诊断：`lsof -iTCP:3080 -sTCP:LISTEN` 取 pid，`ps -p <pid> -o lstart=` 对比 profile 安装时间（`stat -f '%Sm' ~/.dsh/profiles/web/node_modules/dsh-bots/package.json`）；
     进程早于安装时间 → 重启 dsh web 即愈。新增 host RPC 的版本发布提示必须强调「不重启 = 该 RPC 不存在」。
 
 ---
@@ -587,4 +587,4 @@ curl -sN --compressed "http://127.0.0.1:$PORT/events?token=$TOKEN"
 
 ---
 
-*文档版本：2026-09-02 · 基于 multibot-sdk 0.4.0 · 正式插件包 dsh-plugin-bots 0.2.6 已装入真实 profile（MCP 桥接 §13 P0 + 工作区隔离桥接 §14 + 成员管理 + composer 停止钮/interruptAgent 接通）；M6 7x24 自驱蜂群落地（launchd 守护 + 自主能力六断言全绿 + swarm 引导器，见 scripts/swarm/README.md）。架构详见 DESIGN.md*
+*文档版本：2026-09-02 · 基于 multibot-sdk 0.4.0 · 正式插件包 dsh-bots 0.2.10 已装入真实 profile（0.2.9 前曾用 npm 名 dsh-plugin-bots，2026-09-02 更名）（MCP 桥接 §13 P0 + 工作区隔离桥接 §14 + 成员管理 + composer 停止钮/interruptAgent 接通）；M6 7x24 自驱蜂群落地（launchd 守护 + 自主能力六断言全绿 + swarm 引导器，见 scripts/swarm/README.md）。架构详见 DESIGN.md*

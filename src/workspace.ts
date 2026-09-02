@@ -17,7 +17,7 @@
  * Validation mirrors the engine exactly (SLUG_PATTERN, agentId pattern,
  * virtual-prefix form) because the engine FAILS CLOSED on malformed config —
  * a bad write would break the agent's turns, not silently run unjailed.
- * @module dsh-plugin-bots/workspace
+ * @module dsh-bots/workspace
  */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'

@@ -1,4 +1,4 @@
-// Integration check for dsh-plugin-bots: import the built host half and
+// Integration check for dsh-bots: import the built host half and
 // assert the plugin surface and the Typert remote-method markers survived the
 // build (source-mode discovery depends on those prototype markers).
 import { createRequire } from 'node:module'
@@ -21,7 +21,7 @@ function check(name, ok, detail) {
   if (!ok) failed += 1
 }
 
-check('exports.name === dsh-plugin-bots', plugin.name === 'dsh-plugin-bots')
+check('exports.name === dsh-bots', plugin.name === 'dsh-bots')
 check('exports.inject is an array (deliberately empty: guarded lazy ctx.get)',
   Array.isArray(plugin.inject), JSON.stringify(plugin.inject))
 check('exports.apply is a function', typeof plugin.apply === 'function')

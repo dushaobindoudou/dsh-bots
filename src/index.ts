@@ -1,5 +1,5 @@
 /**
- * dsh-plugin-bots — host half.
+ * dsh-bots — host half.
  *
  * Bridges the sdk-bots orchestration gateway (single bots, group chats,
  * transcripts, live SSE) into dsh as a formal plugin. Publishes the `bots`
@@ -16,7 +16,7 @@
  * running dsh CLI / global layout (the same technique used by dsh-freeroute)
  * and only fall back to plain resolution when anchoring fails. The `Remote`
  * markers are applied with a decorator-context shim for the same reason.
- * @module dsh-plugin-bots
+ * @module dsh-bots
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -34,7 +34,7 @@ import { UnreadStore } from './unread.js'
 import { listAgentWorkspaces, readAgentWorkspace, setAgentWorkspace } from './workspace.js'
 import { satisfiesCaret } from './version.js'
 
-export const name = 'dsh-plugin-bots'
+export const name = 'dsh-bots'
 
 /** No hard Cordis service requirements: host reads optional services via
  * guarded `ctx.get` so a partially-provisioned kernel never blocks activation. */
@@ -52,7 +52,7 @@ const DIAG_FILE = 'dsh-bots-diag.jsonl'
 const UNREAD_FILE = 'dsh-bots-unread.json'
 
 /** Stamped into every diagnostic line so records survive version skew. */
-const PLUGIN_VERSION = resolvedModuleVersion('dsh-plugin-bots')
+const PLUGIN_VERSION = resolvedModuleVersion('dsh-bots')
 
 const require = createRequire(import.meta.url)
 
@@ -77,7 +77,7 @@ export function assertPeerCompatible(): void {
   const cordis = resolvedModuleVersion('@deepseek-ai/cordis')
   if (cordis !== 'unknown' && cordis !== 'unresolved' && !satisfiesCaret(cordis, TESTED_CORDIS_RANGE)) {
     // eslint-disable-next-line no-console
-    console.warn(`[dsh-plugin-bots] resolved @deepseek-ai/cordis ${cordis}, tested with ${TESTED_CORDIS_RANGE}`)
+    console.warn(`[dsh-bots] resolved @deepseek-ai/cordis ${cordis}, tested with ${TESTED_CORDIS_RANGE}`)
   }
 }
 
@@ -118,7 +118,7 @@ async function resolveTypert(): Promise<TypertRuntime> {
       }
     } catch { /* try next anchor */ }
   }
-  throw new Error('[dsh-plugin-bots] 无法解析 @deepseek-ai/dsh-typert-protocol（宿主锚定与回退均失败）')
+  throw new Error('[dsh-bots] 无法解析 @deepseek-ai/dsh-typert-protocol（宿主锚定与回退均失败）')
 }
 
 const { Remote, TypertRemoteService } = await resolveTypert()

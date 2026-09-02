@@ -1,4 +1,4 @@
-# dsh-plugin-bots — 架构与 UI 重设计
+# dsh-bots — 架构与 UI 重设计
 
 > 版本 2026-08-28 · 基于对 dsh 内核（`@deepseek-ai/dsh-client-ui-*`，rc.2）与正式插件（dsh-freeroute 0.8.4）的源码实读。
 > 本文是 DEVELOPMENT.md 的演进提案：在保留已验证链路（网关发现 / curl 桥 / freeroute auto）前提下，

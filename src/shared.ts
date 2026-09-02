@@ -2,7 +2,7 @@
  * Wire types shared by the host half (gateway bridge) and the client half
  * (web UI). Keep everything JSON-serializable: these shapes cross the
  * connection RPC boundary verbatim.
- * @module dsh-plugin-bots/shared
+ * @module dsh-bots/shared
  */
 
 /**
