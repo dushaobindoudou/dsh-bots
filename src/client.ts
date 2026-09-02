@@ -532,6 +532,8 @@
         let seq = -1
         let timer: any = null
         let live: any = null
+        /** Latest host-side unread snapshot (see `unread.ts` on the host). */
+        let unread: Record<string, number> | null = null
         const subs = new Set<(channels: Set<string>, events: any[]) => void>()
 
         async function drain(): Promise<void> {
@@ -541,6 +543,7 @@
           if (r === null || typeof r !== 'object') return
           if (Number.isFinite(r.nextSeq)) seq = Number(r.nextSeq)
           if (r.state !== undefined) live = r.state
+          if (r.unread !== null && typeof r.unread === 'object') unread = r.unread
           const events: any[] = Array.isArray(r.events) ? r.events : []
           if (events.length === 0) return
           const channels = new Set<string>()
@@ -561,6 +564,7 @@
             }
           },
           state: () => live,
+          unread: () => unread,
         }
       })()
 
@@ -572,6 +576,8 @@
         error: null as string | null,
         chatAgentId: null as string | null,
         open: { workspaces: true, bots: true },
+        /** Host-computed unread counts per agent id (plugin-owned model). */
+        unreadCounts: {} as Record<string, number>,
         /** Create dialog: 'bot' | 'group' | null — rendered as a system-style
          *  modal from shell.overlay, so the form state lives in the store. */
         create: null as string | null,
@@ -611,10 +617,16 @@
         try { patch({ info: await botsCall('gatewayInfo', {}) }) } catch { /* keep the last good reading */ }
       }
 
+      /** Pull the latest host unread snapshot into the store. */
+      function syncUnread(): void {
+        const u = ring.unread()
+        if (u !== null) patch({ unreadCounts: u })
+      }
+
       function openChat(id: string): void {
-        patch({ chatAgentId: id })
+        patch({ chatAgentId: id, unreadCounts: { ...state.unreadCounts, [id]: 0 } })
         // Clear the badge at the source; the gateway owns unread state.
-        void botsCall('markRead', { id }).then(refreshAgents).catch(() => {})
+        void botsCall('markRead', { id, atMs: Date.now() }).then(refreshAgents).catch(() => {})
       }
 
       function agentById(id: string | null): any {
@@ -875,7 +887,9 @@
 
         function row(a: any) {
           const busy = a.isComposingMessage === true || a.isRunning === true
-          const unread = Number(a.unreadCount ?? 0)
+          // Plugin-owned count first (the gateway's own unreadCount is
+          // desktop-app semantics and never accumulates on a headless host).
+          const unread = Number(s.unreadCounts?.[a.id] ?? a.unreadCount ?? 0)
           return e('div', {
             key: a.id,
             className: 'dbs-srow' + (s.chatAgentId === a.id ? ' dbs-selected' : ''),
@@ -955,10 +969,11 @@
 
         // One controller owns the data lifecycle for every Bots surface.
         React.useEffect(() => {
-          void refreshAgents(); void refreshInfo()
+          void refreshAgents(); void refreshInfo(); syncUnread()
           return ring.subscribe((channels) => {
             if (channels.has('agents') || channels.has('agent-upserted')) void refreshAgents()
             if (channels.has('host-settings')) void refreshInfo()
+            if (channels.has('transcript')) syncUnread()
           })
         }, [])
 
@@ -968,7 +983,7 @@
           const busy = (s.agents as any[]).some((a) => a.isComposingMessage === true || a.isRunning === true)
           const unread = (s.agents as any[])
             .filter((a) => a.isHiddenFromSidebar !== true)
-            .reduce((n: number, a: any) => n + Number(a.unreadCount ?? 0), 0)
+            .reduce((n: number, a: any) => n + Number(s.unreadCounts?.[a.id] ?? a.unreadCount ?? 0), 0)
           return e('div', { className: 'dbs-railWrap' },
             e(DelegatedBrowser, { wide: false, expandSidebar: p.expandSidebar }),
             e('div', { className: 'dbs-rail' },
@@ -1229,9 +1244,34 @@
         React.useEffect(() => {
           setEntries(null); setError(null); setInput(''); setMention(null)
           void loadTranscript()
-          return ring.subscribe((channels) => {
+          // While this conversation is open it is being read: arrivals for it
+          // must not leave a badge on the row the user is looking at. The
+          // host bump lands first, our debounced markRead cancels it out.
+          let readTimer: any = null
+          const scheduleRead = (): void => {
+            if (readTimer !== null) return
+            readTimer = setTimeout(() => {
+              readTimer = null
+              patch({ unreadCounts: { ...state.unreadCounts, [p.agentId]: 0 } })
+              void botsCall('markRead', { id: p.agentId, atMs: Date.now() }).catch(() => {})
+            }, 1200)
+          }
+          const unsub = ring.subscribe((channels, events) => {
             if (channels.has('transcript') || channels.has('client-side-tool-v2')) void loadTranscript()
+            if (channels.has('transcript') && Array.isArray(events)) {
+              for (const ev of events) {
+                const payload = ev?.data
+                if (payload?.type !== 'appended' && payload?.type !== 'snapshot') continue
+                if (String(payload?.agentId ?? payload?.activeAgentId ?? '') === p.agentId) { scheduleRead(); break }
+              }
+            }
           })
+          return () => {
+            // A pending read timer dies with the view — a message that landed
+            // as the user left stays unread.
+            if (readTimer !== null) { clearTimeout(readTimer); readTimer = null }
+            unsub()
+          }
           // eslint-disable-next-line react-hooks/exhaustive-deps
         }, [p.agentId])
 

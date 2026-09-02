@@ -189,11 +189,94 @@ src/
   完成 `--dsw-alias-state-success-primary`、冷却/告警 `--dsw-alias-state-warn-primary`。
 - **头像**：`/avatars/<id>` 独立 GET（相对 baseUrl）；群头像叠成员首字符。
 - **空态/加载**：沿原生 placeholder 文案语气（「选择或创建一个 Bot 开始」/「连接中…」）。
-- **模型/网关状态**：坞底一行（在线 ·:port · token · 忙/闲）+ 设置页完整卡（复用现有 setrow/setcard，去哈希化）。
+- **模型/网关状态**：坞底一行（在线 ·:port · token · 忙/闲）+ 设置页完整卡（复用现有 setrow/setcard，去哈希化）。设置页完整信息架构见 §4.4。
 
 ### 4.3 与原生对话流的关系（架构红线保持不变）
 - 不混入 dsh 会话对话流；bot 聊天走 sdk-bots transcript，UI 独立于原生会话，经 `shell.overlay` 承载。
 - **不注册 `conversation.view` 第三标签**（理由见 §2.3）——Bot 工作台自成一景。
+
+### 4.4 设置页信息架构（v2 提案，2026-09-02）
+
+> 现状：`settings.section` id `bots` 只有「摘要 + 网关状态卡 + dataDir/SSE/入口」约 6 行（`src/client.ts` `BotsSettings`）。
+> 本节把它整理为七个分区，每一行都锚定真实数据源（网关 API / 插件配置 / SSE 频道），并标注性质与优先级。
+
+**四条设计原则**：
+
+1. **只放全局与低频**——bot 级配置（per-bot 模型钉定等）归工作台详情栏，高频操作不进设置页；设置页不是开关仓库，每个条目必须有真实消费方。
+2. **每行标注性质**——`[只读状态]` / `[可写配置]` / `[跳转]` / `[动作]` 四类，渲染样式与交互随之不同。
+3. **失败可解释、可行动**——离线/异常不给裸错误码，给「原因分级 + 建议动作」。
+4. **分层披露**——高级项用 `DisclosureRow` 折叠收起，默认只露健康面。
+
+**A. 网关与连接**（现有卡增强）
+
+| 条目 | 性质 | 数据源 | 优先级 |
+|---|---|---|---|
+| 运行状态（在线/离线、地址、PID、忙闲、鉴权） | 只读 | `bots.gatewayInfo`（discover + `/health` pid 比对） | 已有 |
+| 失败原因分级文案：`no-gateway-json` / `health-http` / `stale-gateway-json` / 401，各配一句处置建议 | 只读+文案 | `gatewayInfo.reason`（§3.3 自检分级） | **P0** |
+| 生命周期：启动 / 重启 / launchd 守护状态（`com.sdk-bots.host` KeepAlive） | 动作 | M4 常驻进程守护 | P1 |
+| 端口策略展示（动态 vs `SAND_HOST_PORT` 固定） | 只读 | `gatewayInfo` + 环境变量 | P1 |
+| 「打开网关控制台」 | 跳转 | `GET /`（网关内置单页 console） | **P0** |
+| 「复制诊断摘要」 | 动作 | 前端拼装当前状态快照 | **P0** |
+
+**B. 模型与推理**（现状完全缺失，价值最高）
+
+| 条目 | 性质 | 数据源 | 优先级 |
+|---|---|---|---|
+| 当前推理目标：`auto` / 钉定模型 | 只读→可写 | 网关 `getHostSettings` / `setHostSettings`（`inferenceProvider`，host 级） | **P0 读** / P1 写 |
+| 模型选择下拉（`auto` + freeroute 模型池） | 可写 | `GET /freeroute/v1/models`（§4.2 已验证首项 `auto`） | P1 |
+| 工具授权策略 `localToolPermission`（`always` / `ask`） | 可写 | `setHostSettings`；`ask` 需要 `resolveLocalToolPermission` 交互 UI（M5），先只读展示 | P0 读 |
+| 模型目录 / 密钥 / 路由 / 冷却轮换 → 跳 dsh 设置页「模型」 | 跳转 | 职责边界（§3）：那些归 dsh freeroute，本页不重复造 | **P0** |
+| 推理链路一行图：sdk-bots → dsh freeroute(:3080) → 上游池 | 只读 | 静态 + `gatewayInfo` | P1 |
+
+**B⁺. MCP 服务器**（2026-09-02 追加；引擎侧已成品，方案与分期见 DEVELOPMENT.md §13）
+
+| 条目 | 性质 | 数据源 |
+|---|---|---|
+| 服务器列表（StateDot: connected/needsAuth/error + toolCount + transport） | 只读 | 网关 `listMcpServers` |
+| 添加服务器（stdio command / 远程 URL 两栏） | 可写 | `addMcpServer {name, configJson}` |
+| 删除 / 重启 / 自定义指令查看 | 动作 | `removeMcpServer` / `refreshMcp` |
+| 工具浏览与试运行 → 放工作台详情栏（不在设置页） | 动作 | `listRoutedMcpTools` / `executeRoutedMcpTool` |
+| 聊天内自助安装 → 零开发，只补 connector card 渲染 | 只读 | transcript + `client-side-tool-v2` |
+
+**C. 数据与沙盒**
+
+| 条目 | 性质 | 数据源 | 优先级 |
+|---|---|---|---|
+| `dataDir`（cordis.yml 配置的生效值，非硬编码默认） | 只读 | `Config` + `gatewayInfo.dataDir` | 已有 |
+| 打开数据目录 / 复制路径 | 动作 | 路径已具备 | P1 |
+| 沙盒状态：box exec-daemon(:1337)、`box-disk-pressure` / `forever-box` 告警 | 只读 | SSE 频道（§8） | P1 |
+| 磁盘占用（transcripts / attachments / box-workspace） | 只读 | 网关暂无现成 API，开放项 | P2 |
+
+**D. 实时事件**（现有行增强）
+
+| 条目 | 性质 | 数据源 | 优先级 |
+|---|---|---|---|
+| SSE：running / buffered / total / lastError / connectedAt | 只读 | `bots.sseState` | 已有 |
+| 「重连」动作（stop + start） | 动作 | `GatewaySseClient` | **P0** |
+| 订阅频道列表展示 | 只读 | 客户端已声明 channels | P1 |
+
+**E. 工作台偏好**——**刻意留空**。没有真实需求不预先堆开关（默认展开组、时间戳显隐等均无消费方）；有需求时按原则 1 逐项补。
+
+**F. 诊断与关于**
+
+| 条目 | 性质 | 数据源 | 优先级 |
+|---|---|---|---|
+| 插件版本 + cordis range 兼容警告 | 只读 | `PLUGIN_VERSION` / `TESTED_CORDIS_RANGE` | **P0** |
+| 一键自检（discover + `listAgents`，结果写 diag） | 动作 | `bots.diag` + `bots.list` | **P0** |
+| diag 文件位置 + 打开 | 只读+跳转 | `<dataDir>/dsh-bots-diag.jsonl` | P1 |
+| 网关协议规模（126 命令表） | 只读 | 静态 | P2 |
+
+**G. 引导**（首用/排障双用途）
+
+- 三步引导：① 确认网关在线（本页 A 卡）→ ② 从侧栏「工作区 ｜ Bots」打开工作台 → ③ 新建第一个 Bot。
+- 高级环境变量参考（`DisclosureRow` 折叠）：`SAND_DATA_ROOT` / `SAND_HOST_PORT` / `SAND_GATEWAY_TOKEN` / `SAND_OPENROUTER_MODEL`（§9 表）。
+
+**横切交互规则**：
+
+- `setHostSettings` 是 host 级写操作（影响全部 bot）：二次确认 + 明示影响面 + 失败回显。
+- 已有 `host-settings` SSE 频道监听（`client.ts:961` `refreshInfo`）——设置页读写后全 UI 自动刷新，别再另建轮询。
+- i18n 全走 `settings.*` 键，zh/en 双份；组件只用 primitives（`StateDot`/`Button`/`DisclosureRow`/`Input`/`Pill`）+ `--dsw-*` 变量。
+- P0 合计约 10 个新条目、1 个新 RPC 通道（host settings 读写），不依赖网关侧改动，可随下个小版本落地。
 
 ---
 

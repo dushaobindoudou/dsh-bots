@@ -29,7 +29,8 @@ import type {
   SseState, TranscriptEntry, WorkspaceInfo,
 } from './shared.js'
 import { callGateway, discover, expandHome, nextNonce, normalizeAgents, readDiscovery, trimAgent, trimEntry } from './gateway.js'
-import { GatewaySseClient } from './sse.js'
+import { GatewaySseClient, SseRingBuffer } from './sse.js'
+import { UnreadStore } from './unread.js'
 import { satisfiesCaret } from './version.js'
 
 export const name = 'dsh-plugin-bots'
@@ -45,6 +46,9 @@ const DEFAULT_DATA_DIR = '~/.sdk-bots'
 
 /** Append-only diagnostics file, read when a shadow takeover misbehaves. */
 const DIAG_FILE = 'dsh-bots-diag.jsonl'
+
+/** Persisted read markers ("读到哪了") backing the sidebar unread badge. */
+const UNREAD_FILE = 'dsh-bots-unread.json'
 
 /** Stamped into every diagnostic line so records survive version skew. */
 const PLUGIN_VERSION = resolvedModuleVersion('dsh-plugin-bots')
@@ -138,18 +142,63 @@ function markRemoteMethod(prototype: object, method: string): void {
 export class BotsRemote extends TypertRemoteService {
   private readonly cfg: Config
   private readonly sse: GatewaySseClient
+  private readonly unread: UnreadStore
+  private rebasing = false
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'bots')
     this.cfg = { dataDir: config?.dataDir ?? DEFAULT_DATA_DIR }
+    this.unread = new UnreadStore(join(expandHome(this.cfg.dataDir), UNREAD_FILE))
+    const ring = new SseRingBuffer(3000, (channel, data) => { this.observeTranscript(channel, data) })
     this.sse = new GatewaySseClient({
+      ring,
       resolveBase: () => {
         const d = readDiscovery(this.cfg.dataDir)
         if (d === null) return null
         return { url: `http://${d.host}:${d.port}`, token: d.token }
       },
       channels: ['transcript', 'client-side-tool-v2', 'agents', 'agent-upserted', 'host-settings', 'outline'],
+      onConnected: () => { void this.rebaseUnread() },
     })
+  }
+
+  /**
+   * Ring observer: feed the unread model from live transcript traffic.
+   * `appended` is the single-arrival shape; the gateway also replays a
+   * `snapshot` payload on (re)connect — both are timestamp-guarded, so
+   * replays never double-count.
+   */
+  private observeTranscript(channel: string, data: unknown): void {
+    if (channel !== 'transcript' || data === null || typeof data !== 'object') return
+    const payload = data as any
+    if (payload?.type === 'appended') {
+      this.unread.bump(String(payload?.agentId ?? ''), payload?.entry)
+    } else if (payload?.type === 'snapshot' && Array.isArray(payload?.entries)) {
+      const agentId = String(payload?.activeAgentId ?? '')
+      for (const entry of payload.entries) this.unread.bump(agentId, entry)
+    }
+  }
+
+  /**
+   * Reconstruct counts from transcript tails (SSE has no replay, so events
+   * that fire while the stream is down would otherwise be lost forever).
+   * Runs once per (re)connect; never throws; skips while one is in flight.
+   */
+  private async rebaseUnread(): Promise<void> {
+    if (this.rebasing) return
+    this.rebasing = true
+    try {
+      const agents = normalizeAgents(await callGateway<any>(this.cfg.dataDir, 'listAgents', {}))
+      for (const agent of agents) {
+        try {
+          const res = await callGateway<any>(this.cfg.dataDir, 'getAgentTranscriptTail', { id: agent.id, limit: 50 })
+          this.unread.rebase(agent.id, Array.isArray(res?.entries) ? res.entries : [])
+        } catch { /* one failed tail must not stop the others */ }
+      }
+      this.unread.prune(new Set(agents.map((a) => a.id)))
+    } catch { /* gateway offline — the next reconnect retries */ } finally {
+      this.rebasing = false
+    }
   }
 
   async gatewayInfo(request: { dataDir?: string } | null): Promise<GatewayInfo> {
@@ -260,14 +309,17 @@ export class BotsRemote extends TypertRemoteService {
   }
 
   /**
-   * Clear an agent's unread badge. The sidebar shows `unreadCount` from the
-   * gateway, so opening a chat has to tell the gateway — otherwise the badge
-   * would stick forever on a conversation the user is actively reading.
+   * Clear an agent's unread badge. The plugin owns the unread model (see
+   * `unread.ts`): the marker "上次读到哪" advances to now and the count
+   * zeroes. The gateway call is kept best-effort so desktop-app surfaces
+   * (spend guard's lastViewedAt) stay consistent with what the user saw.
    */
-  async markRead(request: { id?: string } | null): Promise<unknown> {
+  async markRead(request: { id?: string; atMs?: number } | null): Promise<unknown> {
     if (typeof request?.id !== 'string' || request.id === '') return null
+    const atMs = typeof request.atMs === 'number' && Number.isFinite(request.atMs) ? request.atMs : undefined
+    this.unread.markRead(request.id, atMs)
     return callGateway(this.cfg.dataDir, 'setAgentUnread', {
-      id: request.id, isUnread: false, atMs: Date.now(),
+      id: request.id, isUnread: false, atMs: atMs ?? Date.now(),
     })
   }
 
@@ -300,7 +352,7 @@ export class BotsRemote extends TypertRemoteService {
   // Live event channel: ring-replay instead of transcript polling.
   eventsSince(request: { seq?: number } | null): EventsSinceResult {
     if (!this.sse.state().running) this.sse.start()
-    return this.sse.eventsSince(Number(request?.seq) || 0)
+    return { ...this.sse.eventsSince(Number(request?.seq) || 0), unread: this.unread.counts() }
   }
 
   sseState(request: unknown): SseState {

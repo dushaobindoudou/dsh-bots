@@ -170,4 +170,10 @@ export interface EventsSinceResult {
   /** Next seq the caller should request next poll. */
   nextSeq: number
   state: SseState
+  /**
+   * Unread counts per agent id, computed on the host from the same ring
+   * (plugin-owned model — the gateway's own unreadCount is desktop-app
+   * semantics and never accumulates headless). Only non-zero entries appear.
+   */
+  unread?: Record<string, number>
 }

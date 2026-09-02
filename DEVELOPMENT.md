@@ -25,6 +25,7 @@
 10. [开发路线图](#10-开发路线图)
 11. [调试与验证手册](#11-调试与验证手册)
 12. [已知坑与注意事项](#12-已知坑与注意事项)
+13. [MCP 接入与实现方案（快速路径）](#13-mcp-接入与实现方案快速路径)
 
 ---
 
@@ -264,7 +265,8 @@ Client 包首次运行会弹批准；单勾授权当前包，双勾授权后续�
 | `getHostSettings` / `setHostSettings` | – / `{...}` | 含 `inferenceProvider`、`localToolPermission` |
 | `searchAgents` | `{...}` | |
 | `uploadAttachment` / `readAttachment*` | | 附件上传/读取（M5 知识库用） |
-| `listRoutedMcpTools` / `executeRoutedMcpTool` / `refreshMcp` | | MCP 路由工具（第三方工具扩展面） |
+| `listMcpServers` / `addMcpServer` / `removeMcpServer` / `refreshMcp` | MCP 服务器管理（`addMcpServer {name, configJson}` 支持本地 stdio 与远程 URL） |
+| `listRoutedMcpTools` / `executeRoutedMcpTool {agentId,…}` / `listBoxMcpServers` | MCP 工具清单 / 定向执行 / 沙盒侧状态——全表与快速接入方案见 §13 |
 | `createAgentAutomation` / `createAgentWorkflow` 系列 | | 定时/工作流（M5） |
 
 ### 7.3 群聊语义（实测自 `gateway-console.html`）
@@ -341,7 +343,7 @@ Client 包首次运行会弹批准；单勾授权当前包，双勾授权后续�
 | **M3 Bot 管理** | `updateAgent` 编辑（名称/简介/系统提示词字段确认）、头像、删除、群成员管理 | 免 reload 完成全套管理 |
 | **M4 产品化（剩余）** | 正式包已落地（见 M4a）；余：迁入 dsh-plugin monorepo（catalog.mjs 管理）、sdk-bots 常驻（`SAND_HOST_PORT` 固定 + 进程守护）、一键启动 | 重启后自动恢复。💡 真正「工作区内」打开 bot 会话的路径：正式插件注册 `conversation.view` 列表槽第三视图（与 聊天/轨迹 并排）——动态插件优先级抢不过 shipped 且视图需 per-session 注入，只能用全屏仿原生层（pkg-8~10 现状） |
 | **M6 7x24 自驱蜂群**（2026-09-02） | 目标三件套全链路验证 + 落地：① launchd `com.sdk-bots.host` `KeepAlive=true`（kill -9 实测 ~5s 自动拉起，PPID=1，重启自启）；② `examples/verify-autonomy-loop.mjs` 六项断言全绿（A1 CreateAgent 自主建 bot / A2 UpdateAgent 自主优化 bot / A3 update_state 自主排程 / A4 runAgentAutomationNow 无人唤醒 / A5 本地 cron 天然自驱心跳 / A6 SendToAgent 跨 bot 派活）；③ 蜂群引导器 `scripts/swarm/swarm-bootstrap.mjs`（共享黑板 GOAL/PROGRESS + 指挥官 bot + SWARM-CYCLE cron 例行任务，幂等可反复执行），引擎侧修复网关 `@every` 校验 bug（§12-37） | 7x24 保障链四层：launchd 进程守护 + 本地 cron 调度（headless 自驱）+ 网关发现自愈 + 全量落盘。运行手册见 `scripts/swarm/README.md` |
-| **M5 增强** | per-bot 模型钉定、附件/知识库（`uploadAttachment`）、automations、MCP 路由工具暴露到 UI | 按需排期 |
+| **M5 增强** | per-bot 模型钉定、附件/知识库（`uploadAttachment`）、automations；**MCP 接入按 §13 快速路径执行**（P0 桥接 + 设置页 → P1 工具面板/聊天卡片） | 引擎侧零改动，插件暴露层按天计 |
 
 M1 实现顺序（实际执行）：Host 半边（gateway.json 发现 + `ctx.shell` curl 桥 + 8 个 RPC，pkg-1 已验证）→ Client 半边（按钮 + 面板骨架 + 列表，pkg-3）→ 收发闭环（3s 轮询 transcriptTail）→ M2 换 SSE 中转。
 
@@ -460,7 +462,72 @@ curl -sN --compressed "http://127.0.0.1:$PORT/events?token=$TOKEN"
     bot 的 Shell 工具直接跑在宿主机上（cwd 是 `<dataRoot>/box-workspace`），没有 `/home/box/...` 真实挂载——
     指挥官实测把 `/home/box` 判为只读卷。跨 bot 协作文件一律用宿主绝对路径（如 `~/.sdk-bots/swarm/GOAL.md`），所有 bot 共见；
     各 bot cwd（box-workspace）下的相对路径文件也互相可见但易混淆，勿作黑板。
+41. **未读徽章必须插件自己记账，网关 `unreadCount` 不可依赖（2026-09-02，0.2.2）**：sdk-bots 的 unread 是桌面壳语义——
+    只在单个 `activeSession` 上计数、窗口聚焦即视为已读、**任何 transcript 读路径都会 markViewed**（插件拉 tail 就把未读清零），
+    本地 headless 网关实测所有 agent 恒为 0。正解（0.2.2 落地，`src/unread.ts`）：Host 半边自有模型——
+    SSE ring `onPush` 观察者实时计数（只认 message 族 kind；`timestampMs` ≤ 已读标记一律忽略 → 重连 snapshot 重放幂等）；
+    已读标记「上次读到哪」持久化 `<dataDir>/dsh-bots-unread.json`；每次 SSE (重)连 `onConnected` 拉全量 tail rebase 自愈（SSE 无重放，停机期间的事件靠这个找回）；
+    首次启用把现有历史种子为已读（升级不炸出一墙积压徽章）；计数搭 `eventsSince.unread` 顺风车下发，零新增 RPC。
+    Client：打开会话乐观清零 + 打开期间对本会话新到达去抖 1.2s markRead；离开视图时 pending 定时器随 effect 清理销毁（离开瞬间到达的消息保持未读语义）。
 
 ---
 
-*文档版本：2026-09-02 · 基于 multibot-sdk 0.4.0 · 正式插件包 dsh-plugin-bots 0.2.1 已装入真实 profile；M6 7x24 自驱蜂群落地（launchd 守护 + 自主能力六断言全绿 + swarm 引导器，见 scripts/swarm/README.md）。架构详见 DESIGN.md*
+## 13. MCP 接入与实现方案（快速路径）
+
+> 定位判断：**MCP 是本系统的能力扩展总线**——dsh freeroute 是「模型总线」（对 bot 供给智能），MCP 是「工具总线」（对 bot 供给外部能力），
+> 两条总线合起来才是 bot 的完整供给侧。接入后每个 bot 即刻获得整个 MCP 生态（Linear/Notion/GitHub/文件/浏览器…），无需逐个写集成；
+> 且 M6 蜂群已经能自建 bot/排程/派活（§10），MCP 的聊天内自助安装流让蜂群可以**自己给自己接工具**。
+
+### 13.1 核心结论：引擎已是成品，缺的只是「暴露层」
+
+源码实读（2026-09-02，sdk-bots `src/host/`）证实 MCP 协议栈、路由、鉴权、市场**全部现成**：
+快速接入 ≠ 实现 MCP，而是 **把网关已有的 MCP 面桥进插件 `bots` 命名空间 + 补三块 UI**，按天计。
+
+### 13.2 引擎侧存量盘点（锚点）
+
+| 层 | 已有能力 | 锚点 |
+|---|---|---|
+| 网关 API | `listMcpServers` / `addMcpServer {name, configJson}`（stdio 或 URL）/ `removeMcpServer {serverId}` / `listRoutedMcpTools` / `executeRoutedMcpTool {agentId, name, toolName, providerIdentifier, args, toolCallId}` / `refreshMcp {routedAction, routedArgs, completion}` / `listBoxMcpServers` / `appendConnectorCard` | `host-gateway-api.ts:142-165,666-728`、`gateway-protocol.ts:121-129` |
+| turn loop 工具 | `GetMcpTools` + `CallMcpTool` + meta descriptors（按 server 分组的工具目录进系统面）；dynamic tool registry 解析真实工具名，per-tool 超时 | `runner/tools/turn-toolset.ts:26-44,543-572`、`mcp-meta-tools.ts:121-151` |
+| 聊天内管理 | 12 个管理工具：SearchPlugins / GetPlugin / InstallPlugin / AddMcpServer / UninstallMcpServer / UninstallPlugin / GetMcpServerStatus / SetMcpInstructions / RestartMcpServers / AuthenticateMcpServer / RemoveMcpAccount / RenameMcpAccount——**bot 对话即可装服务器、走 OAuth、授权后自动 resume** | `runner/tools/sand-mcp-management-tools.ts:315-429` |
+| 鉴权 | OAuth 等待注册表 + 完成回执 + `resumeAfterMcpAuth`；connect card（variant `connect`/`connected`）自动入 transcript | `mcp-auth/host-mcp-auth-completion.ts`、`gateway-protocol.ts:21` |
+| 市场 | 插件目录（listPlugins/getPlugin/install/uninstall）：connectors+skills 打包，setup fields 带 required/secret 标记 | `sand-mcp-management-tools.ts:32-52` |
+| 配置 | `<dataDir>/mcp-servers.json`（stdio 服务器；实测已有 `mini` :900000001）+ settings.json 的 `mcpCustomInstructions(ByServerId)` / `mcpDisabledToolsByServerId` / `mcpBoxServers` | `~/.sdk-bots/` 实读 |
+| 沙盒 | box 侧 `loadMcpServers` 控制通道（老镜像抛 `SandBoxMcpUnsupportedError`） | `box/box-mcp.ts` |
+
+### 13.3 IA 决策：三处分工（避免把管理面堆进一个页面）
+
+| 场景 | 归属 | 理由 |
+|---|---|---|
+| 服务器生命周期（装/删/重启/鉴权状态） | **设置页**「MCP 服务器」分区（DESIGN.md §4.4） | 全局低频、影响所有 bot |
+| 工具浏览与试运行 | **工作台详情栏**「工具」页 | 调试高频、跟 bot 上下文走 |
+| 聊天内自助管理 | **已有**——bot 用 12 个管理工具，UI 只需渲染 connector card 与工具卡片 | 零开发，只补渲染 |
+
+### 13.4 分期落地
+
+| 期 | 内容 | 工程量 |
+|---|---|---|
+| **P0 桥接** | Host 半边 6 个透传 RPC（全部 `callGateway` 现成命令）：`bots.mcpServers` / `bots.mcpTools` / `bots.mcpAdd {name, configJson}` / `bots.mcpRemove {serverId}` / `bots.mcpRefresh` / `bots.mcpExecute`。注意 §12-33 单 `request` 形参约定 | ~1 天 |
+| **P0 设置页** | 「MCP 服务器」分区：列表行（StateDot: connected/needsAuth/error + toolCount + transport）+ 添加（stdio command / URL 两栏，configJson 组装为 JSON 对象串）+ 删除（确认）+ 重启 + 自定义指令查看 | ~半天 |
+| **P1 工具面板** | 详情栏按 server 分组列 `mcpTools`（name/toolName/description/inputSchema）+ 单工具「试运行」（JSON args → `mcpExecute`，agentId 传当前 bot） | ~1 天 |
+| **P1 聊天卡片** | connector card（connect/connected 两态）渲染；MCP 工具调用经 `client-side-tool-v2` 卡片化；auth 完成 → `refreshMcp {completion}` 回执链 | ~1 天 |
+| **P2** | 插件市场 UI（listPlugins/install 已有 API）；box MCP 状态角标；per-bot 工具开关（引擎现为全局 `mcpDisabledToolsByServerId`，per-agent 需引擎小改） | 按需 |
+
+### 13.5 已知坑与待实测
+
+1. **`executeRoutedMcpTool` 字段翻转（待实测）**：`host-gateway-api.ts:158-165` 把请求体 `{name, toolName}` **交换后**传给 executor
+   （`{name: args.toolName, toolName: args.name}`）。按 `listRoutedMcpTools` 行形（`name`=动态注册名、`toolName`=底层工具名）推导：
+   调用时应传 `{name: 行.toolName, toolName: 行.name}`。P0 试运行面板首验，不通则交换并在此记录。
+2. **stdio 支持面**：聊天管理工具 AddMcpServer 的描述文案写着「仅支持 remote http/sse」——那是官方云端限制；**本地网关 `addMcpServer` 明确支持 stdio**
+   （`mcp-servers.json` 实证）。UI 文案按本地现实写，勿抄官方文案。
+3. **`configJson` 必须是 JSON 对象字符串**：网关侧 `JSON.parse` 校验，数组/null 拒绝（`host-gateway-api.ts:703-718`）。
+4. **MCP 无专属 SSE 频道**：连接状态变化靠设置页打开时拉取 + 手动刷新（与 §4.4 横切规则一致）；`mcpDisabledToolsByServerId` 改动经 `refreshMcp` 生效。
+5. **鉴权流依赖卡片回执**：`completeMcpOAuth` 在网关 API 是 stub（`:696`），真实完成回执走 `refreshMcp {completion}` → `handleDesktopMcpAuthCompletion`——插件侧授权完成必须回这条，否则 bot 不会自动 resume。
+
+### 13.6 验收
+
+沿用实测在案的 `mini` stdio 服务器模式：设置页添加一个 echo MCP（stdio）→ 列表出现且 StateDot connected → 工具面板见其工具 → 试运行回显 → 聊天里让 bot 用该工具 → 删除。全程免 reload。
+
+---
+
+*文档版本：2026-09-02 · 基于 multibot-sdk 0.4.0 · 正式插件包 dsh-plugin-bots 0.2.1 已装入真实 profile；M6 7x24 自驱蜂群落地（launchd 守护 + 自主能力六断言全绿 + swarm 引导器，见 scripts/swarm/README.md）；MCP 快速接入方案定稿（§13，引擎成品 + 插件暴露层）。架构详见 DESIGN.md*

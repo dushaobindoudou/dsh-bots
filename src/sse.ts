@@ -62,7 +62,11 @@ export class SseRingBuffer {
   private entries: SseEvent[] = []
   private nextSeq = 0
 
-  constructor(capacity = 3000) {
+  constructor(
+    capacity = 3000,
+    /** Optional side-channel observer (unread tracking); must never throw. */
+    private readonly onPush?: (channel: string, data: unknown) => void,
+  ) {
     this.capacity = Math.max(1, Math.floor(capacity))
   }
 
@@ -72,6 +76,9 @@ export class SseRingBuffer {
     this.nextSeq += 1
     if (this.entries.length >= this.capacity) this.entries.shift()
     this.entries.push({ seq, channel, data })
+    if (this.onPush !== undefined) {
+      try { this.onPush(channel, data) } catch { /* observer must not break the ring */ }
+    }
     return seq
   }
 
@@ -116,6 +123,7 @@ export class GatewaySseClient {
   private readonly resolveBase: () => { url: string; token: string | null } | null
   private readonly reconnectBaseMs: number
   private readonly channels?: string[]
+  private readonly onConnected?: () => void
 
   private ac: AbortController | null = null
   private timer: ReturnType<typeof setTimeout> | null = null
@@ -132,11 +140,14 @@ export class GatewaySseClient {
     reconnectBaseMs?: number
     /** Optional `channels` subscription subset, e.g. `transcript,agents`. */
     channels?: string[]
+    /** Fired after every successful (re)connect — unread rebase hook. */
+    onConnected?: () => void
   }) {
     this.ring = opts.ring ?? new SseRingBuffer()
     this.resolveBase = opts.resolveBase
     this.reconnectBaseMs = opts.reconnectBaseMs ?? 2000
     this.channels = opts.channels
+    this.onConnected = opts.onConnected
   }
 
   get buffer(): SseRingBuffer { return this.ring }
@@ -208,6 +219,10 @@ export class GatewaySseClient {
       this.lastError = null
       this.connectedAt = new Date().toISOString()
       this.droppedAt = null
+      this.attempt = 0
+      if (this.onConnected !== undefined) {
+        try { this.onConnected() } catch { /* observer must not break the loop */ }
+      }
 
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
