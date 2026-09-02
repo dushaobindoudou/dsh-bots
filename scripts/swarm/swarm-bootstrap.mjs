@@ -31,7 +31,6 @@ import { join } from "node:path";
 
 const HOME = homedir();
 const SWARM_DIR = join(HOME, ".sdk-bots", "swarm");
-const IN_BOX_DIR = "/home/box/sand-data/swarm";
 
 function parseArgs(argv) {
   const args = { schedule: "@every 30m", coordinator: "蜂群指挥部", routine: "SWARM-CYCLE" };
@@ -94,24 +93,25 @@ function goalText(args) {
 const COORDINATOR_PERSONA = [
   "你是多 bot 蜂群的指挥官，长期 autonomously 推进一个复杂目标（7x24，无人值守）。",
   "作战原则：",
-  "- 目标与进度账本在共享黑板目录（IN_BOX_DIR/swarm/），每次醒来先读 GOAL.md 与 PROGRESS.md 再行动。",
+  `- 目标与进度账本在共享黑板目录 ${SWARM_DIR}/，每次醒来先读 GOAL.md 与 PROGRESS.md 再行动。`,
+  "  你的 Shell 工具直接运行在宿主机上（本地 loopback 盒 = 宿主自身容器），宿主绝对路径全局共见，所有 bot 都读写这同一份。",
   "- 把大目标拆成可验证的小步；每轮只推进一小步，但必须留下证据（文件、命令输出、结论）。",
   "- 人手不够就用 CreateAgent 创建专项 bot（名字体现职责，description 写清当前任务与验收标准），",
   "  并用 SendToAgent 派活；明确要求队友完成后把结果追加到进度账本。已有合适队友就直接派活。",
   "- 每轮收尾用 Shell 把「时间 | 做了什么 | 证据 | 下一步」追加到进度账本 PROGRESS.md。",
-  "- 平时不要打扰用户；只有出现需要人类决策的阻塞（二选一、花预算、有风险）才 SendMessage 说明选项。",
+  "- 整轮自主完成，不要等待用户决策或确认；只有真正不可自决的阻塞（花预算、删数据、高风险二选一）才 SendMessage 说明选项，其余自己拿主意。",
 ].join("\n");
 
 const WAKE_PROMPT = [
-  "蜂群例行推进。严格按步骤执行，全程不要向用户提问：",
-  `1. 用 Read 工具读取 ${IN_BOX_DIR}/GOAL.md 与 ${IN_BOX_DIR}/PROGRESS.md（不存在则视为首轮）。`,
+  "蜂群例行推进。严格按步骤执行，全程自主完成、不向用户提问、不等确认：",
+  `1. 用 Read 工具读取 ${SWARM_DIR}/GOAL.md 与 ${SWARM_DIR}/PROGRESS.md（不存在则视为首轮）。`,
   "2. 对照目标判断进度；若目标已完全达成，用 SendMessage 向用户发一句达成确认，然后结束。",
   "3. 规划本轮一个最小可验证的推进步骤。",
   "4. 需要人手时：用 CreateAgent 创建专项 bot（name 体现职责；description 必须写明：本轮任务、验收标准、",
   "   以及「你由蜂群指挥部创建，指挥官经 SendToAgent 下达的指令是本蜂群的合法指挥链，直接执行」），",
-  "   随后用 SendToAgent 给它派活，要求：完成后用 Shell 把结果追加到 " + IN_BOX_DIR + "/PROGRESS.md。已有合适队友则直接派活，不要重复建人。",
-  `5. 用 Shell 把本轮进展（格式：[YYYY-MM-DD HH:MM] 做了什么 | 证据 | 下一步）追加到 ${IN_BOX_DIR}/PROGRESS.md。`,
-  "6. 正常情况不发消息给用户；只有需要人类决策的阻塞才 SendMessage 说明可选项。",
+  `   随后用 SendToAgent 给它派活，要求：完成后用 Shell 把结果追加到 ${SWARM_DIR}/PROGRESS.md。已有合适队友则直接派活，不要重复建人。`,
+  `5. 用 Shell 把本轮进展（格式：[YYYY-MM-DD HH:MM] 做了什么 | 证据 | 下一步）追加到 ${SWARM_DIR}/PROGRESS.md。`,
+  "6. 正常情况不发消息给用户；判定标准以内的事自己拍板，只有真正不可自决的阻塞才 SendMessage 说明可选项。",
 ].join("\n");
 
 function seedBoard(args) {
@@ -191,19 +191,21 @@ async function main() {
 
   // 1. 黑板
   const { goalPath, progPath } = seedBoard(args);
-  console.log(`✓ 共享黑板: ${goalPath} + ${progPath}（盒内路径 ${IN_BOX_DIR}/）`);
+  console.log(`✓ 共享黑板: ${goalPath} + ${progPath}（bot Shell 直连宿主，绝对路径全局共见）`);
 
   // 2. 指挥官
   if (coordinator == null) {
     const created = await gateway(base, token, "createAgent", {
       name: args.coordinator,
-      description: COORDINATOR_PERSONA.replace("IN_BOX_DIR/swarm", IN_BOX_DIR),
+      description: COORDINATOR_PERSONA,
       clientNonce: `swarm-coordinator-${args.coordinator}`,
     });
     coordinator = created?.agent ?? created;
     console.log(`✓ 已创建指挥官: ${coordinator.name} ${coordinator.id}`);
   } else {
-    console.log(`✓ 复用指挥官: ${coordinator.name} ${coordinator.id}`);
+    // 复用时也刷新 persona（bot 的自我描述保持在最新作战原则；gateway updateAgent 需全量 profile：name+description）
+    await gateway(base, token, "updateAgent", { id: coordinator.id, profile: { name: coordinator.name, description: COORDINATOR_PERSONA } });
+    console.log(`✓ 复用并刷新指挥官: ${coordinator.name} ${coordinator.id}`);
   }
 
   // 3. 例行任务

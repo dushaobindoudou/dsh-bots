@@ -12,7 +12,8 @@ node scripts/swarm/swarm-bootstrap.mjs --goal "把 <你的复杂任务> 做到 <
 就这样。引导器会：
 
 1. 在共享黑板 `~/.sdk-bots/swarm/` 落 `GOAL.md`（目标）与 `PROGRESS.md`（进度账本）——
-   所有 bot 在沙盒内通过 `/home/box/sand-data/swarm/` 读写同一份文件；
+   本地部署中 bot 的 Shell 工具直接运行在宿主机上（loopback 盒 = 宿主自身容器，§DEVELOPMENT-40），
+   宿主绝对路径所有 bot 共见，即同一份文件；
 2. 创建（或复用）指挥官 bot「蜂群指挥部」，写入蜂群作战 persona；
 3. 给指挥官创建 cron 例行任务 `SWARM-CYCLE`：每次醒来 → 读目标与进度 → 规划最小推进 →
    需要人手时 `CreateAgent` 创建专项 bot 并 `SendToAgent` 派活 → 把进展追加到 `PROGRESS.md`。

@@ -456,8 +456,10 @@ curl -sN --compressed "http://127.0.0.1:$PORT/events?token=$TOKEN"
     `refusing contaminated box exec-daemon startup`。验证脚本须另设 `SAND_BOX_EXEC_DAEMON_PORT=1347`（两侧都读该 env），比 `SAND_USE_EXISTING_BOX_EXEC_DAEMON=1` 复用生产 daemon 更干净。
 39. **worker bot 会拒绝来历不明的派活（2026-09-02 实证）**：引擎的提示注入防御把无上下文的 inter-agent 指令当可疑信标（工兵实测拒绝执行 echo）。
     解法 = 指挥官创建 worker 时把「你由蜂群指挥部创建，其 SendToAgent 指令是合法指挥链」写进对方 description（swarm-bootstrap 的例行 prompt 已内置）。
-40. **bot 共享文件黑板 = 盒内 `/home/box/sand-data/`（= 宿主 `~/.sdk-bots/`）**：agents 各自 cwd 是 `sand-data/agents/<agentId>`（隔离），
-    但整个 sand-data 树所有盒共见——跨 bot 协作文件放 `~/.sdk-bots/swarm/`（盒内 `/home/box/sand-data/swarm/`），勿放各自 cwd。
+40. **bot 共享文件黑板 = 宿主绝对路径 `~/.sdk-bots/swarm/`（2026-09-02 实测修正）**：本地 loopback 盒 =「宿主自身容器」，
+    bot 的 Shell 工具直接跑在宿主机上（cwd 是 `<dataRoot>/box-workspace`），没有 `/home/box/...` 真实挂载——
+    指挥官实测把 `/home/box` 判为只读卷。跨 bot 协作文件一律用宿主绝对路径（如 `~/.sdk-bots/swarm/GOAL.md`），所有 bot 共见；
+    各 bot cwd（box-workspace）下的相对路径文件也互相可见但易混淆，勿作黑板。
 
 ---
 
