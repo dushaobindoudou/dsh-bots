@@ -1013,16 +1013,8 @@
             list.map(row))
         }
 
-        // Footer: gateway status text only, pinned to the bottom of the Bots
-        // body. The create actions live on the section headers (群聊/单聊 +,
-        // see sectionRows) — the footer duplicates were removed in 0.2.7.
-        // The live dot itself lives on the group header (see SidebarNav).
-        const footer = e('div', {
-          className: 'dbs-srow', style: { cursor: 'default', background: 'transparent', marginTop: 'auto' },
-        },
-          e('span', { className: 'dbs-meta', style: { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
-            connected ? t('gateway.online', { port: s.info.port }) : t('gateway.offline')))
-
+        // No footer: the gateway status moved to the Bots group-header dot's
+        // hover tooltip (0.2.8) — see SidebarNav's StateDot `title`.
         return e('div', { className: 'dbs-navBody dbs-botsBody' },
           s.error !== null
             ? e('div', { className: 'dbs-error', onClick: () => patch({ error: null }) }, s.error)
@@ -1043,8 +1035,7 @@
                 title: t('bot.new'),
                 onClick: () => patch({ create: 'bot', createName: '', createDesc: '', createWorking: false, error: null }),
               })
-            : null,
-          footer)
+            : null)
       }
 
       // =========================================================
