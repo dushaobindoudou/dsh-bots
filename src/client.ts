@@ -357,6 +357,11 @@
         'action.create': '创建',
         'action.cancel': '取消',
         'action.close': '关闭',
+        'action.save': '保存',
+        'action.saving': '保存中…',
+        'chat.members.manage': '管理成员',
+        'modal.members.title': '管理群成员',
+        'modal.members.hint': '勾选的 Bot 为群成员；保存后立即生效（可随时再改）。',
         'action.delete': '删除',
         'delete.title.bot': '删除 Bot',
         'delete.title.group': '删除群聊',
@@ -452,6 +457,11 @@
         'action.create': 'Create',
         'action.cancel': 'Cancel',
         'action.close': 'Close',
+        'action.save': 'Save',
+        'action.saving': 'Saving…',
+        'chat.members.manage': 'Manage members',
+        'modal.members.title': 'Manage group members',
+        'modal.members.hint': 'Checked bots are members; changes apply immediately on save (editable again anytime).',
         'action.delete': 'Delete',
         'delete.title.bot': 'Delete bot',
         'delete.title.group': 'Delete group chat',
@@ -635,6 +645,8 @@
         createWorking: false,
         /** Delete confirmation: { id, name, isGroup } | null (system modal). */
         confirmDelete: null as any,
+        /** Manage-members dialog: group agentId | null (system modal). */
+        manageMembers: null as string | null,
         /** Bumped on a language switch so module-scope `t` output re-renders. */
         localeRev: 0,
       }
@@ -1511,6 +1523,12 @@
             agent !== null ? e(Avatar, { agent, size: 24 }) : null,
             e('span', { className: 'dbs-chatbarName' }, agent?.name ?? t('chat.loading')),
             e('span', { className: 'dbs-meta' }, isGroup ? t('chat.group', { n: memberNames.length }) : t('chat.single')),
+            isGroup
+              ? e(Button, {
+                  variant: 'ghost', size: 'sm', title: t('chat.members.manage'), 'aria-label': t('chat.members.manage'),
+                  onClick: () => patch({ manageMembers: p.agentId }),
+                }, t('chat.members.manage'))
+              : null,
             e('span', { style: { flex: 1 } })),
 
           error !== null
@@ -1937,6 +1955,95 @@
               }, t('action.create')))))
       }
 
+      /**
+       * Manage group members: full-set checkbox editor over the group's
+       * current memberIds — add and remove are the same save (the gateway
+       * command is a member-list put, not a delta). Same dialog chrome and
+       * member-row markup as CreateModal.
+       */
+      function ManageMembersModal() {
+        const s = useStore()
+        const group = agentById(s.manageMembers)
+        const [picked, setPicked] = React.useState(null as Record<string, boolean> | null)
+        const [err, setErr] = React.useState(null as string | null)
+        const [working, setWorking] = React.useState(false)
+
+        // Seed once per opened group; a group vanishing mid-edit (deleted by
+        // the swarm, say) just renders the modal inert until closed.
+        React.useEffect(() => {
+          if (group === null || group === undefined) return
+          const init: Record<string, boolean> = {}
+          for (const id of group.memberIds ?? []) init[id] = true
+          setPicked(init)
+          // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, [s.manageMembers])
+
+        if (group === null || group === undefined) return null
+        const singles = (s.agents as any[]).filter((a: any) => !a.isGroup && a.isHiddenFromSidebar !== true)
+        const pickedIds = picked === null ? [] : Object.keys(picked).filter((k) => picked[k])
+
+        async function submit() {
+          if (working || picked === null) return
+          setWorking(true); setErr(null)
+          try {
+            await botsCall('setGroupMembers', { id: group.id, memberIds: pickedIds })
+            patch({ manageMembers: null })
+            await refreshAgents()
+            return
+          } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
+          setWorking(false)
+        }
+
+        return e('div', {
+          className: 'dbs-modalBackdrop',
+          onClick: () => { if (!working) patch({ manageMembers: null }) },
+        },
+          e('div', {
+            className: 'dbs-modalCard', role: 'dialog', 'aria-modal': true,
+            'aria-label': t('modal.members.title'),
+            onClick: (ev: any) => { ev.stopPropagation() },
+          },
+            e('div', { className: 'dbs-modalTitleRow' },
+              e('span', { className: 'dbs-modalTitle' }, t('modal.members.title')),
+              e(Button, {
+                variant: 'ghost', size: 'sm', title: t('action.close'), 'aria-label': t('action.close'),
+                disabled: working,
+                icon: Ico('IconCloseOutline16', { size: 16 }),
+                onClick: () => patch({ manageMembers: null }),
+              })),
+            e('div', { className: 'dbs-modalBody' },
+              e('div', { className: 'dbs-meta', style: { padding: '0 2px 6px' } }, t('modal.members.hint')),
+              picked === null
+                ? e('div', { className: 'dbs-meta', style: { padding: '4px 6px' } }, t('list.loading'))
+                : e('div', { className: 'dbs-modalMembers' },
+                    singles.length === 0
+                      ? e('div', { className: 'dbs-meta', style: { padding: '4px 6px' } }, t('list.empty'))
+                      : singles.map((m: any) => e('div', {
+                          key: m.id,
+                          className: 'dbs-member' + (picked[m.id] ? ' checked' : ''),
+                          style: { cursor: 'pointer', padding: '4px 6px', borderRadius: 8 },
+                          onClick: () => setPicked({ ...picked, [m.id]: !picked[m.id] }),
+                        }, e('input', { type: 'checkbox', checked: Boolean(picked[m.id]), readOnly: true }),
+                          e(Avatar, { agent: m, size: 18 }),
+                          e('span', { className: 'dbs-title' }, m.name))),
+                    singles.length > 0
+                      ? e('div', { className: 'dbs-meta', style: { padding: '6px 6px 0' } },
+                          t('chat.group', { n: pickedIds.length }))
+                      : null),
+              err !== null
+                ? e('div', { className: 'dbs-error', onClick: () => { setErr(null) } }, err)
+                : null),
+            e('div', { className: 'dbs-modalFooter' },
+              e(Button, {
+                variant: 'ghost', size: 'sm', disabled: working,
+                onClick: () => patch({ manageMembers: null }),
+              }, t('action.cancel')),
+              e(Button, {
+                variant: 'primary', size: 'sm', disabled: picked === null || working,
+                onClick: () => void submit(),
+              }, working ? t('action.saving') : t('action.save')))))
+      }
+
       /** Delete confirmation modal: same system-dialog chrome as CreateModal. */
       function ConfirmDeleteModal() {
         const s = useStore()
@@ -2010,6 +2117,7 @@
         const layers: any[] = []
         if (s.chatAgentId !== null) layers.push(e(ChatView, { agentId: s.chatAgentId, key: s.chatAgentId }))
         if (s.create !== null) layers.push(e(CreateModal, { key: 'create' }))
+        if (s.manageMembers !== null) layers.push(e(ManageMembersModal, { key: 'manage-members' }))
         if (s.confirmDelete !== null) layers.push(e(ConfirmDeleteModal, { key: 'confirm-delete' }))
         return layers.length === 0 ? null : e('div', null, layers)
       }

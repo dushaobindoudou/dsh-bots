@@ -288,6 +288,19 @@ export class BotsRemote extends TypertRemoteService {
     return trimAgent(created?.agent ?? created)
   }
 
+  /**
+   * Replace a group's member list (add + remove in one call — the gateway
+   * command is a full-set put, not a delta). Wire field is `memberAgentIds`,
+   * same as `createGroup` (§7.2).
+   */
+  async setGroupMembers(request: { id?: string; memberIds?: string[] } | null): Promise<AgentInfo | null> {
+    const updated = await callGateway<any>(this.cfg.dataDir, 'setGroupMembers', {
+      id: request?.id,
+      memberAgentIds: Array.isArray(request?.memberIds) ? request.memberIds : [],
+    })
+    return trimAgent(updated?.agent ?? updated)
+  }
+
   async update(request: { id?: string; profile?: Record<string, unknown> } | null): Promise<AgentInfo | null> {
     const updated = await callGateway<any>(this.cfg.dataDir, 'updateAgent', {
       id: request?.id,
@@ -498,7 +511,7 @@ export class BotsRemote extends TypertRemoteService {
 
 for (const m of [
   'gatewayInfo', 'list', 'workspaces', 'sessions',
-  'create', 'createGroup', 'update', 'remove', 'send', 'transcriptTail', 'markRead', 'diag',
+  'create', 'createGroup', 'setGroupMembers', 'update', 'remove', 'send', 'transcriptTail', 'markRead', 'diag',
   'mcpServers', 'mcpTools', 'mcpAdd', 'mcpRemove', 'mcpRefresh', 'mcpExecute',
   'workspaceList', 'workspaceGet', 'workspaceSet',
   'eventsSince', 'sseState',
