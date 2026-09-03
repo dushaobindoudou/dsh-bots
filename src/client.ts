@@ -347,9 +347,13 @@
 .dbs-modalBody{display:flex;flex-direction:column;gap:10px}
 .dbs-modalMembers{display:flex;flex-direction:column;gap:2px;max-height:220px;overflow-y:auto;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;padding:6px}
 .dbs-modalFooter{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:16px}
-.dbs-rowDel{display:none;border:none;background:transparent;cursor:pointer;color:var(--dsw-alias-label-tertiary);flex:none;justify-content:center;align-items:center;width:24px;height:24px;border-radius:6px;padding:0}
-.dbs-rowDel:hover{color:#f85149;background:rgba(248,81,73,.1)}
-.dbs-srow:hover .dbs-rowDel,.dbs-rowDel:focus-visible{display:inline-flex}
+.dbs-rowMore{display:none;border:none;background:transparent;cursor:pointer;color:var(--dsw-alias-label-tertiary);flex:none;justify-content:center;align-items:center;width:24px;height:24px;border-radius:6px;padding:0}
+.dbs-rowMore:hover,.dbs-rowMore:focus-visible{color:var(--dsw-alias-label-primary);background:transparent}
+.dbs-srow:hover .dbs-rowMore,.dbs-rowMore:focus-visible,.dbs-srow[data-menu="true"] .dbs-rowMore{display:inline-flex}
+.dbs-srow{position:relative}
+.dbs-rowMenu{position:absolute;top:calc(100% - 2px);right:4px;z-index:40}
+/* Same quiet-hover contract for the section-header action buttons. */
+.dbs-secHead .dbs-rowActions button:hover,.dbs-secHead .dbs-rowActions button:focus-visible{background:transparent}
 .dbs-mention{position:absolute;bottom:calc(100% + 6px);left:12px;right:12px;max-height:180px;overflow-y:auto;background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:12px;box-shadow:var(--dsw-shadow-lv2);padding:4px;z-index:3}
 .dbs-mentionRow{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary)}
 .dbs-mentionRow[data-active="true"],.dbs-mentionRow:hover{background:var(--dsw-alias-interactive-bg-hover)}
@@ -746,6 +750,7 @@
         manageMembers: null as string | null,
         settingsAgentId: null as string | null,
         sectionMenu: null as string | null,
+        rowMenu: null as string | null,
         sectionsOpen: null as Record<string, boolean> | null,
         /** Bumped on a language switch so module-scope `t` output re-renders. */
         localeRev: 0,
@@ -1053,6 +1058,7 @@
           return e('div', {
             key: a.id,
             className: 'dbs-srow' + (s.chatAgentId === a.id ? ' dbs-selected' : ''),
+            'data-menu': s.rowMenu === a.id ? 'true' : 'false',
             role: 'treeitem',
             'aria-selected': s.chatAgentId === a.id,
             tabIndex: 0,
@@ -1069,14 +1075,24 @@
                 : unread > 0
                   ? e('span', { className: 'dbs-badge' }, unread > 99 ? '99+' : String(unread))
                   : null,
+            // 更多操作: a single-item menu (删除) replaces the bare trash
+            // button — same affordance as the section headers, room to grow.
+            // The trigger paints NO hover background (user request): color
+            // shift only, so the reveal stays quiet.
             e('button', {
-              type: 'button', className: 'dbs-rowDel',
-              title: t('action.delete'), 'aria-label': t('action.delete') + ' ' + a.name,
-              onClick: (ev: any) => {
-                ev.stopPropagation()
-                patch({ confirmDelete: { id: a.id, name: a.name, isGroup: a.isGroup === true } })
-              },
-            }, Ico('IconTrashOutline16', { size: 14 })))
+              type: 'button', className: 'dbs-rowMore',
+              title: t('list.more'), 'aria-label': t('list.more') + ' ' + a.name,
+              onClick: (ev: any) => { ev.stopPropagation(); patch({ rowMenu: s.rowMenu === a.id ? null : a.id }) },
+            }, Ico('IconEllipsisOutline16', { size: 14 })),
+            s.rowMenu === a.id
+              ? e(React.Fragment, null,
+                  e('div', { style: { position: 'fixed', inset: 0, zIndex: 39 }, onClick: () => patch({ rowMenu: null }) }),
+                  e('div', { className: 'dbs-secMenu dbs-rowMenu', onClick: (ev: any) => { ev.stopPropagation() } },
+                    e('button', {
+                      className: 'dbs-secMenuItem', type: 'button',
+                      onClick: () => { patch({ rowMenu: null, confirmDelete: { id: a.id, name: a.name, isGroup: a.isGroup === true } }) },
+                    }, Ico('IconTrashOutline16', { size: 14 }), t('action.delete'))))
+              : null)
         }
 
         /**
@@ -2488,6 +2504,7 @@
           function onKey(ev: KeyboardEvent) {
             if (ev.key !== 'Escape') return
             // Topmost dialog first: delete confirm, then create, then chat.
+            if (state.rowMenu !== null) { patch({ rowMenu: null }); return }
             if (state.confirmDelete !== null) { patch({ confirmDelete: null }); return }
             if (state.create !== null) { patch({ create: null }); return }
             if (state.chatAgentId !== null) patch({ chatAgentId: null })
