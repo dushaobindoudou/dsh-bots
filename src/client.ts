@@ -284,7 +284,7 @@
 .dbs-chatview{position:absolute;top:0;bottom:0;pointer-events:auto;display:flex;flex-direction:column;background:var(--dsw-alias-bg-base);font-family:var(--dsw-font-family,inherit);z-index:2;--dsh-chat-content-width:748px;--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;--dsh-composer-text-max-height:336px;min-width:0}
 .dbs-mediaRefs{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;align-items:center}
 .dbs-mediaImg{max-width:280px;max-height:210px;border-radius:10px;cursor:zoom-in;display:block;border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.08))}
-.dbs-mediaLoading{width:28px;height:20px;display:inline-flex;align-items:center;color:var(--dsw-alias-label-tertiary)}
+.dbs-mediaLoading{width:28px;height:20px;display:inline-flex;align-items:center;color:var(--dsw-alias-label-tertiary);animation:dbsSpin .8s linear infinite}
 .dbs-fileChip{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;background:var(--dsw-alias-interactive-bg-hover);font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);cursor:pointer;max-width:100%;user-select:none}
 .dbs-fileChip:hover{color:var(--dsw-alias-label-primary)}
 .dbs-fileChipName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -366,11 +366,14 @@
 .dbs-jump{position:absolute;right:20px;bottom:12px;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));background:var(--dsw-specific-input-major,var(--dsw-alias-bg-layer-1,#fff));box-shadow:var(--dsw-shadow-lv2);color:var(--dsw-alias-label-secondary);cursor:pointer;z-index:5;transition:opacity .15s ease,transform .15s ease}
 .dbs-jump:hover{color:var(--dsw-alias-label-primary);transform:translateY(-1px)}
 .dbs-jump[data-show="false"]{opacity:0;pointer-events:none;transform:translateY(4px)}
-.dbs-typing{display:inline-flex;align-items:center;gap:4px;padding:6px 2px}
-.dbs-typing span{width:6px;height:6px;border-radius:999px;background:var(--dsw-alias-label-tertiary);animation:dbsTyping 1.2s ease-in-out infinite}
-.dbs-typing span:nth-child(2){animation-delay:.15s}
-.dbs-typing span:nth-child(3){animation-delay:.3s}
-@keyframes dbsTyping{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+/* Loading states aligned with the native shell: StateDot chase icon where
+   available (the real native component), pulse-dot fallback in DeepSeek blue
+   at the native 1s cycle; media spinner reuses the native 0.8s linear spin. */
+.dbs-typing{display:inline-flex;align-items:center;gap:6px;padding:6px 2px}
+.dbs-typingText{font-size:12px;line-height:16px;color:var(--dsw-alias-label-tertiary)}
+.dbs-typingDot{width:12px;height:12px;border-radius:999px;background:var(--dsw-static-deepseek-450,var(--dsw-alias-label-tertiary));animation:dbsPulse 1s ease-in-out infinite}
+@keyframes dbsPulse{0%,100%{opacity:.2}50%{opacity:1}}
+@keyframes dbsSpin{to{transform:rotate(360deg)}}
 .dbs-mdRow{display:flex;align-items:flex-start;gap:0;min-width:0;width:100%}
 .dbs-caret{flex:none;display:inline-block;width:3px;height:18px;margin-top:5px;border-radius:2px;background:var(--dsw-alias-label-primary);animation:dbsCaret 1s steps(2) infinite}
 @keyframes dbsCaret{0%,49%{opacity:1}50%,100%{opacity:0}}
@@ -430,7 +433,7 @@
         'chat.stop.noop': '当前没有进行中的生成',
         'media.openFailed': '打开失败，文件可能已移动或被删除',
         'chat.members.manage': '管理成员',
-        'chat.members.cap': '已达群成员上限 6 人（引擎限制）——请先移除一名成员再添加',
+        'chat.members.cap': '已达群成员上限 {cap} 人——可先在下方调大「成员上限」再添加',
         'chat.settings': '设置',
         'chat.settings.title': '会话设置',
         'chat.settings.name': '名称',
@@ -443,6 +446,7 @@
         'chat.settings.hint': '写入被沙盒限制在工作区（含额外路径）内，读取不受限；同 slug 的 Bot 共享同一目录。',
         'modal.members.title': '管理群成员',
         'modal.members.hint': '勾选的 Bot 为群成员；保存后立即生效（可随时再改）。',
+        'modal.members.cap': '成员上限（1–16）',
         'action.delete': '删除',
         'delete.title.bot': '删除 Bot',
         'delete.title.group': '删除群聊',
@@ -546,7 +550,7 @@
         'chat.stop.noop': 'No generation in progress',
         'media.openFailed': 'Open failed — the file may have moved or been deleted',
         'chat.members.manage': 'Manage members',
-        'chat.members.cap': 'Group cap is 6 members (engine limit) — remove one before adding',
+        'chat.members.cap': 'Group cap is {cap} members — raise the cap below first',
         'chat.settings': 'Settings',
         'chat.settings.title': 'Session settings',
         'chat.settings.name': 'Name',
@@ -559,6 +563,7 @@
         'chat.settings.hint': 'Writes are sandboxed to the workspace (plus extra paths); reads stay unrestricted. Bots sharing a slug share one directory.',
         'modal.members.title': 'Manage group members',
         'modal.members.hint': 'Checked bots are members; changes apply immediately on save (editable again anytime).',
+        'modal.members.cap': 'Member cap (1–16)',
         'action.delete': 'Delete',
         'delete.title.bot': 'Delete bot',
         'delete.title.group': 'Delete group chat',
@@ -1809,7 +1814,13 @@
                       : thread,
                   composing
                     ? e('div', { className: 'dbs-typing', 'aria-label': t('chat.composing'), title: t('chat.composing') },
-                        e('span', null), e('span', null), e('span', null))
+                        // Native ongoing state: the StateDot chase matrix
+                        // (DeepSeek-blue cells, 1s cycle) — the exact icon the
+                        // shell uses while a run is in flight.
+                        StateDot !== null
+                          ? e(StateDot, { state: 'ongoing', size: 12 })
+                          : e('span', { className: 'dbs-typingDot' }),
+                        e('span', { className: 'dbs-typingText' }, t('chat.composing')))
                     : null))),
             e('button', {
               type: 'button', className: 'dbs-jump', 'data-show': showJump ? 'true' : 'false',
@@ -2229,6 +2240,7 @@
         const [picked, setPicked] = React.useState(null as Record<string, boolean> | null)
         const [err, setErr] = React.useState(null as string | null)
         const [working, setWorking] = React.useState(false)
+        const [capText, setCapText] = React.useState('8')
 
         // Seed once per opened group; a group vanishing mid-edit (deleted by
         // the swarm, say) just renders the modal inert until closed.
@@ -2237,23 +2249,24 @@
           const init: Record<string, boolean> = {}
           for (const id of group.memberIds ?? []) init[id] = true
           setPicked(init)
+          setCapText(String(group.maxMembers ?? 8))
           // eslint-disable-next-line react-hooks/exhaustive-deps
         }, [s.manageMembers])
 
         if (group === null || group === undefined) return null
         const singles = (s.agents as any[]).filter((a: any) => !a.isGroup && a.isHiddenFromSidebar !== true)
         const pickedIds = picked === null ? [] : Object.keys(picked).filter((k) => picked[k])
-        // Engine hard cap (sdk-bots agents.ts GROUP_MAX_MEMBERS = 6): the glue
-        // slice(0, 6)-truncates the roster SILENTLY — an over-cap save writes
-        // successfully and just drops whoever ranked past 6. Surface it here
-        // instead of letting a save pretend to work.
-        const MEMBER_CAP = 6
+        // Per-group cap (group.json maxMembers, default 8, engine hard max 16):
+        // the glue slice(0, maxMembers)-truncates the roster SILENTLY — an
+        // over-cap save writes successfully and just drops whoever ranked past
+        // the cap. Surface it here instead of letting a save pretend to work.
+        const MEMBER_CAP = Math.min(16, Math.max(1, Math.floor(Number(capText)) || 8))
         const overCap = pickedIds.length > MEMBER_CAP
 
         function toggle(id: string): void {
           if (picked === null) return
           if (picked[id] !== true && pickedIds.length >= MEMBER_CAP) {
-            setErr(t('chat.members.cap'))
+            setErr(t('chat.members.cap', { cap: MEMBER_CAP }))
             return
           }
           setErr(null)
@@ -2264,7 +2277,7 @@
           if (working || picked === null || overCap) return
           setWorking(true); setErr(null)
           try {
-            await botsCall('setGroupMembers', { id: group.id, memberIds: pickedIds })
+            await botsCall('setGroupMembers', { id: group.id, memberIds: pickedIds, maxMembers: MEMBER_CAP })
             patch({ manageMembers: null })
             await refreshAgents()
             return
@@ -2291,6 +2304,12 @@
               })),
             e('div', { className: 'dbs-modalBody' },
               e('div', { className: 'dbs-meta', style: { padding: '0 2px 6px' } }, t('modal.members.hint')),
+              e('div', { className: 'dbs-setrow', style: { padding: '0 2px 8px', gap: 8 } },
+                e('span', { className: 'dbs-meta' }, t('modal.members.cap')),
+                e(Input, {
+                  value: capText, disabled: working, style: { width: 72 },
+                  onChange: (ev: any) => setCapText(ev.target.value),
+                })),
               picked === null
                 ? e('div', { className: 'dbs-meta', style: { padding: '4px 6px' } }, t('list.loading'))
                 : e('div', { className: 'dbs-modalMembers' },
