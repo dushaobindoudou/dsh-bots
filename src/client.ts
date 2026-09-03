@@ -232,10 +232,15 @@
 .dbs-navBody{display:flex;flex-direction:column;min-height:0;flex:1}
 .dbs-botsBody{overflow-y:auto;scrollbar-gutter:stable;padding-right:var(--dsh-sidebar-inline-padding,8px)}
 .dbs-navBodyErr{padding:6px 12px;font-size:12px;line-height:20px;color:var(--dsw-alias-label-tertiary)}
-.dbs-secHead{position:relative;cursor:pointer;border-radius:8px}
+/* Hover actions RESERVE their space (visibility/opacity swap, not
+   display:none): a display toggle let the appearing buttons stretch the
+   row on hover and shrink it on leave — width/height jitter the user read
+   as flicker. Fixed 30px row + always-laid-out actions = zero geometry
+   change; the same trick the native headerActions uses (max-width/opacity). */
+.dbs-secHead{position:relative;cursor:pointer;border-radius:8px;height:30px}
 .dbs-secHead:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.dbs-secHead .dbs-rowActions{display:none}
-.dbs-secHead:hover .dbs-rowActions,.dbs-secHead:focus-within .dbs-rowActions{display:inline-flex}
+.dbs-secHead .dbs-rowActions{display:inline-flex;visibility:hidden;opacity:0;pointer-events:none;transition:opacity .12s ease-out}
+.dbs-secHead:hover .dbs-rowActions,.dbs-secHead:focus-within .dbs-rowActions,.dbs-secHead[data-menu="true"] .dbs-rowActions{visibility:visible;opacity:1;pointer-events:auto}
 .dbs-secMenu{position:absolute;top:100%;right:0;z-index:40;min-width:148px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:12px;padding:4px;box-shadow:0 12px 40px rgba(0,0,0,.22);animation:dbs-modal-in .14s ease-out}
 .dbs-secMenuItem{display:flex;align-items:center;gap:8px;width:100%;padding:6px 10px;border-radius:8px;font-size:13px;line-height:18px;color:var(--dsw-alias-label-primary);cursor:pointer;background:none;border:none;text-align:left}
 .dbs-secMenuItem:hover{background:var(--dsw-alias-interactive-bg-hover)}
@@ -1089,11 +1094,12 @@
           return e('div', { key: label },
             e('div', {
               className: 'dbs-navBodyErr dbs-secHead', role: 'button', tabIndex: 0, 'aria-expanded': isOpen,
+              'data-menu': menuOpen ? 'true' : 'false',
               // Native sectionHeader outdent: label at x=16 (12 sidebar
               // padding + 4), aligned with the group headers. The previous
               // 12px here pushed section labels 8px right of the native
               // baseline, making both sections read horizontally off.
-              style: { padding: '4px 8px 2px 4px', display: 'flex', alignItems: 'center', gap: 2 },
+              style: { padding: '0 8px 0 4px', display: 'flex', alignItems: 'center', gap: 2 },
               onClick: toggle,
               onKeyDown: (ev: any) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle() } },
             },
