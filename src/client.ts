@@ -232,6 +232,12 @@
 .dbs-navBody{display:flex;flex-direction:column;min-height:0;flex:1}
 .dbs-botsBody{overflow-y:auto;scrollbar-gutter:stable;padding-right:var(--dsh-sidebar-inline-padding,8px)}
 .dbs-navBodyErr{padding:6px 12px;font-size:12px;line-height:20px;color:var(--dsw-alias-label-tertiary)}
+.dbs-secHead{position:relative}
+.dbs-secHead .dbs-rowActions{display:none}
+.dbs-secHead:hover .dbs-rowActions,.dbs-secHead:focus-within .dbs-rowActions{display:inline-flex}
+.dbs-secMenu{position:absolute;top:100%;right:0;z-index:40;min-width:148px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:12px;padding:4px;box-shadow:0 12px 40px rgba(0,0,0,.22);animation:dbs-modal-in .14s ease-out}
+.dbs-secMenuItem{display:flex;align-items:center;gap:8px;width:100%;padding:6px 10px;border-radius:8px;font-size:13px;line-height:18px;color:var(--dsw-alias-label-primary);cursor:pointer;background:none;border:none;text-align:left}
+.dbs-secMenuItem:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dbs-prow,.dbs-srow{cursor:pointer;user-select:none;color:var(--dsw-alias-label-primary);border-radius:8px;align-items:center;gap:6px;padding:0 8px;display:flex;box-sizing:border-box}
 /* Native mirror (dsh-client-ui-sidebar/workspace): header-class rows outdent
    their label 4px (pl:4 → x=16 from the window edge) while list rows keep
@@ -439,6 +445,8 @@
         'list.loading': '加载中…',
         'list.empty': '还没有 Bot，点 ＋ 新建。',
         'section.groups': '群聊',
+        'list.more': '更多操作',
+        'list.refresh': '刷新列表',
         'section.singles': '单聊',
         'chat.group': '群聊 · {n} 名成员',
         'chat.single': '单聊',
@@ -553,6 +561,8 @@
         'list.loading': 'Loading…',
         'list.empty': 'No bots yet — use ＋ to create one.',
         'section.groups': 'Groups',
+        'list.more': 'More actions',
+        'list.refresh': 'Refresh list',
         'section.singles': 'Direct',
         'chat.group': 'Group · {n} members',
         'chat.single': 'Direct',
@@ -727,6 +737,7 @@
         /** Manage-members dialog: group agentId | null (system modal). */
         manageMembers: null as string | null,
         settingsAgentId: null as string | null,
+        sectionMenu: null as string | null,
         /** Bumped on a language switch so module-scope `t` output re-renders. */
         localeRev: 0,
       }
@@ -1065,10 +1076,11 @@
          * are: creating the first bot or group never requires a trip to the
          * footer. `addAction` opens the same system-style modal as before.
          */
-        function sectionRows(label: string, list: any[], addAction: { title: string; onClick: () => void }) {
+        function sectionRows(label: string, list: any[], addAction: { title: string; onClick: () => void }, menuKind: string, menuItems: Array<{ label: string; onClick: () => void }>) {
+          const menuOpen = s.sectionMenu === menuKind
           return e('div', { key: label },
             e('div', {
-              className: 'dbs-navBodyErr',
+              className: 'dbs-navBodyErr dbs-secHead',
               // Native sectionHeader outdent: label at x=16 (12 sidebar
               // padding + 4), aligned with the group headers. The previous
               // 12px here pushed section labels 8px right of the native
@@ -1076,11 +1088,28 @@
               style: { padding: '4px 8px 2px 4px', display: 'flex', alignItems: 'center' },
             },
               e('span', { style: { flex: 1 } }, label),
-              e(Button, {
-                variant: 'ghost', size: 'sm', title: addAction.title, 'aria-label': addAction.title,
-                icon: Ico('IconPlusOutline16', { size: 14 }),
-                onClick: addAction.onClick,
-              })),
+              // Native workspace pattern: header actions appear on hover
+              // (.dbs-rowActions is hover-gated in .dbs-secHead CSS).
+              e('div', { className: 'dbs-rowActions', style: { alignItems: 'center', gap: 2 } },
+                e(Button, {
+                  variant: 'ghost', size: 'sm', title: addAction.title, 'aria-label': addAction.title,
+                  icon: Ico('IconPlusOutline16', { size: 14 }),
+                  onClick: addAction.onClick,
+                }),
+                e(Button, {
+                  variant: 'ghost', size: 'sm', title: t('list.more'), 'aria-label': t('list.more'),
+                  icon: Ico('IconEllipsisOutline16', { size: 14 }),
+                  onClick: () => patch({ sectionMenu: menuOpen ? null : menuKind }),
+                })),
+              menuOpen
+                ? e(React.Fragment, null,
+                    e('div', { style: { position: 'fixed', inset: 0, zIndex: 39 }, onClick: () => patch({ sectionMenu: null }) }),
+                    e('div', { className: 'dbs-secMenu', onClick: (ev: any) => { ev.stopPropagation() } },
+                      menuItems.map((item) => e('button', {
+                        key: item.label, className: 'dbs-secMenuItem', type: 'button',
+                        onClick: () => { patch({ sectionMenu: null }); item.onClick() },
+                      }, item.label))))
+                : null),
             list.map(row))
         }
 
@@ -1099,13 +1128,19 @@
             ? sectionRows(t('section.groups'), groups, {
                 title: t('group.new'),
                 onClick: () => patch({ create: 'group', createName: '', createMembers: {}, createWorking: false, error: null }),
-              })
+              }, 'groups', [
+                { label: t('group.new'), onClick: () => patch({ create: 'group', createName: '', createMembers: {}, createWorking: false, error: null }) },
+                { label: t('list.refresh'), onClick: () => { void refreshAgents() } },
+              ])
             : null,
           s.agentsLoaded
             ? sectionRows(t('section.singles'), singles, {
                 title: t('bot.new'),
                 onClick: () => patch({ create: 'bot', createName: '', createDesc: '', createWorking: false, error: null }),
-              })
+              }, 'singles', [
+                { label: t('bot.new'), onClick: () => patch({ create: 'bot', createName: '', createDesc: '', createWorking: false, error: null }) },
+                { label: t('list.refresh'), onClick: () => { void refreshAgents() } },
+              ])
             : null)
       }
 
