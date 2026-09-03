@@ -94,7 +94,7 @@
         return e('input', rest)
       }
       function FallbackText(p: any) {
-        return e('div', { className: 'dbs-plain' }, p.text)
+        return e('div', { className: 'dbs-plain' }, ...inlineFileChips(String(p.text ?? '')))
       }
 
       /**
@@ -140,6 +140,13 @@
           }
           if (rest.startsWith('*') && (m = /^\*([^*\n]+)\*/.exec(rest)) !== null) {
             push(); out.push(e('em', null, mdInline(m[1]))); i += m[0].length; continue
+          }
+          MEDIA_FILE_AT_RE.lastIndex = 0
+          if ((m = MEDIA_FILE_AT_RE.exec(rest)) !== null) {
+            const p = m[0].replace(/[.,;:!?、。，；：！？）)】\]>}]+$/, '')
+            if (p.length >= 4 && !p.startsWith('//') && !MEDIA_IMG_RE.test(p) && MEDIA_FILE_RE.test(p)) {
+              out.push(e(FileChip, { key: p, path: p })); i += p.length; continue
+            }
           }
           if ((m = /^!\[([^\]\n]*)\]\((https?:\/\/[^)\s]+)\)/.exec(rest)) !== null) {
             push(); out.push(imgLink(m[2], m[1])); i += m[0].length; continue
@@ -214,8 +221,11 @@
 
       const Button = nat('Button', FallbackButton)
       const Input = nat('Input', FallbackInput)
-      const MarkdownText = nat('MarkdownText', MarkdownFallback)
-      const MessageText = nat('MessageText', FallbackText)
+      // Inline file chips must interleave elements inside the rendered text —
+      // only our own renderers can do that, so the native text components are
+      // bypassed for message bodies (the fallbacks cover the same markdown).
+      const MarkdownText = MarkdownFallback
+      const MessageText = FallbackText
       const StateDot = NATIVE.StateDot ?? null
 
       // ---- CSS: own stable class names, values mirrored from the shell ----
@@ -290,9 +300,9 @@
 .dbs-bubble .dbs-mediaRefs{margin-left:auto}
 .dbs-mediaImg{max-width:280px;max-height:210px;border-radius:10px;cursor:zoom-in;display:block;border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.08))}
 .dbs-mediaLoading{width:28px;height:20px;display:inline-flex;align-items:center;color:var(--dsw-alias-label-tertiary);animation:dbsSpin .8s linear infinite}
-.dbs-fileChip{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;background:var(--dsw-alias-interactive-bg-hover);font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);cursor:pointer;max-width:100%;user-select:none}
+.dbs-fileChip{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;background:var(--dsw-alias-interactive-bg-hover);font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);cursor:pointer;max-width:100%;user-select:none;vertical-align:middle;margin:0 1px}
 .dbs-fileChip:hover{color:var(--dsw-alias-label-primary)}
-.dbs-fileChipName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dbs-fileChipName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
 .dbs-setLabel{font-size:12px;line-height:16px;color:var(--dsw-alias-label-tertiary);margin:8px 0 4px}
 .dbs-select{height:28px;min-width:200px;padding:0 8px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));background:var(--dsw-specific-input-major,var(--dsw-alias-bg-layer-1,#fff));color:var(--dsw-alias-label-primary);font-size:13px;line-height:28px;outline:none}
 .dbs-chatbar{flex:none;display:flex;align-items:center;gap:8px;height:44px;padding:0 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.08))}
@@ -1412,6 +1422,31 @@
       const MEDIA_MAX_REFS = 6
       const mediaUrlCache = new Map<string, string>()
 
+      /** Sticky variant of MEDIA_PATH_RE: matches a file path starting
+       * exactly at the cursor, for in-place substitution while scanning. */
+      const MEDIA_FILE_AT_RE = new RegExp(MEDIA_PATH_RE.source, 'y')
+
+      /** Split message text into segments where FILE references become
+       * inline FileChips at their original position (images keep the preview
+       * block below). Shared by the markdown inline pass and plain text. */
+      function inlineFileChips(text: string): any[] {
+        if (typeof text !== 'string' || text.indexOf('/') === -1) return [text]
+        const out: any[] = []
+        let last = 0
+        for (const m of text.matchAll(MEDIA_PATH_RE)) {
+          const p = m[0].replace(/[.,;:!?、。，；：！？）)】\]>}]+$/, '')
+          if (p.length < 4 || p.startsWith('//')) continue
+          if (MEDIA_IMG_RE.test(p) || !MEDIA_FILE_RE.test(p)) continue
+          const start = m.index
+          if (start > last) out.push(text.slice(last, start))
+          out.push(e(FileChip, { key: p + ':' + String(start), path: p }))
+          last = start + p.length
+        }
+        if (out.length === 0) return [text]
+        if (last < text.length) out.push(text.slice(last))
+        return out
+      }
+
       function mediaPathsOf(text: string): string[] {
         if (typeof text !== 'string' || text.indexOf('/') === -1) return []
         const out: string[] = []
@@ -1466,15 +1501,13 @@
         return e('span', { className: 'dbs-mediaLoading' }, Ico('IconLoadingOutline16', { size: 14 }))
       }
 
-      function MediaRefs(p: { text: string; files?: boolean }) {
-        const refs = mediaPathsOf(p.text)
-        if (refs.length === 0) return null
-        const imgs = refs.filter((r: string) => MEDIA_IMG_RE.test(r))
-        const files = p.files === true ? refs.filter((r: string) => !MEDIA_IMG_RE.test(r)) : []
-        if (imgs.length === 0 && files.length === 0) return null
+      /** Image previews only — file references render as inline chips inside
+       * the message text itself (inlineFileChips), never as a block. */
+      function MediaRefs(p: { text: string }) {
+        const imgs = mediaPathsOf(p.text).filter((r: string) => MEDIA_IMG_RE.test(r))
+        if (imgs.length === 0) return null
         return e('div', { className: 'dbs-mediaRefs' },
-          imgs.map((r: string) => e(MediaImage, { key: r, path: r })),
-          files.map((r: string) => e(FileChip, { key: r, path: r })))
+          imgs.map((r: string) => e(MediaImage, { key: r, path: r })))
       }
 
       /**
@@ -1529,7 +1562,7 @@
             e('span', { className: 'dbs-toolTrail' },
               en.content !== '' ? e('span', { className: 'dbs-meta' }, open ? t('action.collapse') : t('action.expand')) : null,
               e(MsgTime, { entry: en }))),
-          open && en.content !== '' ? e('div', { className: 'dbs-toolBody' }, en.content, e(MediaRefs, { text: en.content })) : null)
+          open && en.content !== '' ? e('div', { className: 'dbs-toolBody' }, ...inlineFileChips(en.content), e(MediaRefs, { text: en.content })) : null)
       }
 
       function Entry(p: { entry: any; isGroup: boolean; agent: any; compact?: boolean }) {
@@ -1539,7 +1572,7 @@
             e('div', { className: 'dbs-userStack' },
               e('div', { className: 'dbs-bubble' },
                 e(MessageText, { text: en.content }),
-                e(MediaRefs, { text: en.content, files: true }))),
+                e(MediaRefs, { text: en.content }))),
             e(MsgTime, { entry: en }))
         }
         if (en.display === 'tool') return e(ToolCard, { entry: en })
@@ -1558,7 +1591,7 @@
             e('div', { className: 'dbs-mdRow' },
               e(MarkdownText, { text: en.content, streaming: en.isStreaming === true }),
               en.isStreaming === true ? e('span', { className: 'dbs-caret' }) : null,
-              en.isStreaming === true ? null : e(MediaRefs, { text: en.content, files: true })),
+              en.isStreaming === true ? null : e(MediaRefs, { text: en.content })),
             e('div', { className: 'dbs-compactTime' }, e(MsgTime, { entry: en })))
         }
         // Bot message: avatar + prominent per-author name + full-datetime in
@@ -1584,7 +1617,7 @@
           e('div', { className: 'dbs-mdRow' },
             e(MarkdownText, { text: en.content, streaming: en.isStreaming === true }),
             en.isStreaming === true ? e('span', { className: 'dbs-caret' }) : null,
-            en.isStreaming === true ? null : e(MediaRefs, { text: en.content, files: true })))
+            en.isStreaming === true ? null : e(MediaRefs, { text: en.content })))
       }
 
       function ChatView(p: { agentId: string }) {
