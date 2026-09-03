@@ -29,7 +29,7 @@ import type {
   AgentInfo, Config, EventsSinceResult, GatewayInfo, McpServerInfo, McpToolInfo,
   SessionInfo, SseState, TranscriptEntry, WorkspaceInfo,
 } from './shared.js'
-import { callGateway, discover, expandHome, nextNonce, normalizeAgents, readDiscovery, trimAgent, trimEntry } from './gateway.js'
+import { callGateway, discover, effectiveDataDir, expandHome, nextNonce, normalizeAgents, readDiscoveryWithFallback, trimAgent, trimEntry } from './gateway.js'
 import { GatewaySseClient, SseRingBuffer } from './sse.js'
 import { UnreadStore } from './unread.js'
 import { listAgentWorkspaces, readAgentWorkspace, setAgentWorkspace } from './workspace.js'
@@ -44,7 +44,10 @@ export const inject: string[] = []
 /** Cordis range this plugin is tested against; only surfaces a warning. */
 export const TESTED_CORDIS_RANGE = '^4.0.1'
 
-const DEFAULT_DATA_DIR = '~/.sdk-bots'
+const DEFAULT_DATA_DIR = '~/.dsh-bots'
+/** Where the gateway lived before the 0.2.16 default rename — discovery and
+ * every data-dir consumer fall back to it until the engine migrates. */
+const LEGACY_DATA_DIR = '~/.sdk-bots'
 
 /** Append-only diagnostics file, read when a shadow takeover misbehaves. */
 const DIAG_FILE = 'dsh-bots-diag.jsonl'
@@ -150,12 +153,12 @@ export class BotsRemote extends TypertRemoteService {
   constructor(ctx: Context, config: Config) {
     super(ctx, 'bots')
     this.cfg = { dataDir: config?.dataDir ?? DEFAULT_DATA_DIR }
-    this.unread = new UnreadStore(join(expandHome(this.cfg.dataDir), UNREAD_FILE))
+    this.unread = new UnreadStore(join(effectiveDataDir(this.cfg.dataDir), UNREAD_FILE))
     const ring = new SseRingBuffer(3000, (channel, data) => { this.observeTranscript(channel, data) })
     this.sse = new GatewaySseClient({
       ring,
       resolveBase: () => {
-        const d = readDiscovery(this.cfg.dataDir)
+        const d = readDiscoveryWithFallback(this.cfg.dataDir)
         if (d === null) return null
         return { url: `http://${d.host}:${d.port}`, token: d.token }
       },
@@ -311,7 +314,7 @@ export class BotsRemote extends TypertRemoteService {
   private resolveMediaPath(raw: unknown): { resolved: string; ext: string } {
     const p = String(raw ?? '').trim()
     if (p === '') throw new Error('path is required')
-    const root = realpathSync(expandHome(this.cfg.dataDir))
+    const root = realpathSync(effectiveDataDir(this.cfg.dataDir))
     let resolved = resolve(expandHome(p))
     try { resolved = realpathSync(resolved) } catch { /* missing → prefix-check the literal path */ }
     if (resolved !== root && !resolved.startsWith(root + sep)) {
@@ -506,11 +509,11 @@ export class BotsRemote extends TypertRemoteService {
   // ==========================================================
 
   async workspaceList(request: unknown) {
-    return { workspaces: listAgentWorkspaces(expandHome(this.cfg.dataDir)) }
+    return { workspaces: listAgentWorkspaces(effectiveDataDir(this.cfg.dataDir)) }
   }
 
   async workspaceGet(request: { agentId?: string } | null) {
-    const config = readAgentWorkspace(expandHome(this.cfg.dataDir), String(request?.agentId ?? ''))
+    const config = readAgentWorkspace(effectiveDataDir(this.cfg.dataDir), String(request?.agentId ?? ''))
     if (config === null) throw new Error(`workspaceGet: agent 不存在或 id 不合法`)
     return config
   }
@@ -518,7 +521,7 @@ export class BotsRemote extends TypertRemoteService {
   async workspaceSet(request: {
     agentId?: string; workspaceRoot?: string | null; allowPaths?: string[]
   } | null) {
-    return setAgentWorkspace(expandHome(this.cfg.dataDir), String(request?.agentId ?? ''), {
+    return setAgentWorkspace(effectiveDataDir(this.cfg.dataDir), String(request?.agentId ?? ''), {
       workspaceRoot: request?.workspaceRoot,
       allowPaths: request?.allowPaths,
     })
@@ -543,7 +546,7 @@ export class BotsRemote extends TypertRemoteService {
         stage: request.stage,
         detail: request.detail ?? null,
       })
-      appendFileSync(join(expandHome(this.cfg.dataDir), DIAG_FILE), line + '\n')
+      appendFileSync(join(effectiveDataDir(this.cfg.dataDir), DIAG_FILE), line + '\n')
       return { written: true }
     } catch {
       return { written: false }

@@ -2,4 +2,4 @@
     - id: bots
       name: dsh-bots
       config:
-        dataDir: '~/.sdk-bots'
+        dataDir: '~/.dsh-bots'

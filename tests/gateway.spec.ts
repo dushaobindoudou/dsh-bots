@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeAgents, readDiscovery, trimAgent } from '../src/gateway.js'
+import { effectiveDataDir, normalizeAgents, readDiscovery, readDiscoveryWithFallback, trimAgent } from '../src/gateway.js'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -75,5 +75,33 @@ describe('normalizeAgents / trimAgent', () => {
   it('trimAgent returns null for garbage', () => {
     expect(trimAgent(null)).toBeNull()
     expect(trimAgent('x')).toBeNull()
+  })
+})
+
+describe('readDiscoveryWithFallback / effectiveDataDir (0.2.16 default rename)', () => {
+  it('prefers the configured dir when it holds gateway.json', () => {
+    const primary = mkdtempSync(join(tmpdir(), 'dsh-prim-'))
+    const legacy = mkdtempSync(join(tmpdir(), 'dsh-leg-'))
+    writeFileSync(join(primary, 'gateway.json'), JSON.stringify({ port: 40001, pid: 1, token: 'tok-primary', host: '127.0.0.1' }))
+    writeFileSync(join(legacy, 'gateway.json'), JSON.stringify({ port: 40002, pid: 2, token: 'tok-legacy', host: '127.0.0.1' }))
+    expect(readDiscoveryWithFallback(primary, legacy)?.token).toBe('tok-primary')
+    expect(effectiveDataDir(primary, legacy)).toBe(primary)
+    rmSync(primary, { recursive: true, force: true })
+    rmSync(legacy, { recursive: true, force: true })
+  })
+
+  it('falls back to the legacy root when the configured dir has no discovery', () => {
+    const empty = mkdtempSync(join(tmpdir(), 'dsh-empty-'))
+    const legacy = mkdtempSync(join(tmpdir(), 'dsh-leg-'))
+    writeFileSync(join(legacy, 'gateway.json'), JSON.stringify({ port: 40002, pid: 2, token: 'tok-legacy', host: '127.0.0.1' }))
+    expect(readDiscoveryWithFallback(empty, legacy)?.token).toBe('tok-legacy')
+    expect(effectiveDataDir(empty, legacy)).toBe(legacy)
+    rmSync(empty, { recursive: true, force: true })
+    // neither dir has discovery → configured dir as-is (legacy removed first)
+    rmSync(legacy, { recursive: true, force: true })
+    const orphan = mkdtempSync(join(tmpdir(), 'dsh-orphan-'))
+    expect(readDiscoveryWithFallback(orphan, legacy)).toBeNull()
+    expect(effectiveDataDir(orphan, legacy)).toBe(orphan)
+    rmSync(orphan, { recursive: true, force: true })
   })
 })

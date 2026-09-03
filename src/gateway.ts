@@ -24,6 +24,38 @@ export interface Discovery {
 
 const TOKEN_RE = /^[A-Za-z0-9._~+-]+$/
 
+/** New default root (0.2.16). The gateway may still live at the legacy root
+ * until the engine's SAND_DATA_ROOT migrates — every discovery consumer tries
+ * the configured dir first, then the legacy one. */
+export const LEGACY_DATA_DIR = '~/.sdk-bots'
+
+/**
+ * Discovery that follows the gateway to wherever it actually lives: the
+ * configured dir when it holds a gateway.json, else the legacy root. Returns
+ * null when neither has one (the gateway is simply down).
+ */
+export function readDiscoveryWithFallback(dataDir: string, legacyDir: string = LEGACY_DATA_DIR): Discovery | null {
+  const direct = readDiscovery(dataDir)
+  if (direct !== null) return direct
+  if (expandHome(dataDir) !== expandHome(legacyDir)) return readDiscovery(legacyDir)
+  return null
+}
+
+/**
+ * The directory where the gateway (and therefore agents/, box-workspace/,
+ * swarm/) actually lives right now: the configured dir if it has discovery,
+ * else the legacy root, else the configured dir as-is. All state-adjacent
+ * consumers (unread ledger, workspace ops, media allowlist, diag) resolve
+ * through this so they stay co-located with the real data across migration.
+ */
+export function effectiveDataDir(dataDir: string, legacyDir: string = LEGACY_DATA_DIR): string {
+  if (readDiscovery(dataDir) !== null) return expandHome(dataDir)
+  if (expandHome(dataDir) !== expandHome(legacyDir) && readDiscovery(legacyDir) !== null) {
+    return expandHome(legacyDir)
+  }
+  return expandHome(dataDir)
+}
+
 export function expandHome(p: string): string {
   if (p === '~') return homedir()
   if (p.startsWith('~/')) return join(homedir(), p.slice(2))
@@ -63,7 +95,7 @@ export function readDiscovery(dataDir: string): Discovery | null {
 
 /** Discovery + `/health` probe with pid match validation. */
 export async function discover(dataDir: string): Promise<GatewayInfo> {
-  const d = readDiscovery(dataDir)
+  const d = readDiscoveryWithFallback(dataDir)
   if (d === null) return { ok: false, reason: 'no-gateway-json' }
   const baseUrl = `http://${d.host}:${d.port}`
   let health: any
@@ -94,7 +126,7 @@ export async function discover(dataDir: string): Promise<GatewayInfo> {
 
 /** POST one `/api/<method>` command; unwraps `{result}` and throws on errors. */
 export async function callGateway<T>(dataDir: string, method: string, args: Record<string, unknown> = {}): Promise<T> {
-  const d = readDiscovery(dataDir)
+  const d = readDiscoveryWithFallback(dataDir)
   if (d === null) throw new Error('gateway.json not found — sdk-bots host 是否在运行？')
   const baseUrl = `http://${d.host}:${d.port}`
   const headers: Record<string, string> = { 'content-type': 'application/json' }
