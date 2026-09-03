@@ -28,11 +28,15 @@
     "test:dsh-smoke": "bash scripts/dsh-smoke.sh"
   },
   "keywords": [
+    "bots",
+    "cordis",
     "deepseek-harness",
     "dsh-plugin",
-    "bots",
+    "dsh-plugins",
+    "group-chat",
+    "mcp",
     "multibot",
-    "cordis"
+    "workbench"
   ],
   "license": "MIT",
   "peerDependencies": {
@@ -53,5 +57,13 @@
     "client": {
       "platform": "web"
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/dushaobindoudou/dsh-bots.git"
+  },
+  "homepage": "https://github.com/dushaobindoudou/dsh-bots#readme",
+  "bugs": {
+    "url": "https://github.com/dushaobindoudou/dsh-bots/issues"
   }
 }
