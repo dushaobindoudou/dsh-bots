@@ -232,7 +232,8 @@
 .dbs-navBody{display:flex;flex-direction:column;min-height:0;flex:1}
 .dbs-botsBody{overflow-y:auto;scrollbar-gutter:stable;padding-right:var(--dsh-sidebar-inline-padding,8px)}
 .dbs-navBodyErr{padding:6px 12px;font-size:12px;line-height:20px;color:var(--dsw-alias-label-tertiary)}
-.dbs-secHead{position:relative}
+.dbs-secHead{position:relative;cursor:pointer;border-radius:8px}
+.dbs-secHead:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dbs-secHead .dbs-rowActions{display:none}
 .dbs-secHead:hover .dbs-rowActions,.dbs-secHead:focus-within .dbs-rowActions{display:inline-flex}
 .dbs-secMenu{position:absolute;top:100%;right:0;z-index:40;min-width:148px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:12px;padding:4px;box-shadow:0 12px 40px rgba(0,0,0,.22);animation:dbs-modal-in .14s ease-out}
@@ -738,6 +739,7 @@
         manageMembers: null as string | null,
         settingsAgentId: null as string | null,
         sectionMenu: null as string | null,
+        sectionsOpen: null as Record<string, boolean> | null,
         /** Bumped on a language switch so module-scope `t` output re-renders. */
         localeRev: 0,
       }
@@ -1078,19 +1080,32 @@
          */
         function sectionRows(label: string, list: any[], addAction: { title: string; onClick: () => void }, menuKind: string, menuItems: Array<{ label: string; onClick: () => void }>) {
           const menuOpen = s.sectionMenu === menuKind
+          // Group-header collapse contract, mirrored from 「工作区｜Bots」:
+          // chevron + whole-row click toggle, body suppressed when closed.
+          const isOpen = s.sectionsOpen?.[menuKind] !== false
+          const toggle = (): void => {
+            patch({ sectionMenu: null, sectionsOpen: { ...(s.sectionsOpen ?? {}), [menuKind]: !isOpen } })
+          }
           return e('div', { key: label },
             e('div', {
-              className: 'dbs-navBodyErr dbs-secHead',
+              className: 'dbs-navBodyErr dbs-secHead', role: 'button', tabIndex: 0, 'aria-expanded': isOpen,
               // Native sectionHeader outdent: label at x=16 (12 sidebar
               // padding + 4), aligned with the group headers. The previous
               // 12px here pushed section labels 8px right of the native
               // baseline, making both sections read horizontally off.
-              style: { padding: '4px 8px 2px 4px', display: 'flex', alignItems: 'center' },
+              style: { padding: '4px 8px 2px 4px', display: 'flex', alignItems: 'center', gap: 2 },
+              onClick: toggle,
+              onKeyDown: (ev: any) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle() } },
             },
+              e(Chevron, { open: isOpen }),
               e('span', { style: { flex: 1 } }, label),
               // Native workspace pattern: header actions appear on hover
-              // (.dbs-rowActions is hover-gated in .dbs-secHead CSS).
-              e('div', { className: 'dbs-rowActions', style: { alignItems: 'center', gap: 2 } },
+              // (.dbs-rowActions is hover-gated in .dbs-secHead CSS); their
+              // clicks must not fold the section with them.
+              e('div', {
+                className: 'dbs-rowActions', style: { alignItems: 'center', gap: 2 },
+                onClick: (ev: any) => { ev.stopPropagation() },
+              },
                 e(Button, {
                   variant: 'ghost', size: 'sm', title: addAction.title, 'aria-label': addAction.title,
                   icon: Ico('IconPlusOutline16', { size: 14 }),
@@ -1110,7 +1125,7 @@
                         onClick: () => { patch({ sectionMenu: null }); item.onClick() },
                       }, item.label))))
                 : null),
-            list.map(row))
+            isOpen ? list.map(row) : null)
         }
 
         // No footer: the gateway status moved to the Bots group-header dot's
