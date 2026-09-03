@@ -284,7 +284,10 @@
 .dbs-error{margin:4px 8px;padding:5px 9px;border-radius:8px;font-size:12px;line-height:18px;cursor:pointer;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-state-error-primary,#f85149)}
 
 .dbs-chatview{position:absolute;top:0;bottom:0;pointer-events:auto;display:flex;flex-direction:column;background:var(--dsw-alias-bg-base);font-family:var(--dsw-font-family,inherit);z-index:2;--dsh-chat-content-width:748px;--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;--dsh-composer-text-max-height:336px;min-width:0}
-.dbs-mediaRefs{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;align-items:center}
+/* Not a standalone block: shrink to the chips/images, hug the text end in
+   bot rows and the bubble's right edge in user messages. */
+.dbs-mediaRefs{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;align-items:center;width:fit-content;max-width:100%}
+.dbs-bubble .dbs-mediaRefs{margin-left:auto}
 .dbs-mediaImg{max-width:280px;max-height:210px;border-radius:10px;cursor:zoom-in;display:block;border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.08))}
 .dbs-mediaLoading{width:28px;height:20px;display:inline-flex;align-items:center;color:var(--dsw-alias-label-tertiary);animation:dbsSpin .8s linear infinite}
 .dbs-fileChip{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;background:var(--dsw-alias-interactive-bg-hover);font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);cursor:pointer;max-width:100%;user-select:none}
