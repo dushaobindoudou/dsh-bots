@@ -271,6 +271,7 @@
 .dbs-fileChip{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;background:var(--dsw-alias-interactive-bg-hover);font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);cursor:pointer;max-width:100%;user-select:none}
 .dbs-fileChip:hover{color:var(--dsw-alias-label-primary)}
 .dbs-fileChipName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dbs-setLabel{font-size:12px;line-height:16px;color:var(--dsw-alias-label-tertiary);margin:8px 0 4px}
 .dbs-chatbar{flex:none;display:flex;align-items:center;gap:8px;height:44px;padding:0 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.08))}
 .dbs-chatbarName{font-size:14px;line-height:20px;font-weight:600;color:var(--dsw-alias-label-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .dbs-scrollBody{scrollbar-gutter:stable;flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden auto}
@@ -408,6 +409,16 @@
         'chat.stop.noop': '当前没有进行中的生成',
         'media.openFailed': '打开失败，文件可能已移动或被删除',
         'chat.members.manage': '管理成员',
+        'chat.settings': '设置',
+        'settings.agentTitle': '会话设置',
+        'settings.name': '名称',
+        'settings.desc': '简介',
+        'settings.workspace': '工作区隔离',
+        'settings.workspaceRoot': '工作区根目录',
+        'settings.workspaceRootPh': '留空 = 不启用',
+        'settings.allowPaths': '额外可写路径（逗号分隔）',
+        'settings.allowPathsPh': '/tmp/xxx, /Users/you/shared',
+        'settings.workspaceHint': '写入被沙盒限制在工作区（含额外路径）内，读取不受限；同 slug 的 Bot 共享同一目录。',
         'modal.members.title': '管理群成员',
         'modal.members.hint': '勾选的 Bot 为群成员；保存后立即生效（可随时再改）。',
         'action.delete': '删除',
@@ -511,6 +522,16 @@
         'chat.stop.noop': 'No generation in progress',
         'media.openFailed': 'Open failed — the file may have moved or been deleted',
         'chat.members.manage': 'Manage members',
+        'chat.settings': 'Settings',
+        'settings.agentTitle': 'Session settings',
+        'settings.name': 'Name',
+        'settings.desc': 'Description',
+        'settings.workspace': 'Workspace jail',
+        'settings.workspaceRoot': 'Workspace root',
+        'settings.workspaceRootPh': 'Empty = disabled',
+        'settings.allowPaths': 'Extra writable paths (comma-separated)',
+        'settings.allowPathsPh': '/tmp/xxx, /Users/you/shared',
+        'settings.workspaceHint': 'Writes are sandboxed to the workspace (plus extra paths); reads stay unrestricted. Bots sharing a slug share one directory.',
         'modal.members.title': 'Manage group members',
         'modal.members.hint': 'Checked bots are members; changes apply immediately on save (editable again anytime).',
         'action.delete': 'Delete',
@@ -698,6 +719,7 @@
         confirmDelete: null as any,
         /** Manage-members dialog: group agentId | null (system modal). */
         manageMembers: null as string | null,
+        settingsAgentId: null as string | null,
         /** Bumped on a language switch so module-scope `t` output re-renders. */
         localeRev: 0,
       }
@@ -1335,6 +1357,22 @@
           files.map((r: string) => e(FileChip, { key: r, path: r })))
       }
 
+      /**
+       * Settings glyph — three sliders, drawn inline (the primitives package
+       * exposes no verified gear export; same policy as SendUpIcon).
+       */
+      function SettingsGlyph(): any {
+        return e('svg', { viewBox: '0 0 16 16', width: '16', height: '16', 'aria-hidden': true },
+          e('g', { stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round' },
+            e('line', { x1: 2, y1: 4, x2: 14, y2: 4 }),
+            e('line', { x1: 2, y1: 8, x2: 14, y2: 8 }),
+            e('line', { x1: 2, y1: 12, x2: 14, y2: 12 })),
+          e('g', { fill: 'currentColor' },
+            e('circle', { cx: 10, cy: 4, r: 2 }),
+            e('circle', { cx: 5.5, cy: 8, r: 2 }),
+            e('circle', { cx: 11.5, cy: 12, r: 2 })))
+      }
+
       function ToolCard(p: { entry: any }) {
         const [open, setOpen] = React.useState(false)
         const en = p.entry
@@ -1653,13 +1691,18 @@
             agent !== null ? e(Avatar, { agent, size: 24 }) : null,
             e('span', { className: 'dbs-chatbarName' }, agent?.name ?? t('chat.loading')),
             e('span', { className: 'dbs-meta' }, isGroup ? t('chat.group', { n: memberNames.length }) : t('chat.single')),
+            e('span', { style: { flex: 1 } }),
             isGroup
               ? e(Button, {
                   variant: 'ghost', size: 'sm', title: t('chat.members.manage'), 'aria-label': t('chat.members.manage'),
                   onClick: () => patch({ manageMembers: p.agentId }),
                 }, t('chat.members.manage'))
               : null,
-            e('span', { style: { flex: 1 } })),
+            e('button', {
+              className: 'dbs-railBtn', type: 'button',
+              title: t('chat.settings'), 'aria-label': t('chat.settings'),
+              onClick: () => patch({ settingsAgentId: p.agentId }),
+            }, e(SettingsGlyph, null))),
 
           error !== null
             ? e('div', { className: 'dbs-error', onClick: () => setError(null) }, error)
@@ -2182,6 +2225,125 @@
               }, working ? t('action.saving') : t('action.save')))))
       }
 
+      /**
+       * Per-session settings: name (+ description) for every chat; singles
+       * additionally get the §14 workspace-jail editor (root + extra writable
+       * paths). updateAgent merges only the name/description/title/avatar
+       * fields engine-side, so saving cannot clobber the rest of a profile;
+       * an empty root removes the jail (workspaceRoot: null).
+       */
+      function AgentSettingsModal() {
+        const s = useStore()
+        const agent = agentById(s.settingsAgentId)
+        const isGroup = agent?.isGroup === true
+        const [name, setName] = React.useState('')
+        const [desc, setDesc] = React.useState('')
+        const [root, setRoot] = React.useState('')
+        const [paths, setPaths] = React.useState('')
+        const [wsLoaded, setWsLoaded] = React.useState(false)
+        const [working, setWorking] = React.useState(false)
+        const [err, setErr] = React.useState(null as string | null)
+
+        React.useEffect(() => {
+          if (agent === null || agent === undefined) return
+          setName(String(agent.name ?? ''))
+          setDesc(String(agent.description ?? ''))
+          if (agent.isGroup === true) { setWsLoaded(true); return }
+          let alive = true
+          botsCall<{ workspaceRoot: string | null; allowPaths?: string[] }>('workspaceGet', { agentId: agent.id })
+            .then((c: { workspaceRoot: string | null; allowPaths?: string[] }) => {
+              if (alive === false) return
+              setRoot(c.workspaceRoot ?? '')
+              setPaths((c.allowPaths ?? []).join(', '))
+              setWsLoaded(true)
+            })
+            .catch(() => { if (alive) setWsLoaded(true) })
+          return () => { alive = false }
+          // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, [s.settingsAgentId])
+
+        if (agent === null || agent === undefined) return null
+        const valid = name.trim() !== ''
+
+        async function save() {
+          if (working || valid === false) return
+          setWorking(true); setErr(null)
+          try {
+            await botsCall('update', { id: agent.id, profile: { name: name.trim(), description: desc.trim() } })
+            if (agent.isGroup !== true && wsLoaded === true) {
+              const list = paths.split(/[,,]/).map((x: string) => x.trim()).filter((x: string) => x !== '')
+              await botsCall('workspaceSet', {
+                agentId: agent.id,
+                workspaceRoot: root.trim() === '' ? null : root.trim(),
+                allowPaths: list,
+              })
+            }
+            patch({ settingsAgentId: null })
+            await refreshAgents()
+            return
+          } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
+          setWorking(false)
+        }
+
+        return e('div', {
+          className: 'dbs-modalBackdrop',
+          onClick: () => { if (working === false) patch({ settingsAgentId: null }) },
+        },
+          e('div', {
+            className: 'dbs-modalCard', role: 'dialog', 'aria-modal': true,
+            'aria-label': t('settings.agentTitle'),
+            onClick: (ev: any) => { ev.stopPropagation() },
+          },
+            e('div', { className: 'dbs-modalTitleRow' },
+              e('span', { className: 'dbs-modalTitle' }, t('settings.agentTitle')),
+              e(Button, {
+                variant: 'ghost', size: 'sm', title: t('action.close'), 'aria-label': t('action.close'),
+                disabled: working,
+                icon: Ico('IconCloseOutline16', { size: 16 }),
+                onClick: () => patch({ settingsAgentId: null }),
+              })),
+            e('div', { className: 'dbs-modalBody' },
+              e('div', { className: 'dbs-setLabel' }, t('settings.name')),
+              e(Input, {
+                value: name, autoFocus: true, disabled: working,
+                onChange: (ev: any) => setName(ev.target.value),
+              }),
+              isGroup === false
+                ? e('div', null,
+                    e('div', { className: 'dbs-setLabel' }, t('settings.desc')),
+                    e(Input, {
+                      value: desc, disabled: working,
+                      onChange: (ev: any) => setDesc(ev.target.value),
+                    }),
+                    e('div', { className: 'dbs-setLabel', style: { marginTop: 12, fontWeight: 600 } }, t('settings.workspace')),
+                    e('div', { className: 'dbs-setLabel' }, t('settings.workspaceRoot')),
+                    e(Input, {
+                      value: root, disabled: working || wsLoaded === false,
+                      placeholder: t('settings.workspaceRootPh'),
+                      onChange: (ev: any) => setRoot(ev.target.value),
+                    }),
+                    e('div', { className: 'dbs-setLabel' }, t('settings.allowPaths')),
+                    e(Input, {
+                      value: paths, disabled: working || wsLoaded === false,
+                      placeholder: t('settings.allowPathsPh'),
+                      onChange: (ev: any) => setPaths(ev.target.value),
+                    }),
+                    e('div', { className: 'dbs-meta', style: { marginTop: 8 } }, t('settings.workspaceHint')))
+                : null,
+              err !== null
+                ? e('div', { className: 'dbs-error', onClick: () => { setErr(null) } }, err)
+                : null),
+            e('div', { className: 'dbs-modalFooter' },
+              e(Button, {
+                variant: 'ghost', size: 'sm', disabled: working,
+                onClick: () => patch({ settingsAgentId: null }),
+              }, t('action.cancel')),
+              e(Button, {
+                variant: 'primary', size: 'sm', disabled: valid === false || working,
+                onClick: () => void save(),
+              }, working === true ? t('action.saving') : t('action.save')))))
+      }
+
       /** Delete confirmation modal: same system-dialog chrome as CreateModal. */
       function ConfirmDeleteModal() {
         const s = useStore()
@@ -2256,6 +2418,7 @@
         if (s.chatAgentId !== null) layers.push(e(ChatView, { agentId: s.chatAgentId, key: s.chatAgentId }))
         if (s.create !== null) layers.push(e(CreateModal, { key: 'create' }))
         if (s.manageMembers !== null) layers.push(e(ManageMembersModal, { key: 'manage-members' }))
+        if (s.settingsAgentId !== null) layers.push(e(AgentSettingsModal, { key: 'agent-settings' }))
         if (s.confirmDelete !== null) layers.push(e(ConfirmDeleteModal, { key: 'confirm-delete' }))
         return layers.length === 0 ? null : e('div', null, layers)
       }
