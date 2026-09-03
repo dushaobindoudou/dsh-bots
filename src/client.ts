@@ -220,7 +220,12 @@
 
       // ---- CSS: own stable class names, values mirrored from the shell ----
       const CSS = `
-.dbs-nav{flex:1;min-height:0;display:flex;flex-direction:column;gap:2px;font-family:var(--dsw-font-family,inherit)}
+/* The native regionArea bleeds right by --dsh-sidebar-inline-padding
+   (margin-right: -12px, ui-sidebar.js) for its own scroll model; our rows
+   don't follow that bleed, so pull the nav back inside the padded column —
+   verified in the live page: removing the parent's margin-right reads
+   "normal", this counter-margin is the same geometry from our side. */
+.dbs-nav{flex:1;min-height:0;display:flex;flex-direction:column;gap:2px;font-family:var(--dsw-font-family,inherit);margin-right:var(--dsh-sidebar-inline-padding,12px)}
 .dbs-navGroup{display:flex;flex-direction:column;min-height:0}
 .dbs-navGroup[data-open="true"]{flex:1 1 auto}
 .dbs-navGroup[data-open="false"]{flex:none}
