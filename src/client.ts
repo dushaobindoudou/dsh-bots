@@ -237,7 +237,8 @@
    row on hover and shrink it on leave — width/height jitter the user read
    as flicker. Fixed 30px row + always-laid-out actions = zero geometry
    change; the same trick the native headerActions uses (max-width/opacity). */
-.dbs-secHead{position:relative;cursor:pointer;border-radius:8px;height:30px}
+.dbs-secHead{position:relative;cursor:pointer;border-radius:8px;height:30px;margin-bottom:4px}
+.dbs-secGroup+.dbs-secGroup{margin-top:10px}
 .dbs-secHead:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dbs-secHead .dbs-rowActions{display:inline-flex;visibility:hidden;opacity:0;pointer-events:none;transition:opacity .12s ease-out}
 .dbs-secHead:hover .dbs-rowActions,.dbs-secHead:focus-within .dbs-rowActions,.dbs-secHead[data-menu="true"] .dbs-rowActions{visibility:visible;opacity:1;pointer-events:auto}
@@ -1114,7 +1115,7 @@
           const toggle = (): void => {
             patch({ sectionMenu: null, sectionsOpen: { ...(s.sectionsOpen ?? {}), [menuKind]: !isOpen } })
           }
-          return e('div', { key: label },
+          return e('div', { key: label, className: 'dbs-secGroup' },
             e('div', {
               className: 'dbs-navBodyErr dbs-secHead', role: 'button', tabIndex: 0, 'aria-expanded': isOpen,
               'data-menu': menuOpen ? 'true' : 'false',
