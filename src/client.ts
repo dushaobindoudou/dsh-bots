@@ -1106,7 +1106,7 @@
          * are: creating the first bot or group never requires a trip to the
          * footer. `addAction` opens the same system-style modal as before.
          */
-        function sectionRows(label: string, list: any[], addAction: { title: string; onClick: () => void }, menuKind: string, menuItems: Array<{ label: string; onClick: () => void }>) {
+        function sectionRows(label: string, list: any[], addAction: { title: string; onClick: () => void }, menuKind: string, menuItems: Array<{ label: string; onClick: () => void }>, icon: any) {
           const menuOpen = s.sectionMenu === menuKind
           // Group-header collapse contract, mirrored from 「工作区｜Bots」:
           // chevron + whole-row click toggle, body suppressed when closed.
@@ -1127,6 +1127,7 @@
               onKeyDown: (ev: any) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle() } },
             },
               e(Chevron, { open: isOpen }),
+              e('span', { className: 'dbs-slot' }, icon),
               e('span', { style: { flex: 1 } }, label),
               // Native workspace pattern: header actions appear on hover
               // (.dbs-rowActions is hover-gated in .dbs-secHead CSS); their
@@ -1175,7 +1176,7 @@
               }, 'groups', [
                 { label: t('group.new'), onClick: () => patch({ create: 'group', createName: '', createMembers: {}, createWorking: false, error: null }) },
                 { label: t('list.refresh'), onClick: () => { void refreshAgents() } },
-              ])
+              ], e(PeopleGlyph, null))
             : null,
           s.agentsLoaded
             ? sectionRows(t('section.singles'), singles, {
@@ -1184,7 +1185,7 @@
               }, 'singles', [
                 { label: t('bot.new'), onClick: () => patch({ create: 'bot', createName: '', createDesc: '', createWorking: false, error: null }) },
                 { label: t('list.refresh'), onClick: () => { void refreshAgents() } },
-              ])
+              ], Ico('IconUserOutline16', { size: 14 }))
             : null)
       }
 
@@ -1441,6 +1442,20 @@
         return e('div', { className: 'dbs-mediaRefs' },
           imgs.map((r: string) => e(MediaImage, { key: r, path: r })),
           files.map((r: string) => e(FileChip, { key: r, path: r })))
+      }
+
+      /**
+       * Two-person glyph for the 群聊 section: the primitives set has no
+       * group icon (verified against the shell bundle), so this follows the
+       * inline-SVG policy used by SettingsGlyph — 1.5px outline strokes.
+       */
+      function PeopleGlyph(): any {
+        return e('svg', { viewBox: '0 0 16 16', width: '14', height: '14', 'aria-hidden': true },
+          e('g', { fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round' },
+            e('circle', { cx: 6.1, cy: 5.1, r: 2.6 }),
+            e('path', { d: 'M1.7 13.6c0-2.8 2-4.8 4.4-4.8s4.4 2 4.4 4.8' }),
+            e('path', { d: 'M10.7 2.9a2.7 2.7 0 0 1 0 4.6' }),
+            e('path', { d: 'M11.9 9.1c1.6.7 2.6 2.3 2.6 4.5' })))
       }
 
       /**
