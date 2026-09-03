@@ -298,7 +298,7 @@
 .dbs-userStack{flex-direction:column;align-items:flex-end;gap:8px;min-width:0;max-width:min(525px,82%);display:flex}
 .dbs-bubble{background:var(--dsw-specific-bubble);max-width:100%;color:var(--dsw-alias-label-primary);border-radius:22px;padding:10px 16px;font-size:16px;line-height:24px}
 .dbs-botRow{color:var(--dsw-alias-label-primary);flex-direction:column;font-size:16px;line-height:28px;display:flex;align-items:flex-start;gap:4px;width:100%}
-.dbs-author{font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary);display:flex;align-items:center;gap:6px;font-weight:600;margin-bottom:2px;flex-wrap:wrap}
+.dbs-author{font-size:14px;line-height:22px;color:var(--dsw-alias-label-secondary);display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:3px;flex-wrap:wrap}
 .dbs-authorName{font-weight:600;letter-spacing:.2px}
 .dbs-md{min-width:0}
 .dbs-md p{margin:0 0 8px}
@@ -1507,7 +1507,7 @@
         const authorColor = 'hsl(' + String(hueOf(avAgent.id)) + ' 55% 45%)'
         return e('div', { className: 'dbs-botRow' },
           e('div', { className: 'dbs-author' },
-            e(Avatar, { agent: avAgent, size: 18 }),
+            e(Avatar, { agent: avAgent, size: 22 }),
             displayName != null && displayName !== ''
               ? e('span', { className: 'dbs-authorName', style: { color: authorColor } }, displayName)
               : null,
