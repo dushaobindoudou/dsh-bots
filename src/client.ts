@@ -268,6 +268,7 @@
 .dbs-avatar{width:20px;height:20px;border-radius:6px;flex:none;display:grid;place-items:center;font-size:11px;line-height:1;font-weight:600;color:#fff;overflow:hidden;user-select:none}
 .dbs-avatar.dbs-group{border-radius:999px}
 .dbs-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.dbs-avatarRound{border-radius:999px}
 .dbs-badge{min-width:16px;height:16px;padding:0 5px;border-radius:999px;background:var(--dsw-alias-state-business-primary,#1a6dff);color:#fff;font-size:11px;line-height:16px;text-align:center;flex:none;font-variant-numeric:tabular-nums}
 .dbs-railBtn{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border:none;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;padding:0}
 .dbs-railBtn:hover{background:var(--dsw-alias-interactive-bg-hover)}
@@ -1017,12 +1018,15 @@
         return h
       }
 
-      function Avatar(p: { agent: any; size?: number }) {
+      function Avatar(p: { agent: any; size?: number; round?: boolean }) {
         const a = p.agent
         const size = p.size ?? 20
         const style: any = { width: size, height: size }
+        // Conversation avatars are round (native chat look); the sidebar keeps
+        // the native squircle via the base class.
+        const shape = p.round === true || a.isGroup === true ? ' dbs-avatarRound' : (a.isGroup ? ' dbs-group' : '')
         if (typeof a.avatarDataUrl === 'string' && a.avatarDataUrl !== '') {
-          return e('span', { className: 'dbs-avatar' + (a.isGroup ? ' dbs-group' : ''), style },
+          return e('span', { className: 'dbs-avatar' + shape, style },
             e('img', { src: a.avatarDataUrl, alt: '' }))
         }
         style.background = typeof a.avatarColor === 'string' && a.avatarColor !== ''
@@ -1031,7 +1035,7 @@
         if (size >= 24) style.fontSize = '13px'
         const initial = (a.name ?? '').trim().slice(0, 1) || '·'
         return e('span', {
-          className: 'dbs-avatar' + (a.isGroup ? ' dbs-group' : ''), style, 'aria-hidden': true,
+          className: 'dbs-avatar' + shape, style, 'aria-hidden': true,
         }, initial)
       }
 
@@ -1550,7 +1554,7 @@
         const authorColor = 'hsl(' + String(hueOf(avAgent.id)) + ' 55% 45%)'
         return e('div', { className: 'dbs-botRow' },
           e('div', { className: 'dbs-author' },
-            e(Avatar, { agent: avAgent, size: 22 }),
+            e(Avatar, { agent: avAgent, size: 22, round: true }),
             displayName != null && displayName !== ''
               ? e('span', { className: 'dbs-authorName', style: { color: authorColor } }, displayName)
               : null,
@@ -1796,7 +1800,7 @@
               icon: Ico('IconCloseOutline16', { size: 16 }),
               onClick: () => patch({ chatAgentId: null }),
             }),
-            agent !== null ? e(Avatar, { agent, size: 24 }) : null,
+            agent !== null ? e(Avatar, { agent, size: 24, round: true }) : null,
             e('span', { className: 'dbs-chatbarName' }, agent?.name ?? t('chat.loading')),
             e('span', { className: 'dbs-meta' }, isGroup ? t('chat.group', { n: memberNames.length }) : t('chat.single')),
             e('span', { style: { flex: 1 } }),
@@ -1827,7 +1831,7 @@
                         e('div', { className: 'dbs-skelRow', style: { width: '58%' } }))
                     : list.length === 0
                       ? e('div', { className: 'dbs-welcome' },
-                          agent !== null ? e(Avatar, { agent, size: 44 }) : null,
+                          agent !== null ? e(Avatar, { agent, size: 44, round: true }) : null,
                           e('div', { className: 'dbs-welcomeName' }, agent?.name ?? ''),
                           typeof agent?.description === 'string' && agent.description !== ''
                             ? e('div', { className: 'dbs-welcomeDesc' }, agent.description) : null,
