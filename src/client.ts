@@ -728,7 +728,9 @@
         info: undefined as any,
         error: null as string | null,
         chatAgentId: null as string | null,
-        open: { workspaces: true, bots: true },
+        // First paint: only 「工作区」 is expanded — Bots folds until asked,
+        // matching the one-column-of-attention rule the accordion enforces.
+        open: { workspaces: true, bots: false },
         /** Host-computed unread counts per agent id (plugin-owned model). */
         unreadCounts: {} as Record<string, number>,
         /** Create dialog: 'bot' | 'group' | null — rendered as a system-style
