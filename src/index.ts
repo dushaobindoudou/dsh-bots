@@ -49,6 +49,12 @@ const DEFAULT_DATA_DIR = '~/.dsh-bots'
  * every data-dir consumer fall back to it until the engine migrates. */
 const LEGACY_DATA_DIR = '~/.sdk-bots'
 
+/** Local OpenAI-compatible router the sdk-bots engine defaults to (same
+ * default as the engine bootstrap). Reachability here decides whether the
+ * model picker can offer the router's catalog or must fall back to the
+ * account's configured default model. */
+const FREEROUTE_BASE_URL = (process.env.SAND_OPENROUTER_BASE_URL ?? '').trim() || 'http://127.0.0.1:3080/freeroute/v1'
+
 /** Append-only diagnostics file, read when a shadow takeover misbehaves. */
 const DIAG_FILE = 'dsh-bots-diag.jsonl'
 
@@ -539,6 +545,48 @@ export class BotsRemote extends TypertRemoteService {
     })
   }
 
+  /** Model configuration surface: the engine's account-level default model
+   * (setHostSettings.agentDefaultModel) plus freeroute availability. The
+   * engine keeps no per-bot model — this is the one runtime-effective knob. */
+  async modelConfig(request: unknown): Promise<{ provider: string | null; agentDefaultModel: string | null; freerouteReachable: boolean; models: string[] }> {
+    const settings = await callGateway<any>(this.cfg.dataDir, 'getHostSettings', {})
+    const selection = settings?.agentDefaultModel ?? null
+    const probe = await this.probeFreerouteModels()
+    return {
+      provider: typeof settings?.inferenceProvider === 'string' ? settings.inferenceProvider : null,
+      agentDefaultModel: typeof selection?.modelId === 'string' ? selection.modelId : null,
+      freerouteReachable: probe.ok,
+      models: probe.models,
+    }
+  }
+
+  private async probeFreerouteModels(): Promise<{ ok: boolean; models: string[] }> {
+    try {
+      const res = await fetch(`${FREEROUTE_BASE_URL}/models`, { signal: AbortSignal.timeout(2500) })
+      if (res.ok === false) return { ok: false, models: [] }
+      const body = await res.json() as { data?: Array<{ id?: unknown }> }
+      const models = Array.isArray(body?.data)
+        ? body.data.map((m) => (typeof m?.id === 'string' ? m.id : '')).filter((id: string) => id !== '')
+        : []
+      return { ok: true, models }
+    } catch {
+      return { ok: false, models: [] }
+    }
+  }
+
+  /** Unset (null) = freeroute auto routing; a modelId pins the account's
+   * default model (the engine's own settings store validates the shape). */
+  async setModelConfig(request: { modelId?: string | null } | null): Promise<{ agentDefaultModel: string | null }> {
+    const modelId = typeof request?.modelId === 'string' && request.modelId.trim() !== '' ? request.modelId.trim() : null
+    const updated = await callGateway<any>(this.cfg.dataDir, 'setHostSettings', {
+      agentDefaultModel: modelId === null
+        ? null
+        : { modelId, maxMode: true, parameters: [] },
+    })
+    const selection = updated?.agentDefaultModel ?? null
+    return { agentDefaultModel: typeof selection?.modelId === 'string' ? selection.modelId : null }
+  }
+
   /**
    * Append one diagnostic record to `<dataDir>/dsh-bots-diag.jsonl`.
    *
@@ -585,7 +633,7 @@ for (const m of [
   'gatewayInfo', 'list', 'workspaces', 'sessions',
   'create', 'createGroup', 'setGroupMembers', 'update', 'remove', 'send', 'interrupt', 'readImage', 'openFile', 'transcriptTail', 'markRead', 'diag',
   'mcpServers', 'mcpTools', 'mcpAdd', 'mcpRemove', 'mcpRefresh', 'mcpExecute',
-  'workspaceList', 'workspaceGet', 'workspaceSet',
+  'workspaceList', 'workspaceGet', 'workspaceSet', 'modelConfig', 'setModelConfig',
   'eventsSince', 'sseState',
 ]) {
   markRemoteMethod(BotsRemote.prototype, m)

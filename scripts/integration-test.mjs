@@ -12,7 +12,7 @@ const EXPECTED = [
   'create', 'createGroup', 'setGroupMembers', 'update', 'remove', 'send', 'interrupt', 'readImage', 'openFile', 'transcriptTail',
   'markRead', 'diag', 'eventsSince', 'sseState',
   'mcpServers', 'mcpTools', 'mcpAdd', 'mcpRemove', 'mcpRefresh', 'mcpExecute',
-  'workspaceList', 'workspaceGet', 'workspaceSet',
+  'workspaceList', 'workspaceGet', 'workspaceSet', 'modelConfig', 'setModelConfig',
 ]
 
 let failed = 0

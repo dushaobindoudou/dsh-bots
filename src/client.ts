@@ -291,6 +291,7 @@
 .dbs-fileChip:hover{color:var(--dsw-alias-label-primary)}
 .dbs-fileChipName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dbs-setLabel{font-size:12px;line-height:16px;color:var(--dsw-alias-label-tertiary);margin:8px 0 4px}
+.dbs-select{height:28px;min-width:200px;padding:0 8px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));background:var(--dsw-specific-input-major,var(--dsw-alias-bg-layer-1,#fff));color:var(--dsw-alias-label-primary);font-size:13px;line-height:28px;outline:none}
 .dbs-chatbar{flex:none;display:flex;align-items:center;gap:8px;height:44px;padding:0 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.08))}
 .dbs-chatbarName{font-size:14px;line-height:20px;font-weight:600;color:var(--dsw-alias-label-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .dbs-scrollBody{scrollbar-gutter:stable;flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden auto}
@@ -501,6 +502,15 @@
         'settings.events.off': '未连接',
         'settings.entry': '入口：',
         'settings.entry.value': '左侧边栏「工作区 ｜ Bots」折叠导航',
+        'settings.model.title': '模型配置',
+        'settings.model.current': '当前模型',
+        'settings.model.auto': 'auto（freeroute 默认）',
+        'settings.model.engineDefault': '引擎默认（未设置）',
+        'settings.model.freeroute': 'freeroute 自动路由（默认）',
+        'settings.model.pick': '选择模型',
+        'settings.model.hint': '不选择时默认使用 freeroute 自动路由；freeroute 不可用时使用当前默认模型。选择具体模型会写入账号默认模型，重启引擎后仍生效。',
+        'settings.model.offline': 'freeroute 不可达——已回退当前默认模型',
+        'settings.model.saving': '保存中…',
         'settings.workspaceRoot': '工作区根目录：',
         'settings.jail.title': 'Bot 工作区隔离',
         'settings.jail.summary': '开启后，该 Bot 的每条 Shell 命令被 macOS Seatbelt 包裹：只允许写入自己的工作目录（工作区根/<名字>）与系统临时目录，越界写入被内核拒绝；读取不受限（共享黑板仍可读）。下次对话生效，无需重启。注意：同一名字的多个 Bot 会共享同一目录。',
@@ -621,6 +631,15 @@
         'settings.events.off': 'not connected',
         'settings.entry': 'Entry point: ',
         'settings.entry.value': 'Sidebar “Workspaces | Bots” collapsible nav',
+        'settings.model.title': 'Model',
+        'settings.model.current': 'Current model',
+        'settings.model.auto': 'auto (freeroute default)',
+        'settings.model.engineDefault': 'Engine default (unset)',
+        'settings.model.freeroute': 'freeroute auto routing (default)',
+        'settings.model.pick': 'Pick a model',
+        'settings.model.hint': 'Unselected defaults to freeroute auto routing; when freeroute is unavailable the current default model is used. Picking a model writes the account default model and survives engine restarts.',
+        'settings.model.offline': 'freeroute unreachable — using the current default model',
+        'settings.model.saving': 'Saving…',
         'settings.workspaceRoot': 'Workspace root: ',
         'settings.jail.title': 'Bot workspace jail',
         'settings.jail.summary': 'When enabled, every shell command of that bot is wrapped in a macOS Seatbelt profile: writes are confined to its own workspace directory (workspace root /<name>) and the OS temp dir — out-of-bounds writes are denied by the kernel. Reads stay unrestricted (shared blackboards remain readable). Takes effect on the bot’s next turn, no restart. Note: bots sharing a name share one directory.',
@@ -2125,6 +2144,51 @@
           err !== null ? e('div', { className: 'dbs-setrow' }, t('settings.mcp.failed'), err) : null)
       }
 
+      /** Model configuration card: freeroute availability + the engine's
+       * account-level default model (getHostSettings/setHostSettings). No
+       * selection = freeroute auto; freeroute down = the account default. */
+      function ModelCard() {
+        const [cfg, setCfg] = React.useState(undefined)
+        const [working, setWorking] = React.useState(false)
+        const [err, setErr] = React.useState(null as string | null)
+        async function refresh() {
+          setCfg(undefined); setErr(null)
+          try { setCfg(await botsCall('modelConfig', {})) } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
+        }
+        React.useEffect(() => { void refresh() }, [])
+        const current = cfg?.agentDefaultModel ?? null
+        const effLabel = current !== null
+          ? current
+          : (cfg?.freerouteReachable === true ? t('settings.model.auto') : t('settings.model.engineDefault'))
+        async function choose(ev: any) {
+          const v = String(ev.target.value ?? '')
+          setWorking(true); setErr(null)
+          try {
+            await botsCall('setModelConfig', { modelId: v === '' ? null : v })
+            await refresh()
+          } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
+          setWorking(false)
+        }
+        return e('div', { className: 'dbs-setcard' },
+          e('div', { className: 'dbs-sethead' },
+            e('span', null, t('settings.model.title')),
+            e('span', { style: { flex: 1 } }),
+            working ? e('span', { className: 'dbs-meta' }, t('settings.model.saving')) : null),
+          e('div', { className: 'dbs-setrow' }, t('settings.model.current'), e('b', null, cfg === undefined ? t('settings.reading') : effLabel)),
+          e('div', { className: 'dbs-setrow' }, t('settings.model.pick'),
+            e('select', {
+              className: 'dbs-select', value: current ?? '', disabled: working || cfg === undefined,
+              onChange: (ev: any) => void choose(ev),
+            },
+              e('option', { value: '' }, t('settings.model.freeroute')),
+              (cfg?.models ?? []).map((m: string) => e('option', { key: m, value: m }, m)))),
+          cfg?.freerouteReachable === false
+            ? e('div', { className: 'dbs-meta', style: { padding: '0 2px' } }, t('settings.model.offline'))
+            : null,
+          e('div', { className: 'dbs-meta', style: { padding: '0 2px' } }, t('settings.model.hint')),
+          err !== null ? e('div', { className: 'dbs-setrow' }, err) : null)
+      }
+
       function BotsSettings() {
         const [info, setInfo] = React.useState(undefined)
         const [sse, setSse] = React.useState(null)
@@ -2161,6 +2225,7 @@
               e('b', null, sse?.running === true ? t('settings.events.on', { n: sse.buffered ?? 0 }) : t('settings.events.off')),
               sse?.lastError ? ' · ' + String(sse.lastError) : ''),
             e('div', { className: 'dbs-setrow' }, t('settings.entry'), e('b', null, t('settings.entry.value')))),
+          info?.ok === true ? e(ModelCard) : null,
           info?.ok === true ? e(WorkspaceCard) : null,
           info?.ok === true ? e(McpCard) : null)
       }
