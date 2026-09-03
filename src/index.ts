@@ -229,7 +229,18 @@ export class BotsRemote extends TypertRemoteService {
    * would make the gateway reject the envelope with "unexpected request".
    */
   async list(request: unknown): Promise<AgentInfo[]> {
-    return normalizeAgents(await callGateway<any>(this.cfg.dataDir, 'listAgents', {}))
+    const agents = normalizeAgents(await callGateway<any>(this.cfg.dataDir, 'listAgents', {}))
+    // The gateway row omits group.json's maxMembers, so read it here — the
+    // settings editor needs the CURRENT cap, not a hardcoded default.
+    for (const a of agents) {
+      if (a.isGroup !== true) continue
+      try {
+        const cfg = JSON.parse(readFileSync(join(effectiveDataDir(this.cfg.dataDir), 'agents', a.id, 'group.json'), 'utf-8')) as { maxMembers?: unknown }
+        const n = typeof cfg.maxMembers === 'number' ? Math.floor(cfg.maxMembers) : Number.NaN
+        a.maxMembers = Number.isFinite(n) ? Math.min(16, Math.max(1, n)) : 8
+      } catch { a.maxMembers = 8 }
+    }
+    return agents
   }
 
   async workspaces(request: unknown): Promise<{ workspaces: WorkspaceInfo[] }> {
@@ -297,10 +308,11 @@ export class BotsRemote extends TypertRemoteService {
    * command is a full-set put, not a delta). Wire field is `memberAgentIds`,
    * same as `createGroup` (§7.2).
    */
-  async setGroupMembers(request: { id?: string; memberIds?: string[] } | null): Promise<AgentInfo | null> {
+  async setGroupMembers(request: { id?: string; memberIds?: string[]; maxMembers?: number } | null): Promise<AgentInfo | null> {
     const updated = await callGateway<any>(this.cfg.dataDir, 'setGroupMembers', {
       id: request?.id,
       memberAgentIds: Array.isArray(request?.memberIds) ? request.memberIds : [],
+      ...(typeof request?.maxMembers === 'number' ? { maxMembers: request.maxMembers } : {}),
     })
     return trimAgent(updated?.agent ?? updated)
   }

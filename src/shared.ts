@@ -21,6 +21,9 @@ export interface AgentInfo {
   title: string
   isGroup: boolean
   memberIds: string[]
+  /** Per-group roster cap (group.json maxMembers; 1-16, default 8). The
+      gateway row omits it, so the host enriches group rows from disk. */
+  maxMembers?: number
   isRunning: boolean
   isActive: boolean
   lastMessagePreview: string | null
