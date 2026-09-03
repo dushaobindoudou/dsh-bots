@@ -247,8 +247,15 @@
    row on hover and shrink it on leave — width/height jitter the user read
    as flicker. Fixed 30px row + always-laid-out actions = zero geometry
    change; the same trick the native headerActions uses (max-width/opacity). */
-.dbs-secHead{position:relative;cursor:pointer;border-radius:8px;height:30px;margin-bottom:4px}
-.dbs-secGroup+.dbs-secGroup{margin-top:10px}
+.dbs-secHead{position:relative;cursor:pointer;border-radius:8px;height:30px}
+/* Section spacing follows the open state: a collapsed header must read as a
+   plain row in the same list (the native collapsed groups sit 2px apart), so
+   the air below a header and before the next one only exists when the body
+   above is actually showing rows. The old unconditional 4px+10px made two
+   collapsed headers float 14px apart. */
+.dbs-secGroup+.dbs-secGroup{margin-top:2px}
+.dbs-secGroup[data-open="true"]+.dbs-secGroup{margin-top:8px}
+.dbs-secGroup[data-open="true"] .dbs-secHead{margin-bottom:4px}
 .dbs-secHead:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dbs-secHead .dbs-rowActions{display:inline-flex;visibility:hidden;opacity:0;pointer-events:none;transition:opacity .12s ease-out}
 .dbs-secHead:hover .dbs-rowActions,.dbs-secHead:focus-within .dbs-rowActions,.dbs-secHead[data-menu="true"] .dbs-rowActions{visibility:visible;opacity:1;pointer-events:auto}
@@ -1157,7 +1164,7 @@
           const toggle = (): void => {
             patch({ sectionMenu: null, sectionsOpen: { ...(s.sectionsOpen ?? {}), [menuKind]: !isOpen } })
           }
-          return e('div', { key: label, className: 'dbs-secGroup' },
+          return e('div', { key: label, className: 'dbs-secGroup', 'data-open': isOpen ? 'true' : 'false' },
             e('div', {
               className: 'dbs-navBodyErr dbs-secHead', role: 'button', tabIndex: 0, 'aria-expanded': isOpen,
               'data-menu': menuOpen ? 'true' : 'false',
