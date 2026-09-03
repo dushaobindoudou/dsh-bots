@@ -365,9 +365,9 @@
 .dbs-scrollBody::-webkit-scrollbar-thumb{background:var(--dsw-alias-border-l2,rgba(0,0,0,.18));border-radius:5px;border:3px solid transparent;background-clip:content-box}
 .dbs-scrollBody::-webkit-scrollbar-thumb:hover{background:var(--dsw-alias-label-caption,var(--dsw-alias-border-l2,rgba(0,0,0,.25)));border:3px solid transparent;background-clip:content-box}
 .dbs-scrollBody::-webkit-scrollbar-track{background:transparent}
-.dbs-jump{position:absolute;right:20px;bottom:12px;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));background:var(--dsw-specific-input-major,var(--dsw-alias-bg-layer-1,#fff));box-shadow:var(--dsw-shadow-lv2);color:var(--dsw-alias-label-secondary);cursor:pointer;z-index:5;transition:opacity .15s ease,transform .15s ease}
-.dbs-jump:hover{color:var(--dsw-alias-label-primary);transform:translateY(-1px)}
-.dbs-jump[data-show="false"]{opacity:0;pointer-events:none;transform:translateY(4px)}
+.dbs-jump{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));background:var(--dsw-specific-input-major,var(--dsw-alias-bg-layer-1,#fff));box-shadow:var(--dsw-shadow-lv2);color:var(--dsw-alias-label-secondary);cursor:pointer;z-index:5;transition:opacity .15s ease,transform .15s ease}
+.dbs-jump:hover{color:var(--dsw-alias-label-primary);transform:translate(-50%,-1px)}
+.dbs-jump[data-show="false"]{opacity:0;pointer-events:none;transform:translate(-50%,4px)}
 /* Loading states aligned with the native shell: StateDot chase icon where
    available (the real native component), pulse-dot fallback in DeepSeek blue
    at the native 1s cycle; media spinner reuses the native 0.8s linear spin. */
