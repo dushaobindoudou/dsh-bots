@@ -414,6 +414,7 @@
         'chat.stop.noop': '当前没有进行中的生成',
         'media.openFailed': '打开失败，文件可能已移动或被删除',
         'chat.members.manage': '管理成员',
+        'chat.members.cap': '已达群成员上限 6 人（引擎限制）——请先移除一名成员再添加',
         'chat.settings': '设置',
         'chat.settings.title': '会话设置',
         'chat.settings.name': '名称',
@@ -527,6 +528,7 @@
         'chat.stop.noop': 'No generation in progress',
         'media.openFailed': 'Open failed — the file may have moved or been deleted',
         'chat.members.manage': 'Manage members',
+        'chat.members.cap': 'Group cap is 6 members (engine limit) — remove one before adding',
         'chat.settings': 'Settings',
         'chat.settings.title': 'Session settings',
         'chat.settings.name': 'Name',
@@ -2167,9 +2169,25 @@
         if (group === null || group === undefined) return null
         const singles = (s.agents as any[]).filter((a: any) => !a.isGroup && a.isHiddenFromSidebar !== true)
         const pickedIds = picked === null ? [] : Object.keys(picked).filter((k) => picked[k])
+        // Engine hard cap (sdk-bots agents.ts GROUP_MAX_MEMBERS = 6): the glue
+        // slice(0, 6)-truncates the roster SILENTLY — an over-cap save writes
+        // successfully and just drops whoever ranked past 6. Surface it here
+        // instead of letting a save pretend to work.
+        const MEMBER_CAP = 6
+        const overCap = pickedIds.length > MEMBER_CAP
+
+        function toggle(id: string): void {
+          if (picked === null) return
+          if (picked[id] !== true && pickedIds.length >= MEMBER_CAP) {
+            setErr(t('chat.members.cap'))
+            return
+          }
+          setErr(null)
+          setPicked({ ...picked, [id]: !picked[id] })
+        }
 
         async function submit() {
-          if (working || picked === null) return
+          if (working || picked === null || overCap) return
           setWorking(true); setErr(null)
           try {
             await botsCall('setGroupMembers', { id: group.id, memberIds: pickedIds })
@@ -2208,13 +2226,13 @@
                           key: m.id,
                           className: 'dbs-member' + (picked[m.id] ? ' checked' : ''),
                           style: { cursor: 'pointer', padding: '4px 6px', borderRadius: 8 },
-                          onClick: () => setPicked({ ...picked, [m.id]: !picked[m.id] }),
+                          onClick: () => toggle(m.id),
                         }, e('input', { type: 'checkbox', checked: Boolean(picked[m.id]), readOnly: true }),
                           e(Avatar, { agent: m, size: 18 }),
                           e('span', { className: 'dbs-title' }, m.name))),
                     singles.length > 0
                       ? e('div', { className: 'dbs-meta', style: { padding: '6px 6px 0' } },
-                          t('chat.group', { n: pickedIds.length }))
+                          t('chat.group', { n: pickedIds.length }) + ' / ' + String(MEMBER_CAP))
                       : null),
               err !== null
                 ? e('div', { className: 'dbs-error', onClick: () => { setErr(null) } }, err)
@@ -2225,7 +2243,7 @@
                 onClick: () => patch({ manageMembers: null }),
               }, t('action.cancel')),
               e(Button, {
-                variant: 'primary', size: 'sm', disabled: picked === null || working,
+                variant: 'primary', size: 'sm', disabled: picked === null || working || overCap,
                 onClick: () => void submit(),
               }, working ? t('action.saving') : t('action.save')))))
       }
