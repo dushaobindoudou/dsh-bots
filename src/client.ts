@@ -364,6 +364,9 @@
 .dbs-send:disabled{opacity:.4;cursor:default}
 .dbs-modalBackdrop{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:24px;pointer-events:auto}
 .dbs-modalCard{position:relative;width:min(440px,92vw);max-height:88vh;overflow-y:auto;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;padding:18px 20px 22px;box-shadow:0 24px 80px rgba(0,0,0,.3);animation:dbs-modal-in .18s ease-out}
+/* Confirm-class dialogs carry one sentence, not a form: 440px reads as a
+   billboard. Native confirms sit ~340-360px, so the delete dialog narrows. */
+.dbs-modalCard.dbs-modalNarrow{width:min(360px,92vw)}
 @keyframes dbs-modal-in{from{opacity:0;transform:translateY(6px) scale(.985)}to{opacity:1;transform:none}}
 .dbs-modalTitleRow{display:flex;align-items:center;gap:8px;margin-bottom:14px}
 .dbs-modalTitle{font-size:16px;line-height:24px;font-weight:600;color:var(--dsw-alias-label-primary);flex:1;min-width:0}
@@ -2633,7 +2636,7 @@
           onClick: () => { if (!working) patch({ confirmDelete: null }) },
         },
           e('div', {
-            className: 'dbs-modalCard', role: 'dialog', 'aria-modal': true,
+            className: 'dbs-modalCard dbs-modalNarrow', role: 'dialog', 'aria-modal': true,
             'aria-label': isGroup ? t('delete.title.group') : t('delete.title.bot'),
             onClick: (ev: any) => { ev.stopPropagation() },
           },
