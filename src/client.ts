@@ -1774,9 +1774,26 @@
           syncMention(node)
         }
 
+        /**
+         * @所有人 is an ENGINE handle (`GROUP_EVERYONE_HANDLES` in sdk-bots
+         * group-chat.ts: 所有人/全员/大家/all/everyone) — one literal token in
+         * the message text wakes every member. The composer therefore only
+         * needs discoverability: offer the token at the top of the menu,
+         * matched against its aliases so @全/@大/@a all surface it. Only the
+         * user can address everyone; a member typing the token is ignored by
+         * the engine's responder election, so this entry is group-composer
+         * only (the menu itself already gates on isGroup).
+         */
+        const EVERYONE_MENTION = { id: '__everyone__', name: '所有人', isGroup: true, everyone: true }
+        const EVERYONE_ALIASES = ['所有人', '全员', '大家', 'all', 'everyone']
         const mentionHits = mention === null
           ? []
-          : memberNames.filter((a: any) => a.name.toLowerCase().startsWith(mention.query.toLowerCase())).slice(0, 8)
+          : [
+              ...(mention.query === '' || EVERYONE_ALIASES.some((h) => h.startsWith(mention.query.toLowerCase()))
+                ? [EVERYONE_MENTION]
+                : []),
+              ...memberNames.filter((a: any) => a.name.toLowerCase().startsWith(mention.query.toLowerCase())).slice(0, 8),
+            ]
 
         function applyMention(a: any) {
           const node = inputRef.current
@@ -1939,7 +1956,11 @@
                   ? e('div', { className: 'dbs-mention' }, mentionHits.map((a: any, i: number) => e('div', {
                       key: a.id, className: 'dbs-mentionRow', 'data-active': i === (mention?.index ?? 0),
                       onMouseDown: (ev: any) => { ev.preventDefault(); applyMention(a) },
-                    }, e(Avatar, { agent: a, size: 18 }), a.name)))
+                    },
+                      a.everyone === true
+                        ? e('span', { className: 'dbs-slot', style: { width: 18, height: 18 }, 'aria-hidden': true }, e(PeopleGlyph, null))
+                        : e(Avatar, { agent: a, size: 18 }),
+                      a.name)))
                   : null,
                 e('div', { className: 'dbs-composerScroll' },
                   e('textarea', {
