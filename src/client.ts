@@ -1709,6 +1709,12 @@
         // the native conversation contract.
         const stickRef = React.useRef(true)
         const [showJump, setShowJump] = React.useState(false)
+        // A fresh conversation starts pinned at its tail: without this reset,
+        // leaving chat A scrolled up (stick=false) opened chat B parked at top.
+        React.useEffect(() => {
+          stickRef.current = true
+          setShowJump(false)
+        }, [p.agentId])
         function onScrollBody(): void {
           const el = scrollRef.current
           if (el === null || el === undefined) return
@@ -1722,9 +1728,13 @@
           if (el !== null && el !== undefined) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
         }
         React.useEffect(() => {
+          // Instant pin, the native conversation contract: entering a chat
+          // lands ON the bottom in one frame. A smooth scroll here animated
+          // the whole transcript past on every open, and a follow-up message
+          // glided when it should just appear.
           const el = scrollRef.current
           if (el === null || el === undefined) return
-          if (stickRef.current) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+          if (stickRef.current) el.scrollTo({ top: el.scrollHeight, behavior: 'auto' })
         }, [entries, composing])
 
         const memberNames = React.useMemo(() => {
