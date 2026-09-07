@@ -473,9 +473,9 @@
         'chat.settings.paths': '额外可写路径（逗号分隔）',
         'chat.settings.pathsPh': '/tmp/xxx, /Users/you/shared',
         'chat.settings.hint': '写入被沙盒限制在工作区（含额外路径）内，读取不受限；同 slug 的 Bot 共享同一目录。',
-        'chat.settings.cap': '成员上限（1–16）',
-        'chat.settings.capHint': '保存在该群的配置里；调低会立即截断超出部分。',
-        'chat.settings.capBad': '成员上限需为 1–16 的整数',
+        'settings.group.title': '群聊',
+        'settings.group.cap': '成员上限',
+        'settings.group.capHint': '全局生效：新建群与编辑群名单时使用（1–16）。已有群的现有名单不会被改动。',
         'modal.members.title': '管理群成员',
         'modal.members.hint': '勾选的 Bot 为群成员；保存后立即生效（可随时再改）。',
 
@@ -602,9 +602,9 @@
         'chat.settings.paths': 'Extra writable paths (comma-separated)',
         'chat.settings.pathsPh': '/tmp/xxx, /Users/you/shared',
         'chat.settings.hint': 'Writes are sandboxed to the workspace (plus extra paths); reads stay unrestricted. Bots sharing a slug share one directory.',
-        'chat.settings.cap': 'Member cap (1–16)',
-        'chat.settings.capHint': 'Stored in this group\'s config; lowering it drops members beyond the new cap right away.',
-        'chat.settings.capBad': 'The cap must be an integer from 1 to 16',
+        'settings.group.title': 'Groups',
+        'settings.group.cap': 'Member cap',
+        'settings.group.capHint': 'Global: applied to new groups and roster edits (1–16). Existing rosters are left untouched.',
         'modal.members.title': 'Manage group members',
         'modal.members.hint': 'Checked bots are members; changes apply immediately on save (editable again anytime).',
 
@@ -2269,6 +2269,53 @@
           err !== null ? e('div', { className: 'dbs-setrow' }, err) : null)
       }
 
+      /**
+       * Global group roster policy — the 成员上限 knob moved out of per-chat
+       * settings (0.2.39): one value for every new group and roster edit,
+       * stored plugin-side via `groupCap`. Existing rosters are never
+       * rewritten behind the user's back (the engine truncates member lists
+       * to the cap on write, so a global rewrite would silently kick
+       * members out); the cap bites when a group is next created or edited.
+       */
+      function GroupCard() {
+        const [cap, setCap] = React.useState('')
+        const [loaded, setLoaded] = React.useState(false)
+        const [working, setWorking] = React.useState(false)
+        const [err, setErr] = React.useState(null as string | null)
+        React.useEffect(() => {
+          botsCall<{ max: number }>('groupCap', {})
+            .then((r: { max: number }) => { setCap(String(r.max)); setLoaded(true) })
+            .catch((e2: any) => { setErr(String(e2?.message ?? e2)); setLoaded(true) })
+        }, [])
+        const n = Math.floor(Number(cap))
+        const valid = cap.trim() !== '' && String(n) === cap.trim() && n >= 1 && n <= 16
+        async function save() {
+          if (working || valid === false) return
+          setWorking(true); setErr(null)
+          try {
+            const r = await botsCall<{ max: number }>('groupCap', { max: n })
+            setCap(String(r.max))
+          } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
+          setWorking(false)
+        }
+        return e('div', { className: 'dbs-setcard' },
+          e('div', { className: 'dbs-sethead' },
+            e('span', null, t('settings.group.title')),
+            e('span', { style: { flex: 1 } }),
+            working ? e('span', { className: 'dbs-meta' }, t('settings.model.saving')) : null),
+          e('div', { className: 'dbs-setrow' }, t('settings.group.cap'),
+            e(Input, {
+              value: cap, disabled: working || loaded === false, inputMode: 'numeric', style: { width: 96 },
+              onChange: (ev: any) => setCap(ev.target.value),
+            }),
+            e(Button, {
+              variant: 'outline', size: 'sm', disabled: working || valid === false, title: t('action.save'),
+              onClick: () => void save(),
+            }, t('action.save'))),
+          e('div', { className: 'dbs-meta', style: { padding: '0 2px' } }, t('settings.group.capHint')),
+          err !== null ? e('div', { className: 'dbs-setrow' }, err) : null)
+      }
+
       function BotsSettings() {
         const [info, setInfo] = React.useState(undefined)
         const [sse, setSse] = React.useState(null)
@@ -2305,6 +2352,7 @@
               e('b', null, sse?.running === true ? t('settings.events.on', { n: sse.buffered ?? 0 }) : t('settings.events.off')),
               sse?.lastError ? ' · ' + String(sse.lastError) : ''),
             e('div', { className: 'dbs-setrow' }, t('settings.entry'), e('b', null, t('settings.entry.value')))),
+          info?.ok === true ? e(GroupCard) : null,
           info?.ok === true ? e(ModelCard) : null,
           info?.ok === true ? e(WorkspaceCard) : null,
           info?.ok === true ? e(McpCard) : null)
@@ -2411,6 +2459,9 @@
         const [picked, setPicked] = React.useState(null as Record<string, boolean> | null)
         const [err, setErr] = React.useState(null as string | null)
         const [working, setWorking] = React.useState(false)
+        // The roster ceiling is the GLOBAL Bots-setting value; the group's own
+        // stored cap only stands in until the fetch resolves.
+        const [cap, setCap] = React.useState(null as number | null)
 
         // Seed once per opened group; a group vanishing mid-edit (deleted by
         // the swarm, say) just renders the modal inert until closed.
@@ -2419,17 +2470,18 @@
           const init: Record<string, boolean> = {}
           for (const id of group.memberIds ?? []) init[id] = true
           setPicked(init)
+          botsCall<{ max: number }>('groupCap', {}).then((r: { max: number }) => setCap(r.max)).catch(() => {})
           // eslint-disable-next-line react-hooks/exhaustive-deps
         }, [s.manageMembers])
 
         if (group === null || group === undefined) return null
         const singles = (s.agents as any[]).filter((a: any) => !a.isGroup && a.isHiddenFromSidebar !== true)
         const pickedIds = picked === null ? [] : Object.keys(picked).filter((k) => picked[k])
-        // Per-group cap (group.json maxMembers, default 8, engine hard max 16;
-        // the host enriches group rows with the real value). The glue slice(0,
-        // maxMembers)-truncates the roster SILENTLY, so an over-cap pick is
-        // blocked here — the cap itself is edited in session settings.
-        const MEMBER_CAP = group.maxMembers ?? 8
+        // Per-group cap (group.json maxMembers, engine hard max 16). The glue
+        // slice(0, maxMembers)-truncates the roster SILENTLY, so an over-cap
+        // pick is blocked here — the ceiling itself is the global Bots
+        // setting (edited in Settings → Bots → 群聊).
+        const MEMBER_CAP = cap ?? group.maxMembers ?? 8
         const overCap = pickedIds.length > MEMBER_CAP
 
         function toggle(id: string): void {
@@ -2522,13 +2574,11 @@
         const [wsLoaded, setWsLoaded] = React.useState(false)
         const [working, setWorking] = React.useState(false)
         const [err, setErr] = React.useState(null as string | null)
-        const [capText, setCapText] = React.useState('8')
 
         React.useEffect(() => {
           if (agent === null || agent === undefined) return
           setName(String(agent.name ?? ''))
           setDesc(String(agent.description ?? ''))
-          setCapText(String(agent.maxMembers ?? 8))
           if (agent.isGroup === true) { setWsLoaded(true); return }
           let alive = true
           botsCall<{ workspaceRoot: string | null; allowPaths?: string[] }>('workspaceGet', { agentId: agent.id })
@@ -2545,20 +2595,12 @@
 
         if (agent === null || agent === undefined) return null
         const valid = name.trim() !== ''
-        // Member cap lives here (session settings), not in the roster editor:
-        // it is this group's own config field. Empty/unchanged = keep.
-        const capNum = Math.floor(Number(capText))
-        const capValid = capText.trim() === '' || (Number.isInteger(capNum) && capNum >= 1 && capNum <= 16)
 
         async function save() {
           if (working || valid === false) return
-          if (capValid === false) { setErr(t('chat.settings.capBad')); return }
           setWorking(true); setErr(null)
           try {
             await botsCall('update', { id: agent.id, profile: { name: name.trim(), description: desc.trim() } })
-            if (agent.isGroup === true && capText.trim() !== '') {
-              await botsCall('setGroupMembers', { id: agent.id, memberIds: agent.memberIds ?? [], maxMembers: capNum })
-            }
             if (agent.isGroup !== true && wsLoaded === true) {
               const list = paths.split(/[,,]/).map((x: string) => x.trim()).filter((x: string) => x !== '')
               await botsCall('workspaceSet', {
@@ -2597,15 +2639,6 @@
                 value: name, autoFocus: true, disabled: working,
                 onChange: (ev: any) => setName(ev.target.value),
               }),
-              isGroup === true
-                ? e('div', null,
-                    e('div', { className: 'dbs-setLabel' }, t('chat.settings.cap')),
-                    e(Input, {
-                      value: capText, disabled: working, inputMode: 'numeric', style: { width: 96 },
-                      onChange: (ev: any) => setCapText(ev.target.value),
-                    }),
-                    e('div', { className: 'dbs-meta', style: { marginTop: 6 } }, t('chat.settings.capHint')))
-                : null,
               isGroup === false
                 ? e('div', null,
                     e('div', { className: 'dbs-setLabel' }, t('chat.settings.desc')),

@@ -22,7 +22,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { createRequire } from 'node:module'
 import { dirname, extname, join, resolve, sep } from 'node:path'
-import { appendFileSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { appendFileSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import type {
@@ -60,6 +60,7 @@ const DIAG_FILE = 'dsh-bots-diag.jsonl'
 
 /** Persisted read markers ("读到哪了") backing the sidebar unread badge. */
 const UNREAD_FILE = 'dsh-bots-unread.json'
+const BOTS_SETTINGS_FILE = 'dsh-bots-settings.json'
 
 /** Stamped into every diagnostic line so records survive version skew. */
 const PLUGIN_VERSION = resolvedModuleVersion('dsh-bots')
@@ -302,9 +303,15 @@ export class BotsRemote extends TypertRemoteService {
   }
 
   async createGroup(request: { name?: string; memberIds?: string[] } | null): Promise<AgentInfo | null> {
+    const cap = this.readPrefs().groupMaxMembers ?? 8
+    const memberIds = Array.isArray(request?.memberIds) ? request.memberIds : []
+    // The engine normalizes member lists down to maxMembers SILENTLY; an
+    // over-cap pick must fail loudly here instead of dropping members.
+    if (memberIds.length > cap) throw new Error(`群成员上限为 ${cap}，当前选择了 ${memberIds.length} 位成员`)
     const created = await callGateway<any>(this.cfg.dataDir, 'createGroup', {
       name: String(request?.name ?? '').trim(),
-      memberAgentIds: Array.isArray(request?.memberIds) ? request.memberIds : [],
+      memberAgentIds: memberIds,
+      maxMembers: cap,
     })
     return trimAgent(created?.agent ?? created)
   }
@@ -312,15 +319,48 @@ export class BotsRemote extends TypertRemoteService {
   /**
    * Replace a group's member list (add + remove in one call — the gateway
    * command is a full-set put, not a delta). Wire field is `memberAgentIds`,
-   * same as `createGroup` (§7.2).
+   * same as `createGroup` (§7.2). The global cap is policy here: every roster
+   * edit is written with it, so per-group values converge on the setting as
+   * groups are touched (existing rosters are never rewritten unprompted — the
+   * engine truncates member lists to maxMembers on write, and a silent
+   * rewrite would silently kick members out).
    */
   async setGroupMembers(request: { id?: string; memberIds?: string[]; maxMembers?: number } | null): Promise<AgentInfo | null> {
     const updated = await callGateway<any>(this.cfg.dataDir, 'setGroupMembers', {
       id: request?.id,
       memberAgentIds: Array.isArray(request?.memberIds) ? request.memberIds : [],
-      ...(typeof request?.maxMembers === 'number' ? { maxMembers: request.maxMembers } : {}),
+      maxMembers: this.readPrefs().groupMaxMembers ?? 8,
     })
     return trimAgent(updated?.agent ?? updated)
+  }
+
+  /**
+   * Global group roster policy ("成员上限" in Bots settings): read with no
+   * payload, set with `{ max }`. Stored in the plugin's OWN settings file —
+   * the engine's host-settings store drops unknown fields, and this knob is
+   * plugin-owned like the unread markers. 1..16 per the engine's hard max
+   * (GROUP_HARD_MAX_MEMBERS); 8 is the engine default.
+   */
+  async groupCap(request: { max?: number } | null): Promise<{ max: number }> {
+    if (request?.max === undefined) return { max: this.readPrefs().groupMaxMembers ?? 8 }
+    const n = Math.floor(Number(request.max))
+    if (!Number.isFinite(n) || n < 1 || n > 16) throw new Error('成员上限必须是 1–16 的整数')
+    this.writePrefs({ groupMaxMembers: n })
+    return { max: n }
+  }
+
+  /** Plugin-owned preferences (`<dataDir>/dsh-bots-settings.json`). */
+  private readPrefs(): { groupMaxMembers?: number } {
+    try {
+      const parsed = JSON.parse(readFileSync(join(effectiveDataDir(this.cfg.dataDir), BOTS_SETTINGS_FILE), 'utf-8'))
+      return typeof parsed === 'object' && parsed !== null ? parsed as { groupMaxMembers?: number } : {}
+    } catch { return {} }
+  }
+
+  private writePrefs(patch: { groupMaxMembers?: number }): void {
+    const path = join(effectiveDataDir(this.cfg.dataDir), BOTS_SETTINGS_FILE)
+    const next = { version: 1, ...this.readPrefs(), ...patch }
+    writeFileSync(path, JSON.stringify(next, null, 2) + '\n', 'utf-8')
   }
 
   /**
@@ -631,7 +671,7 @@ export class BotsRemote extends TypertRemoteService {
 
 for (const m of [
   'gatewayInfo', 'list', 'workspaces', 'sessions',
-  'create', 'createGroup', 'setGroupMembers', 'update', 'remove', 'send', 'interrupt', 'readImage', 'openFile', 'transcriptTail', 'markRead', 'diag',
+  'create', 'createGroup', 'setGroupMembers', 'groupCap', 'update', 'remove', 'send', 'interrupt', 'readImage', 'openFile', 'transcriptTail', 'markRead', 'diag',
   'mcpServers', 'mcpTools', 'mcpAdd', 'mcpRemove', 'mcpRefresh', 'mcpExecute',
   'workspaceList', 'workspaceGet', 'workspaceSet', 'modelConfig', 'setModelConfig',
   'eventsSince', 'sseState',
