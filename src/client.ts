@@ -365,8 +365,11 @@
 .dbs-modalBackdrop{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:24px;pointer-events:auto}
 .dbs-modalCard{position:relative;width:min(440px,92vw);max-height:88vh;overflow-y:auto;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;padding:18px 20px 22px;box-shadow:0 24px 80px rgba(0,0,0,.3);animation:dbs-modal-in .18s ease-out}
 /* Confirm-class dialogs carry one sentence, not a form: 440px reads as a
-   billboard. Native confirms sit ~340-360px, so the delete dialog narrows. */
-.dbs-modalCard.dbs-modalNarrow{width:min(360px,92vw)}
+   billboard. Native confirms sit ~340-360px, so the delete dialog narrows —
+   and drops the form chrome entirely: no title bar, no close X, uniform
+   padding. The message IS the dialog (Escape/backdrop still dismiss). */
+.dbs-modalCard.dbs-modalNarrow{width:min(360px,92vw);padding:20px}
+.dbs-confirmText{font-size:15px;line-height:24px;font-weight:500;color:var(--dsw-alias-label-primary)}
 @keyframes dbs-modal-in{from{opacity:0;transform:translateY(6px) scale(.985)}to{opacity:1;transform:none}}
 .dbs-modalTitleRow{display:flex;align-items:center;gap:8px;margin-bottom:14px}
 .dbs-modalTitle{font-size:16px;line-height:24px;font-weight:600;color:var(--dsw-alias-label-primary);flex:1;min-width:0}
@@ -2671,16 +2674,8 @@
             'aria-label': isGroup ? t('delete.title.group') : t('delete.title.bot'),
             onClick: (ev: any) => { ev.stopPropagation() },
           },
-            e('div', { className: 'dbs-modalTitleRow' },
-              e('span', { className: 'dbs-modalTitle' }, isGroup ? t('delete.title.group') : t('delete.title.bot')),
-              e(Button, {
-                variant: 'ghost', size: 'sm', title: t('action.close'), 'aria-label': t('action.close'),
-                disabled: working,
-                icon: Ico('IconCloseOutline16', { size: 16 }),
-                onClick: () => patch({ confirmDelete: null }),
-              })),
             e('div', { className: 'dbs-modalBody' },
-              e('span', { className: 'dbs-meta', style: { fontSize: 14, lineHeight: 22 } },
+              e('div', { className: 'dbs-confirmText' },
                 t('delete.confirm', { name: target?.name ?? '' })),
               err !== null
                 ? e('div', { className: 'dbs-error', onClick: () => { setErr(null) } }, err)
