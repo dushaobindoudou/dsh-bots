@@ -511,6 +511,8 @@
         'chat.jump': '回到底部',
         'chat.composing': '生成中',
         'chat.composingHint': '正在生成，请稍候',
+        'chat.queuedSendHint': '回合进行中：现在发送将排队，回合结束后送达',
+        'chat.queuedSend': '排队发送（当前回合结束后送达）',
         'chat.placeholder.group': '@名字 可定向，默认全员',
         'chat.placeholder.single': '给 {name} 发消息…',
         'chat.charCount': '{n} 字',
@@ -644,6 +646,8 @@
         'chat.jump': 'Jump to latest',
         'chat.composing': 'Generating',
         'chat.composingHint': 'Generating, please wait',
+        'chat.queuedSendHint': 'Turn in progress: sending now queues your message until it finishes',
+        'chat.queuedSend': 'Queue send (delivered after the current turn)',
         'chat.placeholder.group': 'Use @name to direct a turn; everyone by default',
         'chat.placeholder.single': 'Message {name}…',
         'chat.charCount': '{n} chars',
@@ -1929,7 +1933,11 @@
 
         async function doSend() {
           const text = input.trim()
-          if (text === '' || sending || composing) return
+          // Sending during an active run is a QUEUED send: the daemon appends
+          // the message durably and its run scheduler delivers the follow-up
+          // turn once the active one settles (user lane first; a watchdog
+          // frees a wedged run). Blocking here would strand the composer.
+          if (text === '' || sending) return
           setSending(true); setError(null)
           try {
             await botsCall('send', { agentId: p.agentId, prompt: text })
@@ -2108,8 +2116,20 @@
                   })),
                 e('div', { className: 'dbs-composerRow' },
                   e('span', { className: 'dbs-meta' },
-                    composing ? t('chat.composingHint') : input.trim() !== '' ? t('chat.charCount', { n: input.trim().length }) : ''),
+                    composing ? (input.trim() !== '' ? t('chat.queuedSendHint') : t('chat.composingHint')) : input.trim() !== '' ? t('chat.charCount', { n: input.trim().length }) : ''),
                   e('div', { className: 'dbs-composerTrailing' },
+                    composing && input.trim() !== ''
+                      ? e('button', {
+                          type: 'button', className: 'dbs-send',
+                          // Queued send while a run is active: the daemon
+                          // persists the message now and the run scheduler
+                          // starts the follow-up turn after the active one
+                          // settles (Enter in the composer does the same).
+                          disabled: sending,
+                          title: t('chat.queuedSend'), 'aria-label': t('chat.queuedSend'),
+                          onClick: () => void doSend(),
+                        }, e(SendUpIcon, null))
+                      : null,
                     composing
                       ? e('button', {
                           type: 'button', className: 'dbs-send',
