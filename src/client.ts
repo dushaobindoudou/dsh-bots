@@ -383,6 +383,7 @@
 .dbs-srow:hover .dbs-rowMore,.dbs-rowMore:focus-visible,.dbs-srow[data-menu="true"] .dbs-rowMore{display:inline-flex}
 .dbs-srow{position:relative}
 .dbs-rowMenu{position:absolute;top:calc(100% - 2px);right:4px;z-index:40}
+.dbs-rowMenu.dbs-flipUp{top:auto;bottom:calc(100% + 2px)}
 /* Same quiet-hover contract for the section-header action buttons. */
 .dbs-secHead .dbs-rowActions button:hover,.dbs-secHead .dbs-rowActions button:focus-visible{background:transparent}
 .dbs-mention{position:absolute;bottom:calc(100% + 6px);left:12px;right:12px;max-height:180px;overflow-y:auto;background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:12px;box-shadow:var(--dsw-shadow-lv2);padding:4px;z-index:3}
@@ -817,6 +818,9 @@
         settingsAgentId: null as string | null,
         sectionMenu: null as string | null,
         rowMenu: null as string | null,
+        /** Last row's menu may not fit below — flipped above the row when the
+         *  viewport runs out (the sidebar scroll box clips absolute children). */
+        rowMenuFlip: false,
         sectionsOpen: null as Record<string, boolean> | null,
         /** Bumped on a language switch so module-scope `t` output re-renders. */
         localeRev: 0,
@@ -1192,12 +1196,20 @@
             e('button', {
               type: 'button', className: 'dbs-rowMore',
               title: t('list.more'), 'aria-label': t('list.more') + ' ' + a.name,
-              onClick: (ev: any) => { ev.stopPropagation(); patch({ rowMenu: s.rowMenu === a.id ? null : a.id }) },
+              onClick: (ev: any) => {
+                ev.stopPropagation()
+                if (s.rowMenu === a.id) { patch({ rowMenu: null }); return }
+                // Two-item menu (~68px) anchored below the trigger: flip it
+                // above the row when the viewport can't fit it — otherwise
+                // the last row's menu is clipped by .dbs-botsBody overflow.
+                const rect = (ev.currentTarget as any).getBoundingClientRect()
+                patch({ rowMenu: a.id, rowMenuFlip: window.innerHeight - rect.bottom < 96 })
+              },
             }, Ico('IconEllipsisOutline16', { size: 14 })),
             s.rowMenu === a.id
               ? e(React.Fragment, null,
                   e('div', { style: { position: 'fixed', inset: 0, zIndex: 39 }, onClick: () => patch({ rowMenu: null }) }),
-                  e('div', { className: 'dbs-secMenu dbs-rowMenu', onClick: (ev: any) => { ev.stopPropagation() } },
+                  e('div', { className: 'dbs-secMenu dbs-rowMenu' + (s.rowMenuFlip ? ' dbs-flipUp' : ''), onClick: (ev: any) => { ev.stopPropagation() } },
                     e('button', {
                       className: 'dbs-secMenuItem', type: 'button',
                       onClick: () => { patch({ rowMenu: null }); setPin(a.id, !pinned.has(a.id)) },
