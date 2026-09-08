@@ -496,8 +496,8 @@
         'action.expand': '展开',
         'action.collapse': '收起',
         'list.loading': '加载中…',
-        'list.empty': '还没有 Bot —— 点上方 ＋ 新建。',
         'list.empty.hidden': '所有会话都隐藏在侧栏之外。',
+        'modal.members.empty': '没有可添加的单聊成员。',
         'list.unhideAll': '全部显示',
         'section.groups': '群聊',
         'list.more': '更多操作',
@@ -632,8 +632,8 @@
         'action.expand': 'Expand',
         'action.collapse': 'Collapse',
         'list.loading': 'Loading…',
-        'list.empty': 'No bots yet — use the ＋ above to create one.',
         'list.empty.hidden': 'All conversations are hidden from the sidebar.',
+        'modal.members.empty': 'No single chats to add.',
         'list.unhideAll': 'Show all',
         'section.groups': 'Groups',
         'list.more': 'More actions',
@@ -1316,7 +1316,7 @@
                       onClick: () => { void unhideAll() },
                     }, t('list.unhideAll')))
                 : connected
-                  ? e('div', { className: 'dbs-navBodyErr' }, t('list.empty'))
+                  ? null // truly zero agents: the section headers' ＋ speaks for itself
                   : e('div', { className: 'dbs-navBodyErr' }, t('gateway.offlineHint'))
               : null,
           s.agentsLoaded
@@ -2673,7 +2673,7 @@
                 ? e('div', { className: 'dbs-meta', style: { padding: '4px 6px' } }, t('list.loading'))
                 : e('div', { className: 'dbs-modalMembers' },
                     singles.length === 0
-                      ? e('div', { className: 'dbs-meta', style: { padding: '4px 6px' } }, t('list.empty'))
+                      ? e('div', { className: 'dbs-meta', style: { padding: '4px 6px' } }, t('modal.members.empty'))
                       : singles.map((m: any) => e('div', {
                           key: m.id,
                           className: 'dbs-member' + (picked[m.id] ? ' checked' : ''),
