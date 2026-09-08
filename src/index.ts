@@ -367,6 +367,15 @@ export class BotsRemote extends TypertRemoteService {
     return { ids: next }
   }
 
+  /**
+   * Sidebar visibility toggle. The flag lives in the agent's sand settings
+   * (not the profile — updateAgent ignores it), so this proxies the
+   * gateway's dedicated setAgentHiddenFromSidebar RPC.
+   */
+  async setHidden(request: { id: string; hidden: boolean }): Promise<unknown> {
+    return callGateway(this.cfg.dataDir, 'setAgentHiddenFromSidebar', { id: request?.id, isHidden: request?.hidden === true })
+  }
+
   /** Plugin-owned preferences (`<dataDir>/dsh-bots-settings.json`). */
   private readPrefs(): { groupMaxMembers?: number; pinnedConversationIds?: string[] } {
     try {
@@ -689,7 +698,7 @@ export class BotsRemote extends TypertRemoteService {
 
 for (const m of [
   'gatewayInfo', 'list', 'workspaces', 'sessions',
-  'create', 'createGroup', 'setGroupMembers', 'groupCap', 'pin', 'update', 'remove', 'send', 'interrupt', 'readImage', 'openFile', 'transcriptTail', 'markRead', 'diag',
+  'create', 'createGroup', 'setGroupMembers', 'groupCap', 'pin', 'setHidden', 'update', 'remove', 'send', 'interrupt', 'readImage', 'openFile', 'transcriptTail', 'markRead', 'diag',
   'mcpServers', 'mcpTools', 'mcpAdd', 'mcpRemove', 'mcpRefresh', 'mcpExecute',
   'workspaceList', 'workspaceGet', 'workspaceSet', 'modelConfig', 'setModelConfig',
   'eventsSince', 'sseState',

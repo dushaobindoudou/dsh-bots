@@ -9,7 +9,7 @@ const typert = await import('@deepseek-ai/dsh-typert-protocol')
 
 const EXPECTED = [
   'gatewayInfo', 'list', 'workspaces', 'sessions',
-  'create', 'createGroup', 'setGroupMembers', 'groupCap', 'pin', 'update', 'remove', 'send', 'interrupt', 'readImage', 'openFile', 'transcriptTail',
+  'create', 'createGroup', 'setGroupMembers', 'groupCap', 'pin', 'setHidden', 'update', 'remove', 'send', 'interrupt', 'readImage', 'openFile', 'transcriptTail',
   'markRead', 'diag', 'eventsSince', 'sseState',
   'mcpServers', 'mcpTools', 'mcpAdd', 'mcpRemove', 'mcpRefresh', 'mcpExecute',
   'workspaceList', 'workspaceGet', 'workspaceSet', 'modelConfig', 'setModelConfig',

@@ -289,6 +289,8 @@
 .dbs-badge{min-width:16px;height:16px;padding:0 5px;border-radius:999px;background:var(--dsw-alias-state-business-primary,#1a6dff);color:#fff;font-size:11px;line-height:16px;text-align:center;flex:none;font-variant-numeric:tabular-nums}
 .dbs-rowPin{color:var(--dsw-alias-label-tertiary);flex:none;display:inline-flex;margin:0 2px 0 0}
 .dbs-pinMenuIco{display:inline-flex;flex:none;width:14px;height:14px;align-items:center;justify-content:center;color:var(--dsw-alias-label-secondary)}
+.dbs-unhideAll{margin-top:8px;align-self:flex-start;padding:4px 12px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);background:none;color:var(--dsw-alias-label-primary);font-size:13px;line-height:18px;cursor:pointer}
+.dbs-unhideAll:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dbs-railBtn{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border:none;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;padding:0}
 .dbs-railBtn:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dbs-railBtn[data-active="true"]{color:var(--dsw-alias-state-business-primary)}
@@ -494,7 +496,9 @@
         'action.expand': '展开',
         'action.collapse': '收起',
         'list.loading': '加载中…',
-        'list.empty': '还没有 Bot，点 ＋ 新建。',
+        'list.empty': '还没有 Bot —— 点上方 ＋ 新建。',
+        'list.empty.hidden': '所有会话都隐藏在侧栏之外。',
+        'list.unhideAll': '全部显示',
         'section.groups': '群聊',
         'list.more': '更多操作',
         'list.refresh': '刷新列表',
@@ -625,7 +629,9 @@
         'action.expand': 'Expand',
         'action.collapse': 'Collapse',
         'list.loading': 'Loading…',
-        'list.empty': 'No bots yet — use ＋ to create one.',
+        'list.empty': 'No bots yet — use the ＋ above to create one.',
+        'list.empty.hidden': 'All conversations are hidden from the sidebar.',
+        'list.unhideAll': 'Show all',
         'section.groups': 'Groups',
         'list.more': 'More actions',
         'list.refresh': 'Refresh list',
@@ -854,6 +860,12 @@
           const r: any = await botsCall('pin', null)
           patch({ pinnedIds: Array.isArray(r?.ids) ? r.ids.map(String) : [] })
         } catch { /* pins are cosmetic; keep the last known list */ }
+      }
+      /** Bulk-restore sidebar visibility for every hidden agent, then refresh. */
+      async function unhideAll(): Promise<void> {
+        const hidden = (state.agents as any[]).filter((a) => a.isHiddenFromSidebar === true)
+        await Promise.allSettled(hidden.map((a) => botsCall('setHidden', { id: a.id, hidden: false })))
+        void refreshAgents()
       }
       /** Toggle one conversation's pin and take the authoritative id list back. */
       function setPin(id: string, pinned: boolean): void {
@@ -1288,7 +1300,18 @@
           !s.agentsLoaded
             ? e('div', { className: 'dbs-navBodyErr' }, t('list.loading'))
             : visible.length === 0
-              ? e('div', { className: 'dbs-navBodyErr' }, connected ? t('list.empty') : t('gateway.offlineHint'))
+              ? s.agents.length > 0
+                ? // Every agent exists but none is sidebar-visible: say so and
+                  // offer the one-click restore — "还没有 Bot" would be a lie.
+                  e('div', { className: 'dbs-navBodyErr' },
+                    t('list.empty.hidden'),
+                    e('button', {
+                      className: 'dbs-unhideAll', type: 'button',
+                      onClick: () => { void unhideAll() },
+                    }, t('list.unhideAll')))
+                : connected
+                  ? e('div', { className: 'dbs-navBodyErr' }, t('list.empty'))
+                  : e('div', { className: 'dbs-navBodyErr' }, t('gateway.offlineHint'))
               : null,
           s.agentsLoaded
             ? sectionRows(t('section.groups'), groups, {
