@@ -364,8 +364,12 @@
 .dbs-composerTrailing{align-items:center;min-width:0;display:flex;flex:none;gap:8px;margin-left:auto}
 .dbs-composerInput{resize:none;width:100%;box-sizing:border-box;border:none;outline:none;background:transparent;font-family:var(--dsw-font-family);font-size:16px;line-height:24px;white-space:pre-wrap;word-break:break-word;padding:4px 12px 0 16px;min-height:52px;color:var(--dsw-alias-label-primary)}
 .dbs-composerInput::placeholder{color:var(--dsw-alias-label-caption);user-select:none}
-.dbs-send{background:var(--dsw-alias-button-info-fill,#1a6dff);color:#fff;cursor:pointer;border:none;border-radius:999px;flex:none;place-items:center;width:34px;height:34px;transition:background-color .1s;display:grid;transform:translateY(-2px)}
+.dbs-send{background:var(--dsw-alias-button-info-fill,#1a6dff);color:#fff;cursor:pointer;border:none;border-radius:999px;flex:none;place-items:center;width:34px;height:34px;transition:background-color .1s,filter .1s;display:grid}
 .dbs-send:disabled{opacity:.4;cursor:default}
+.dbs-send.dbs-stop:hover:not(:disabled){filter:brightness(.9)}
+.dbs-typingStop{display:inline-flex;align-items:center;gap:4px;border:none;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:12px;line-height:16px;padding:2px 8px;border-radius:999px}
+.dbs-typingStop:hover:not(:disabled){color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}
+.dbs-typingStop:disabled{opacity:.4;cursor:default}
 .dbs-modalBackdrop{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:24px;pointer-events:auto}
 .dbs-modalCard{position:relative;width:min(440px,92vw);max-height:88vh;overflow-y:auto;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;padding:18px 20px 22px;box-shadow:0 24px 80px rgba(0,0,0,.3);animation:dbs-modal-in .18s ease-out}
 /* Confirm-class dialogs carry one sentence, not a form: 440px reads as a
@@ -510,8 +514,6 @@
         'chat.empty.group': '在群里说点什么，成员们会接龙回复',
         'chat.jump': '回到底部',
         'chat.composing': '生成中',
-        'chat.composingHint': '正在生成，请稍候',
-        'chat.queuedSendHint': '回合进行中：现在发送将排队，回合结束后送达',
         'chat.queuedSend': '排队发送（当前回合结束后送达）',
         'chat.placeholder.group': '@名字 可定向，默认全员',
         'chat.placeholder.single': '给 {name} 发消息…',
@@ -646,8 +648,6 @@
         'chat.empty.group': 'Say something in the room — members will pick it up.',
         'chat.jump': 'Jump to latest',
         'chat.composing': 'Generating',
-        'chat.composingHint': 'Generating, please wait',
-        'chat.queuedSendHint': 'Turn in progress: sending now queues your message until it finishes',
         'chat.queuedSend': 'Queue send (delivered after the current turn)',
         'chat.placeholder.group': 'Use @name to direct a turn; everyone by default',
         'chat.placeholder.single': 'Message {name}…',
@@ -2039,7 +2039,12 @@
                         StateDot !== null
                           ? e(StateDot, { state: 'ongoing', size: 12 })
                           : e('span', { className: 'dbs-typingDot' }),
-                        e('span', { className: 'dbs-typingText' }, t('chat.composing')))
+                        e('span', { className: 'dbs-typingText' }, t('chat.composing')),
+                        e('button', {
+                          type: 'button', className: 'dbs-typingStop', disabled: stopping,
+                          title: t('action.stop'), 'aria-label': t('action.stop'),
+                          onClick: () => void doStop(),
+                        }, e(StopSquareIcon, null), t('action.stop')))
                     : null))),
             e('button', {
               type: 'button', className: 'dbs-jump', 'data-show': showJump ? 'true' : 'false',
@@ -2118,28 +2123,20 @@
                   })),
                 e('div', { className: 'dbs-composerRow' },
                   e('span', { className: 'dbs-meta' },
-                    composing ? (input.trim() !== '' ? t('chat.queuedSendHint') : t('chat.composingHint')) : input.trim() !== '' ? t('chat.charCount', { n: input.trim().length }) : ''),
+                    input.trim() !== '' ? t('chat.charCount', { n: input.trim().length }) : ''),
                   e('div', { className: 'dbs-composerTrailing' },
-                    composing && input.trim() !== ''
+                    // ONE morphing circle, always (native contract §12-29).
+                    // With text in hand the corner is the action for that
+                    // text: send when idle, a queued send while a run is
+                    // active (the daemon persists it and the run scheduler
+                    // delivers the follow-up turn after this one settles —
+                    // Enter queues the same way). Stop owns the corner only
+                    // when there is nothing to send; while a run is active
+                    // with text typed, stop stays one click away in the
+                    // typing indicator instead of crowding beside the send.
+                    composing && input.trim() === ''
                       ? e('button', {
-                          type: 'button', className: 'dbs-send',
-                          // Queued send while a run is active: the daemon
-                          // persists the message now and the run scheduler
-                          // starts the follow-up turn after the active one
-                          // settles (Enter in the composer does the same).
-                          disabled: sending,
-                          title: t('chat.queuedSend'), 'aria-label': t('chat.queuedSend'),
-                          onClick: () => void doSend(),
-                        }, e(SendUpIcon, null))
-                      : null,
-                    composing
-                      ? e('button', {
-                          type: 'button', className: 'dbs-send',
-                          // Native contract (§12-29): the send button morphs
-                          // into a stop square while a run is active. The
-                          // gateway now exposes interruptAgent (engine patch,
-                          // e2e-verified), so the stop is real — `hadActiveRun`
-                          // tells "stopped" from "nothing to stop".
+                          type: 'button', className: 'dbs-send dbs-stop',
                           disabled: stopping,
                           title: t('action.stop'), 'aria-label': t('action.stop'),
                           onClick: () => void doStop(),
@@ -2147,8 +2144,8 @@
                       : e('button', {
                           type: 'button', className: 'dbs-send',
                           disabled: sending || input.trim() === '',
-                          title: t('action.send'),
-                          'aria-label': t('action.send'),
+                          title: composing ? t('chat.queuedSend') : t('action.send'),
+                          'aria-label': composing ? t('chat.queuedSend') : t('action.send'),
                           onClick: () => void doSend(),
                         }, e(SendUpIcon, null))))))))
       }
