@@ -349,15 +349,33 @@ export class BotsRemote extends TypertRemoteService {
     return { max: n }
   }
 
+  /**
+   * Pinned conversations (置顶会话). Plugin-owned, stored in the same prefs
+   * file as `groupMaxMembers` — a per-device preference like the unread
+   * markers, not engine state. `null` reads the current pin list (array of
+   * agent ids, order = pin order, oldest first); `{ id, pinned }` toggles.
+   */
+  async pin(request: { id: string; pinned: boolean } | null): Promise<{ ids: string[] }> {
+    if (request === null || typeof request.id !== 'string' || request.id === '') {
+      return { ids: this.readPrefs().pinnedConversationIds ?? [] }
+    }
+    const ids = new Set(this.readPrefs().pinnedConversationIds ?? [])
+    if (request.pinned === true) ids.add(request.id)
+    else ids.delete(request.id)
+    const next = [...ids]
+    this.writePrefs({ pinnedConversationIds: next })
+    return { ids: next }
+  }
+
   /** Plugin-owned preferences (`<dataDir>/dsh-bots-settings.json`). */
-  private readPrefs(): { groupMaxMembers?: number } {
+  private readPrefs(): { groupMaxMembers?: number; pinnedConversationIds?: string[] } {
     try {
       const parsed = JSON.parse(readFileSync(join(effectiveDataDir(this.cfg.dataDir), BOTS_SETTINGS_FILE), 'utf-8'))
-      return typeof parsed === 'object' && parsed !== null ? parsed as { groupMaxMembers?: number } : {}
+      return typeof parsed === 'object' && parsed !== null ? parsed as { groupMaxMembers?: number; pinnedConversationIds?: string[] } : {}
     } catch { return {} }
   }
 
-  private writePrefs(patch: { groupMaxMembers?: number }): void {
+  private writePrefs(patch: { groupMaxMembers?: number; pinnedConversationIds?: string[] }): void {
     const path = join(effectiveDataDir(this.cfg.dataDir), BOTS_SETTINGS_FILE)
     const next = { version: 1, ...this.readPrefs(), ...patch }
     writeFileSync(path, JSON.stringify(next, null, 2) + '\n', 'utf-8')
@@ -671,7 +689,7 @@ export class BotsRemote extends TypertRemoteService {
 
 for (const m of [
   'gatewayInfo', 'list', 'workspaces', 'sessions',
-  'create', 'createGroup', 'setGroupMembers', 'groupCap', 'update', 'remove', 'send', 'interrupt', 'readImage', 'openFile', 'transcriptTail', 'markRead', 'diag',
+  'create', 'createGroup', 'setGroupMembers', 'groupCap', 'pin', 'update', 'remove', 'send', 'interrupt', 'readImage', 'openFile', 'transcriptTail', 'markRead', 'diag',
   'mcpServers', 'mcpTools', 'mcpAdd', 'mcpRemove', 'mcpRefresh', 'mcpExecute',
   'workspaceList', 'workspaceGet', 'workspaceSet', 'modelConfig', 'setModelConfig',
   'eventsSince', 'sseState',

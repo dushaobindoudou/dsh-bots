@@ -287,6 +287,8 @@
 .dbs-avatar img{width:100%;height:100%;object-fit:cover;display:block}
 .dbs-avatarRound{border-radius:999px}
 .dbs-badge{min-width:16px;height:16px;padding:0 5px;border-radius:999px;background:var(--dsw-alias-state-business-primary,#1a6dff);color:#fff;font-size:11px;line-height:16px;text-align:center;flex:none;font-variant-numeric:tabular-nums}
+.dbs-rowPin{color:var(--dsw-alias-label-tertiary);flex:none;display:inline-flex;margin:0 2px 0 0}
+.dbs-pinMenuIco{display:inline-flex;flex:none;width:14px;height:14px;align-items:center;justify-content:center;color:var(--dsw-alias-label-secondary)}
 .dbs-railBtn{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border:none;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;padding:0}
 .dbs-railBtn:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dbs-railBtn[data-active="true"]{color:var(--dsw-alias-state-business-primary)}
@@ -479,6 +481,8 @@
         'modal.members.title': '管理群成员',
         'modal.members.hint': '勾选的 Bot 为群成员；保存后立即生效（可随时再改）。',
 
+        'action.pin': '置顶',
+        'action.unpin': '取消置顶',
         'action.delete': '删除',
         'delete.title.bot': '删除 Bot',
         'delete.title.group': '删除群聊',
@@ -608,6 +612,8 @@
         'modal.members.title': 'Manage group members',
         'modal.members.hint': 'Checked bots are members; changes apply immediately on save (editable again anytime).',
 
+        'action.pin': 'Pin to top',
+        'action.unpin': 'Unpin',
         'action.delete': 'Delete',
         'delete.title.bot': 'Delete bot',
         'delete.title.group': 'Delete group chat',
@@ -795,6 +801,8 @@
         open: { workspaces: true, bots: false },
         /** Host-computed unread counts per agent id (plugin-owned model). */
         unreadCounts: {} as Record<string, number>,
+        /** Pinned conversation ids (置顶会话), plugin prefs; order = pin order. */
+        pinnedIds: [] as string[],
         /** Create dialog: 'bot' | 'group' | null — rendered as a system-style
          *  modal from shell.overlay, so the form state lives in the store. */
         create: null as string | null,
@@ -835,6 +843,19 @@
         } catch (err: any) {
           patch({ agentsLoaded: true, error: String(err?.message ?? err) })
         }
+      }
+      /** Load the pinned-conversation list (置顶会话) from plugin prefs. */
+      async function refreshPins(): Promise<void> {
+        try {
+          const r: any = await botsCall('pin', null)
+          patch({ pinnedIds: Array.isArray(r?.ids) ? r.ids.map(String) : [] })
+        } catch { /* pins are cosmetic; keep the last known list */ }
+      }
+      /** Toggle one conversation's pin and take the authoritative id list back. */
+      function setPin(id: string, pinned: boolean): void {
+        void botsCall('pin', { id, pinned })
+          .then((r: any) => { patch({ pinnedIds: Array.isArray(r?.ids) ? r.ids.map(String) : [] }) })
+          .catch(() => { /* best-effort; next boot resyncs */ })
       }
       async function refreshInfo(): Promise<void> {
         try { patch({ info: await botsCall('gatewayInfo', {}) }) } catch { /* keep the last good reading */ }
@@ -1095,6 +1116,17 @@
                 e('path', { d: 'M4.25 2.83v8.34c0 .49.59.74.94.39l4.17-4.17a.75.75 0 0 0 0-1.06L5.19 2.16c-.35-.35-.94-.1-.94.39Z', fill: 'currentColor' })))
       }
 
+      /**
+       * Pushpin glyph for pinned conversations (置顶会话). Not in the
+       * primitives set we can rely on at runtime, so ship the Material
+       * push_pin path inline (currentColor, scales via viewBox).
+       */
+      function PinGlyph(props?: { size?: number }): any {
+        const size = props?.size ?? 12
+        return e('svg', { viewBox: '0 0 24 24', width: size, height: size, 'aria-hidden': true, fill: 'currentColor' },
+          e('path', { d: 'M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z' }))
+      }
+
       // =========================================================
       // Bots nav group.
       // =========================================================
@@ -1103,10 +1135,24 @@
 
         // Hidden agents are hidden: the gateway owns that flag and the sidebar
         // has to honour it, same as every other sdk-bots surface.
+        // 置顶会话 sort: pinned conversations float to the top of their
+        // section (群聊/单聊 stay separate), keeping the user's pin order;
+        // everything else keeps the recency ordering.
+        const pinnedIds = Array.isArray(s.pinnedIds) ? s.pinnedIds : []
+        const pinRank = (id: string): number => {
+          const idx = pinnedIds.indexOf(id)
+          return idx === -1 ? Number.MAX_SAFE_INTEGER : idx
+        }
         const visible = (s.agents as any[])
           .filter((a) => a.isHiddenFromSidebar !== true)
           .slice()
-          .sort((a, b) => (b.lastActivityAt ?? 0) - (a.lastActivityAt ?? 0))
+          .sort((a, b) => {
+            const pa = pinRank(a.id)
+            const pb = pinRank(b.id)
+            if (pa !== pb) return pa - pb
+            return (b.lastActivityAt ?? 0) - (a.lastActivityAt ?? 0)
+          })
+        const pinned = new Set(pinnedIds)
         const groups = visible.filter((a) => a.isGroup)
         const singles = visible.filter((a) => !a.isGroup)
         const connected = s.info?.ok === true
@@ -1129,6 +1175,9 @@
           },
             e(Avatar, { agent: a }),
             e('span', { className: 'dbs-title' }, a.name),
+            pinned.has(a.id)
+              ? e('span', { className: 'dbs-rowPin', title: t('action.pin') }, PinGlyph({ size: 11 }))
+              : null,
             busy && StateDot !== null
               ? e(StateDot, { state: 'ongoing', size: 10 })
               : a.awaitingUserResponse !== null && a.awaitingUserResponse !== undefined && StateDot !== null
@@ -1149,6 +1198,10 @@
               ? e(React.Fragment, null,
                   e('div', { style: { position: 'fixed', inset: 0, zIndex: 39 }, onClick: () => patch({ rowMenu: null }) }),
                   e('div', { className: 'dbs-secMenu dbs-rowMenu', onClick: (ev: any) => { ev.stopPropagation() } },
+                    e('button', {
+                      className: 'dbs-secMenuItem', type: 'button',
+                      onClick: () => { patch({ rowMenu: null }); setPin(a.id, !pinned.has(a.id)) },
+                    }, e('span', { className: 'dbs-pinMenuIco' }, PinGlyph({ size: 14 })), pinned.has(a.id) ? t('action.unpin') : t('action.pin')),
                     e('button', {
                       className: 'dbs-secMenuItem', type: 'button',
                       onClick: () => { patch({ rowMenu: null, confirmDelete: { id: a.id, name: a.name, isGroup: a.isGroup === true } }) },
@@ -1254,7 +1307,7 @@
 
         // One controller owns the data lifecycle for every Bots surface.
         React.useEffect(() => {
-          void refreshAgents(); void refreshInfo(); syncUnread()
+          void refreshAgents(); void refreshInfo(); void refreshPins(); syncUnread()
           return ring.subscribe((channels) => {
             if (channels.has('agents') || channels.has('agent-upserted')) void refreshAgents()
             if (channels.has('host-settings')) void refreshInfo()
