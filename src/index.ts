@@ -615,7 +615,7 @@ export class BotsRemote extends TypertRemoteService {
   /** Model configuration surface: the engine's account-level default model
    * (setHostSettings.agentDefaultModel) plus freeroute availability. The
    * engine keeps no per-bot model — this is the one runtime-effective knob. */
-  async modelConfig(request: unknown): Promise<{ provider: string | null; agentDefaultModel: string | null; freerouteReachable: boolean; models: string[] }> {
+  async modelConfig(request: unknown): Promise<{ provider: string | null; agentDefaultModel: string | null; freerouteReachable: boolean; models: string[]; groups: Array<{ provider: string; models: string[] }> }> {
     const settings = await callGateway<any>(this.cfg.dataDir, 'getHostSettings', {})
     const selection = settings?.agentDefaultModel ?? null
     const probe = await this.probeFreerouteModels()
@@ -624,20 +624,36 @@ export class BotsRemote extends TypertRemoteService {
       agentDefaultModel: typeof selection?.modelId === 'string' ? selection.modelId : null,
       freerouteReachable: probe.ok,
       models: probe.models,
+      groups: probe.groups,
     }
   }
 
-  private async probeFreerouteModels(): Promise<{ ok: boolean; models: string[] }> {
+  private async probeFreerouteModels(): Promise<{ ok: boolean; models: string[]; groups: Array<{ provider: string; models: string[] }> }> {
     try {
       const res = await fetch(`${FREEROUTE_BASE_URL}/models`, { signal: AbortSignal.timeout(2500) })
-      if (res.ok === false) return { ok: false, models: [] }
-      const body = await res.json() as { data?: Array<{ id?: unknown }> }
-      const models = Array.isArray(body?.data)
-        ? body.data.map((m) => (typeof m?.id === 'string' ? m.id : '')).filter((id: string) => id !== '')
-        : []
-      return { ok: true, models }
+      if (res.ok === false) return { ok: false, models: [], groups: [] }
+      // freeroute aggregates upstream providers; each entry's `owned_by` is
+      // the provider dimension the picker groups by (`_` marks pseudo-route
+      // entries like `auto` — surfaced as the synthetic 路由 group).
+      const body = await res.json() as { data?: Array<{ id?: unknown; owned_by?: unknown }> }
+      const rows = Array.isArray(body?.data) ? body.data : []
+      const models = rows.map((m) => (typeof m?.id === 'string' ? m.id : '')).filter((id: string) => id !== '')
+      const byOwner = new Map<string, string[]>()
+      for (const row of rows) {
+        const id = typeof row?.id === 'string' ? row.id : ''
+        if (id === '') continue
+        const owner = typeof row?.owned_by === 'string' && row.owned_by.trim() !== '' ? row.owned_by.trim() : '_'
+        const key = owner === '_' ? 'router' : owner
+        const list = byOwner.get(key) ?? []
+        list.push(id)
+        byOwner.set(key, list)
+      }
+      const groups = [...byOwner.entries()]
+        .map(([provider, list]) => ({ provider, models: list.sort((a, b) => a.localeCompare(b)) }))
+        .sort((a, b) => b.models.length - a.models.length)
+      return { ok: true, models, groups }
     } catch {
-      return { ok: false, models: [] }
+      return { ok: false, models: [], groups: [] }
     }
   }
 

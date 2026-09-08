@@ -545,6 +545,7 @@
         'settings.model.engineDefault': '引擎默认（未设置）',
         'settings.model.freeroute': 'freeroute 自动路由（默认）',
         'settings.model.pick': '选择模型',
+        'settings.model.provider': '提供方',
         'settings.model.hint': '不选择时默认使用 freeroute 自动路由；freeroute 不可用时使用当前默认模型。选择具体模型会写入账号默认模型，重启引擎后仍生效。',
         'settings.model.offline': 'freeroute 不可达——已回退当前默认模型',
         'settings.model.saving': '保存中…',
@@ -680,6 +681,7 @@
         'settings.model.engineDefault': 'Engine default (unset)',
         'settings.model.freeroute': 'freeroute auto routing (default)',
         'settings.model.pick': 'Pick a model',
+        'settings.model.provider': 'Provider',
         'settings.model.hint': 'Unselected defaults to freeroute auto routing; when freeroute is unavailable the current default model is used. Picking a model writes the account default model and survives engine restarts.',
         'settings.model.offline': 'freeroute unreachable — using the current default model',
         'settings.model.saving': 'Saving…',
@@ -2333,12 +2335,16 @@
       }
 
       /** Model configuration card: freeroute availability + the engine's
-       * account-level default model (getHostSettings/setHostSettings). No
-       * selection = freeroute auto; freeroute down = the account default. */
+       * account-level default model (getHostSettings/setHostSettings). Two
+       * stages: pick a provider (grouped by freeroute's owned_by), then a
+       * model within it. Provider '' = freeroute auto-routing (no override);
+       * freeroute down = the account default. */
       function ModelCard() {
         const [cfg, setCfg] = React.useState(undefined)
         const [working, setWorking] = React.useState(false)
         const [err, setErr] = React.useState(null as string | null)
+        // null = untouched (derive from the current model); '' = auto chosen.
+        const [provRaw, setProv] = React.useState(null as string | null)
         async function refresh() {
           setCfg(undefined); setErr(null)
           try { setCfg(await botsCall('modelConfig', {})) } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
@@ -2348,28 +2354,58 @@
         const effLabel = current !== null
           ? current
           : (cfg?.freerouteReachable === true ? t('settings.model.auto') : t('settings.model.engineDefault'))
-        async function choose(ev: any) {
-          const v = String(ev.target.value ?? '')
+        async function save(modelId: string | null) {
           setWorking(true); setErr(null)
           try {
-            await botsCall('setModelConfig', { modelId: v === '' ? null : v })
+            await botsCall('setModelConfig', { modelId })
             await refresh()
           } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
           setWorking(false)
         }
+        const groups = Array.isArray(cfg?.groups) ? cfg.groups : []
+        const groupOf = current !== null
+          ? (groups.find((g: any) => g.models.indexOf(current) !== -1) ?? null)
+          : null
+        const prov = provRaw !== null ? provRaw : (groupOf !== null ? groupOf.provider : '')
+        const provModels = prov !== ''
+          ? ((groups.find((g: any) => g.provider === prov)?.models ?? []) as string[])
+          : []
+        // A current model whose provider vanished from freeroute's list stays
+        // visible as a lone option so the card never renders a dead select.
+        const orphan = prov === '' && current !== null && groupOf === null
         return e('div', { className: 'dbs-setcard' },
           e('div', { className: 'dbs-sethead' },
             e('span', null, t('settings.model.title')),
             e('span', { style: { flex: 1 } }),
             working ? e('span', { className: 'dbs-meta' }, t('settings.model.saving')) : null),
           e('div', { className: 'dbs-setrow' }, t('settings.model.current'), e('b', null, cfg === undefined ? t('settings.reading') : effLabel)),
-          e('div', { className: 'dbs-setrow' }, t('settings.model.pick'),
+          e('div', { className: 'dbs-setrow' }, t('settings.model.provider'),
             e('select', {
-              className: 'dbs-select', value: current ?? '', disabled: working || cfg === undefined,
-              onChange: (ev: any) => void choose(ev),
+              className: 'dbs-select', value: prov, disabled: working || cfg === undefined,
+              onChange: (ev: any) => {
+                const v = String(ev.target.value ?? '')
+                setProv(v)
+                if (v === '' && current !== null) void save(null)
+              },
             },
               e('option', { value: '' }, t('settings.model.freeroute')),
-              (cfg?.models ?? []).map((m: string) => e('option', { key: m, value: m }, m)))),
+              groups.map((g: any) => e('option', { key: g.provider, value: g.provider }, `${g.provider}（${g.models.length}）`)))),
+          e('div', { className: 'dbs-setrow' }, t('settings.model.pick'),
+            e('select', {
+              className: 'dbs-select',
+              value: prov !== '' && current !== null && provModels.indexOf(current) !== -1 ? current : '',
+              disabled: working || cfg === undefined || (prov === '' && !orphan),
+              onChange: (ev: any) => {
+                const v = String(ev.target.value ?? '')
+                if (v !== '') void save(v)
+              },
+            },
+              prov !== ''
+                ? e('option', { value: '' }, t('settings.model.pick'))
+                : null,
+              prov !== ''
+                ? provModels.map((m: string) => e('option', { key: m, value: m }, m))
+                : (orphan && current !== null ? [e('option', { key: current, value: current }, current)] : []))),
           cfg?.freerouteReachable === false
             ? e('div', { className: 'dbs-meta', style: { padding: '0 2px' } }, t('settings.model.offline'))
             : null,
