@@ -979,20 +979,33 @@
        * workspace browser's directory-picker flow; here it recurses, so a
        * delegated entry's children render exactly as they would natively.
        */
-      function synthesizeProps(entry: any, ownerProps: any): any {
+      function synthesizeProps(entry: any, ownerProps: any, shellProps?: any): any {
         const props: any = {}
         if (slotsSvc === null) return { ...props, ...ownerProps }
-        const host = slotsSvc.hostFace()
 
-        if (host.sessions !== undefined && host.workspaces !== undefined) {
-          props.useSessions = observableHook(host.sessions.list)
-          props.useWorkspaces = observableHook(host.workspaces.list)
+        // Prefer the standard kit the shell hands our `sidebar.workspaces`
+        // shadow (useSessions/useWorkspaces/useSessionPendingInteraction),
+        // falling back to the legacy host observables when those are absent.
+        if (shellProps !== undefined) {
+          for (const name of ['useSessions', 'useWorkspaces', 'useSessionPendingInteraction']) {
+            if (shellProps[name] !== undefined) props[name] = shellProps[name]
+          }
+        }
+
+        let host: any
+        try { host = slotsSvc.hostFace?.() } catch { host = undefined }
+
+        if (host !== undefined && host.sessions !== undefined && host.workspaces !== undefined) {
+          if (props.useSessions === undefined) props.useSessions = observableHook(host.sessions.list)
+          if (props.useWorkspaces === undefined) props.useWorkspaces = observableHook(host.workspaces.list)
         }
 
         let actions: any
         if (entry.store !== undefined) {
           try {
-            const store = host.storeOf(entry, undefined)
+            const store = host !== undefined && typeof host.storeOf === 'function'
+              ? host.storeOf(entry, undefined)
+              : entry.store
             if (store !== undefined) {
               props.useStore = observableHook(store)
               props.actions = store.actions
@@ -1005,7 +1018,7 @@
           }
         }
 
-        if (entry.locale !== undefined && host.locale !== undefined) {
+        if (entry.locale !== undefined && host !== undefined && host.locale !== undefined) {
           try {
             const bound = host.locale.bind(entry.locale)
             props.t = (key: string, params?: unknown) => bound(key, params)
@@ -1013,7 +1026,7 @@
         }
 
         if (entry.children !== undefined) {
-          props.renderSlot = renderChildSlot
+          props.renderSlot = (key: string, ownerProps2?: any) => renderChildSlot(key, ownerProps2, shellProps)
           // Two child-spec flavours need renderer internals we cannot mint from
           // out here (chain composition, the session seat). Neither is used by
           // any slot we delegate today; warn loudly if that ever changes, so it
@@ -1049,13 +1062,13 @@
       }
 
       /** Bound `renderSlot` handed to delegated entries (recursive). */
-      function renderChildSlot(key: string, ownerProps?: any): any {
+      function renderChildSlot(key: string, ownerProps?: any, shellProps?: any): any {
         const entries = foreignEntries(key)
         if (entries.length === 0) return null
         return entries.map((en: any, i: number) => e(Boundary, {
           key: en.id ?? key + ':' + String(i),
           fallback: null,
-          children: e(en.component, synthesizeProps(en, ownerProps ?? {})),
+          children: e(en.component, synthesizeProps(en, ownerProps ?? {}, shellProps)),
         }))
       }
 
@@ -1065,7 +1078,13 @@
        * add-workspace, which the plugin used to replace with two inert icons —
        * keeps working when the sidebar is collapsed.
        */
-      function DelegatedBrowser(p: { wide: boolean; expandSidebar?: () => void }) {
+      function DelegatedBrowser(p: {
+        wide: boolean
+        expandSidebar?: () => void
+        useSessions?: any
+        useWorkspaces?: any
+        useSessionPendingInteraction?: any
+      }) {
         const [entry, setEntry] = React.useState(null)
         const [status, setStatus] = React.useState('loading')
         React.useEffect(() => {
@@ -1083,8 +1102,8 @@
         }, [])
 
         const props = React.useMemo(
-          () => (entry === null ? null : synthesizeProps(entry, { wide: p.wide, expandSidebar: p.expandSidebar })),
-          [entry, p.wide, p.expandSidebar],
+          () => (entry === null ? null : synthesizeProps(entry, { wide: p.wide, expandSidebar: p.expandSidebar }, p)),
+          [entry, p.wide, p.expandSidebar, p.useSessions, p.useWorkspaces, p.useSessionPendingInteraction],
         )
 
         if (status === 'loading') return e('div', { className: 'dbs-navBodyErr' }, t('delegate.loading'))
@@ -1342,7 +1361,17 @@
       // =========================================================
       // Sidebar nav: 「工作区」 and 「Bots」 as two collapsible groups.
       // =========================================================
-      function SidebarNav(p: { wide?: boolean; expandSidebar?: () => void }) {
+      function SidebarNav(p: {
+        wide?: boolean
+        expandSidebar?: () => void
+        useSessions?: any
+        useWorkspaces?: any
+        useSessionPendingInteraction?: any
+      }) {
+        // `props` delivered to the registration includes the shell's standard
+        // kit; the three workspace/session hooks here are forwarded to the
+        // shipped browser we shadow, since newer dsh stopped exposing them on
+        // hostFace().
         const wide = p.wide !== false
         const s = useStore()
 
@@ -1364,7 +1393,7 @@
             .filter((a) => a.isHiddenFromSidebar !== true)
             .reduce((n: number, a: any) => n + Number(s.unreadCounts?.[a.id] ?? a.unreadCount ?? 0), 0)
           return e('div', { className: 'dbs-railWrap' },
-            e(DelegatedBrowser, { wide: false, expandSidebar: p.expandSidebar }),
+            e(DelegatedBrowser, { ...p, wide: false }),
             e('div', { className: 'dbs-rail' },
               e('button', {
                 type: 'button', className: 'dbs-railBtn', title: unread > 0 ? t('nav.bots.unread', { n: unread }) : t('nav.bots'),
@@ -1410,7 +1439,7 @@
             e('div', {
               className: 'dbs-navBody',
               onClickCapture: () => { if (s.chatAgentId !== null) patch({ chatAgentId: null }) },
-            }, e(DelegatedBrowser, { wide, expandSidebar: p.expandSidebar }))),
+            }, e(DelegatedBrowser, { ...p, wide }))),
           group('bots', t('nav.bots'), 'IconAgentPresetOutline16', e(BotsGroup, null),
             StateDot !== null
               ? e('span', {
@@ -2929,7 +2958,10 @@
         // the shipped entry stays registered and is delegated to by name.
         c.effect(() => slots.inject('sidebar.workspaces', () => slots.register(
           { name: 'sidebar.workspaces', priority: -100, registrant: 'dsh-bots', locale: NS },
-          (props: any) => e(SidebarNav, { wide: props.wide, expandSidebar: props.expandSidebar }),
+          // Forward the full shell kit (standard hooks + owner props) so the
+          // delegated shipped workspace browser can receive the hooks it needs
+          // after the dsh upgrade dropped them from hostFace().
+          (props: any) => e(SidebarNav, props),
         )), 'dsh-bots: sidebar workspaces shadow')
 
         c.effect(() => slots.inject('settings.section', () => slots.register(
