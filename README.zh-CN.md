@@ -57,6 +57,9 @@
 - `dsh` 与 web 配置（插件在 Cordis `^4.0.1` 上测试）
 - 一个运行中的 [sdk-bots](https://github.com/dushaobindoudou) 宿主网关（默认发现：
   `~/.dsh-bots/gateway.json`，自动回退旧版 `~/.sdk-bots/gateway.json`）
+- 引擎 `multibot-sdk` **≥ 0.5.0** —— 本插件依赖的线协议（`attachmentPaths` 图片通道、
+  `user-attachment` 转写条目、goal-guard 目标台账）在该版本落地；以可选 peer（`^0.5.0`）
+  声明：引擎独立进程运行，不应被打进插件的依赖树
 
 ```bash
 # 从 npm 安装

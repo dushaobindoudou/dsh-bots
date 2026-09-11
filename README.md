@@ -63,6 +63,10 @@ Requirements:
 - `dsh` with a web profile (Cordis `^4.0.1` — what the plugin is tested against)
 - An sdk-bots host running its gateway (default discovery:
   `~/.dsh-bots/gateway.json`, falling back to the legacy `~/.sdk-bots/gateway.json`)
+- Engine `multibot-sdk` **≥ 0.5.0** — the wire this plugin speaks (`attachmentPaths`
+  image channel, `user-attachment` transcript entries, the goal-guard ledger) landed
+  there; declared as an optional peer (`^0.5.0`) since the engine runs as its own
+  process and must not be bundled into the plugin
 
 ```bash
 # from npm
