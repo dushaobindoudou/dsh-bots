@@ -23,7 +23,14 @@ describe('composer', () => {
     expect(SOURCE).toContain('onCompositionStart')
     expect(SOURCE).toContain('onCompositionEnd')
     // Both signals: `isComposing` where it exists, keyCode 229 where it does not.
-    expect(SOURCE).toMatch(/imeRef\.current \|\| ev\.nativeEvent\?\.isComposing === true \|\| ev\.keyCode === 229/)
+    expect(SOURCE).toMatch(/ev\.nativeEvent\?\.isComposing === true/)
+    expect(SOURCE).toMatch(/ev\.keyCode === 229/)
+    // The guard is stronger than the bare boolean: the post-composition
+    // 10ms window (Safari fires compositionend *after* the commit Enter) and
+    // held-Enter auto-repeat must also never reach the send binding.
+    expect(SOURCE).toMatch(/imeRef\.current\.active/)
+    expect(SOURCE).toMatch(/imeRef\.current\.until/)
+    expect(SOURCE).toMatch(/ev\.repeat === true/)
     // …and the guard has to precede the send binding, not follow it.
     const guard = SOURCE.indexOf('ev.keyCode === 229')
     const send = SOURCE.indexOf("ev.key === 'Enter' && !ev.shiftKey")
@@ -32,7 +39,14 @@ describe('composer', () => {
   })
 
   it('keeps Enter to send and Shift+Enter to break the line', () => {
-    expect(SOURCE).toContain("if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); void doSend() }")
+    expect(SOURCE).toContain("if (ev.key === 'Enter' && !ev.shiftKey) {")
+    expect(SOURCE).toContain('void doSend()')
+  })
+
+  it('restores the unsent draft when a chat is reopened and clears it on send', () => {
+    expect(SOURCE).toContain("setInput(draftMemory.get(p.agentId) ?? '')")
+    expect(SOURCE).toContain('draftMemory.set(p.agentId, value)')
+    expect(SOURCE).toContain('draftMemory.delete(p.agentId)')
   })
 
   it('grows the textarea with its content instead of scrolling it', () => {
@@ -56,7 +70,14 @@ describe('message clocks', () => {
     expect(SOURCE).toContain("if (ms === null || p.entry.isStreaming === true) return null")
   })
 
-  it('stamps user turns, bot replies and tool cards', () => {
-    expect(SOURCE.match(/e\(MsgTime, \{ entry: en \}\)/g)?.length).toBe(4)
+  it('carries the clock inside the hover action row, like the native row', () => {
+    // The shipped MessageIconActions carries the clock and the actions in one
+    // hover-revealed row; the only always-visible clock left is the image
+    // attachment bubble (no text to copy, so no action row of its own).
+    expect(SOURCE).toContain('e(MessageActions, { entry: en })')
+    expect(SOURCE).toMatch(/className: 'dbs-actionTime' \}, e\(MsgTime, \{ entry: p\.entry \}\)/)
+    expect(SOURCE).toMatch(/\.dbs-actions\{[^}]*opacity:0;transition:opacity 80ms/)
+    expect(SOURCE).toMatch(/\.dbs-botRow:hover \.dbs-actions/)
+    expect(SOURCE.match(/e\(MsgTime, \{ entry: en \}\)/g)?.length).toBe(1)
   })
 })

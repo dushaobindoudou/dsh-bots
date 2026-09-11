@@ -21,9 +21,10 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { createRequire } from 'node:module'
+import { homedir } from 'node:os'
 import { dirname, extname, join, resolve, sep } from 'node:path'
-import { appendFileSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
-import { spawn } from 'node:child_process'
+import { appendFileSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
+import { spawn, spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import type {
   AgentInfo, Config, EventsSinceResult, GatewayInfo, McpServerInfo, McpToolInfo,
@@ -54,6 +55,20 @@ const LEGACY_DATA_DIR = '~/.sdk-bots'
  * model picker can offer the router's catalog or must fall back to the
  * account's configured default model. */
 const FREEROUTE_BASE_URL = (process.env.SAND_OPENROUTER_BASE_URL ?? '').trim() || 'http://127.0.0.1:3080/freeroute/v1'
+
+/**
+ * The launchd job that owns the sdk-bots engine, and the env keys that decide
+ * which model it runs.
+ *
+ * `resolveOpenRouterEndpoint()` reads `SAND_OPENROUTER_MODEL` at process start
+ * and the engine's local chat path never consults the settings store, so this
+ * plist — not `agentDefaultModel` — is the knob that actually changes what the
+ * bots run. Reading it lets the settings card show the EFFECTIVE model, and
+ * writing it (plus a kickstart) is the only way a pick takes effect.
+ */
+const ENGINE_LAUNCHD_LABEL = 'com.sdk-bots.host'
+const ENGINE_PLIST = join(homedir(), 'Library', 'LaunchAgents', `${ENGINE_LAUNCHD_LABEL}.plist`)
+const ENGINE_MODEL_ENV_KEYS = ['SAND_OPENROUTER_MODEL', 'SAND_AGENT_MODEL'] as const
 
 /** Append-only diagnostics file, read when a shadow takeover misbehaves. */
 const DIAG_FILE = 'dsh-bots-diag.jsonl'
@@ -443,10 +458,53 @@ export class BotsRemote extends TypertRemoteService {
     return callGateway(this.cfg.dataDir, 'deleteAgent', { id: request?.id })
   }
 
-  async send(request: { agentId?: string; prompt?: string } | null): Promise<unknown> {
+  /** Wire image types we accept, mapped to the file extension the gateway's
+   * `imageMimeFromPath` channel split expects. Video/others stay out of scope. */
+  static readonly IMAGE_EXTS: Record<string, string> = {
+    'image/png': '.png', 'image/jpeg': '.jpg', 'image/jpg': '.jpg',
+    'image/gif': '.gif', 'image/webp': '.webp', 'image/bmp': '.bmp',
+  }
+  /** Mirrors the gateway's own limits: 4 inline images per message, 8MB each. */
+  static readonly MAX_IMAGES_PER_SEND = 4
+  static readonly MAX_IMAGE_BYTES = 8 * 1024 * 1024
+
+  async send(request: { agentId?: string; prompt?: string; images?: Array<{ mediaType?: string; dataBase64?: string; name?: string }> } | null): Promise<unknown> {
+    // Multimodal: image attachments are materialized as files under the
+    // gateway data dir and handed to sendPrompt via `attachmentPaths` — the
+    // same channel the native client uses — so the engine's
+    // splitAttachmentPathsByChannel → selectedImages → model pipeline picks
+    // them up for direct chats AND group turns with zero gateway changes.
+    // Writing them under the gateway data dir (not the plugin dir) is what
+    // keeps `readImage` previews inside the existing media-path boundary.
+    const attachmentPaths: string[] = []
+    const attachmentNames: string[] = []
+    const images = Array.isArray(request?.images) ? request.images : []
+    if (images.length > BotsRemote.MAX_IMAGES_PER_SEND) {
+      throw new Error(`at most ${BotsRemote.MAX_IMAGES_PER_SEND} images per message`)
+    }
+    for (const img of images) {
+      const b64 = String(img?.dataBase64 ?? '').replace(/\s+/g, '')
+      if (b64 === '') continue
+      const ext = BotsRemote.IMAGE_EXTS[String(img?.mediaType ?? '').toLowerCase()]
+      if (ext === undefined) throw new Error('unsupported image type: ' + String(img?.mediaType ?? '(none)'))
+      const bytes = Buffer.from(b64, 'base64')
+      if (bytes.byteLength === 0) continue
+      if (bytes.byteLength > BotsRemote.MAX_IMAGE_BYTES) {
+        throw new Error(`image exceeds the ${BotsRemote.MAX_IMAGE_BYTES / 1024 / 1024}MB cap (${bytes.byteLength} bytes)`)
+      }
+      const dir = join(effectiveDataDir(this.cfg.dataDir), 'dsh-bots-uploads')
+      mkdirSync(dir, { recursive: true })
+      const n = attachmentPaths.length + 1
+      const safe = String(img?.name ?? '').replace(/[\\/:*?"<>|\s]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60)
+      const path = join(dir, `dshb-${Date.now()}-${n}${ext}`)
+      writeFileSync(path, bytes)
+      attachmentPaths.push(path)
+      attachmentNames.push(safe !== '' ? safe : `image-${n}${ext}`)
+    }
     return callGateway(this.cfg.dataDir, 'sendPrompt', {
       agentId: request?.agentId,
       prompt: String(request?.prompt ?? ''),
+      ...(attachmentPaths.length > 0 ? { attachmentPaths, attachmentNames } : {}),
       clientNonce: nextNonce(),
     })
   }
@@ -615,7 +673,16 @@ export class BotsRemote extends TypertRemoteService {
   /** Model configuration surface: the engine's account-level default model
    * (setHostSettings.agentDefaultModel) plus freeroute availability. The
    * engine keeps no per-bot model — this is the one runtime-effective knob. */
-  async modelConfig(request: unknown): Promise<{ provider: string | null; agentDefaultModel: string | null; freerouteReachable: boolean; models: string[]; groups: Array<{ provider: string; models: string[] }> }> {
+  async modelConfig(request: unknown): Promise<{
+    provider: string | null
+    agentDefaultModel: string | null
+    freerouteReachable: boolean
+    models: string[]
+    groups: Array<{ provider: string; models: string[] }>
+    deepseek: string[]
+    engine: { modelId: string | null; plist: string; present: boolean }
+    native: { providers: Array<{ id: string; name: string; registered: boolean; models: Array<{ id: string; name: string }> }>; default: { provider: string; model: string } | null } | null
+  }> {
     const settings = await callGateway<any>(this.cfg.dataDir, 'getHostSettings', {})
     const selection = settings?.agentDefaultModel ?? null
     const probe = await this.probeFreerouteModels()
@@ -625,6 +692,107 @@ export class BotsRemote extends TypertRemoteService {
       freerouteReachable: probe.ok,
       models: probe.models,
       groups: probe.groups,
+      // Grouped by upstream owner, freeroute's DeepSeek ids sit under a bucket
+      // named after the aggregator (orcarouter), which is why the picker read
+      // as "no DeepSeek". These are the ids that actually mean DeepSeek.
+      deepseek: probe.models.filter((id) => /deepseek/i.test(id)),
+      engine: this.engineModelInfo(),
+      native: await this.nativeModelCatalog(),
+    }
+  }
+
+  /** The model the engine will actually run, straight off the launchd job. */
+  private engineModelInfo(): { modelId: string | null; plist: string; present: boolean } {
+    try {
+      const xml = readFileSync(ENGINE_PLIST, 'utf8')
+      const hit = /<key>SAND_OPENROUTER_MODEL<\/key>\s*<string>([^<]*)<\/string>/.exec(xml)
+      const modelId = hit !== null && hit[1].trim() !== '' ? hit[1].trim() : null
+      return { modelId, plist: ENGINE_PLIST, present: true }
+    } catch {
+      return { modelId: null, plist: ENGINE_PLIST, present: false }
+    }
+  }
+
+  /** Point the engine at one model and restart its job.
+   *
+   * The environment is read at process start, and launchd caches the loaded job
+   * definition — a `kickstart` restarts the OLD definition, so the edited plist
+   * would never reach the process (verified the hard way: the engine kept
+   * running the previous model). Reloading the definition is therefore
+   * mandatory: `bootout` then `bootstrap`, with a `kickstart` to make sure the
+   * freshly loaded job actually spawns. */
+  async applyModel(request: { modelId?: string } | null): Promise<{ modelId: string; restarted: boolean; reloaded: boolean }> {
+    const modelId = String(request?.modelId ?? '').trim()
+    if (modelId === '') throw new Error('applyModel requires a model id')
+    let xml = readFileSync(ENGINE_PLIST, 'utf8')
+    for (const key of ENGINE_MODEL_ENV_KEYS) {
+      const re = new RegExp(`(<key>${key}</key>\\s*<string>)[^<]*(</string>)`)
+      if (re.test(xml)) xml = xml.replace(re, `$1${modelId}$2`)
+    }
+    writeFileSync(ENGINE_PLIST, xml)
+    const uid = typeof process.getuid === 'function' ? process.getuid() : 501
+    const target = `gui/${uid}/${ENGINE_LAUNCHD_LABEL}`
+    const run = (args: string[]): boolean => spawnSync('launchctl', args, { encoding: 'utf8' }).status === 0
+    // bootout is expected to be a no-op when the job is not loaded.
+    run(['bootout', target])
+    const reloaded = run(['bootstrap', `gui/${uid}`, ENGINE_PLIST])
+    // A bootstrap can load the job without spawning it (the outgoing process
+    // still holds the label); kickstart guarantees the new definition runs.
+    const started = run(['kickstart', target])
+    return { modelId, restarted: started, reloaded }
+  }
+
+  /** Models one provider route advertises; an unreachable/declared-only route
+   * simply contributes none rather than failing the whole catalog. */
+  private async modelsOfProvider(llm: any, provider: string): Promise<Array<{ id: string; name: string }>> {
+    try {
+      if (typeof llm.listModels !== 'function') return []
+      const list: any[] = await llm.listModels(provider)
+      return (Array.isArray(list) ? list : [])
+        .map((m) => ({ id: String(m?.id ?? ''), name: String(m?.name ?? m?.id ?? '') }))
+        .filter((m) => m.id !== '')
+    } catch {
+      return []
+    }
+  }
+
+  /** The catalog the DSH model page itself renders: provider routes with a
+   * registered adapter plus every declared configurable provider, each with the
+   * models it advertises — read through the optional `llm` service so a
+   * deployment without it degrades to freeroute's list alone. */
+  private async nativeModelCatalog(): Promise<{ providers: Array<{ id: string; name: string; registered: boolean; models: Array<{ id: string; name: string }> }>; default: { provider: string; model: string } | null } | null> {
+    try {
+      const llm: any = this.ctx.get('llm')
+      if (llm === null || llm === undefined) return null
+      const registered: any[] = typeof llm.listProviders === 'function' ? await llm.listProviders() : []
+      const declared: any[] = typeof llm.listConfigurableProviders === 'function' ? await llm.listConfigurableProviders() : []
+      const seen = new Set<string>()
+      const providers: Array<{ id: string; name: string; registered: boolean; models: Array<{ id: string; name: string }> }> = []
+      const take = async (id: unknown, name: unknown, registeredFlag: boolean): Promise<void> => {
+        const key = String(id ?? '').trim()
+        if (key === '' || seen.has(key)) return
+        seen.add(key)
+        providers.push({ id: key, name: String(name ?? '').trim() || key, registered: registeredFlag, models: await this.modelsOfProvider(llm, key) })
+      }
+      for (const p of Array.isArray(registered) ? registered : []) await take(p?.id, p?.name, true)
+      for (const p of Array.isArray(declared) ? declared : []) await take(p?.provider, p?.displayName, false)
+      return { providers, default: this.nativeDefaultModel() }
+    } catch {
+      return null
+    }
+  }
+
+  /** The deployment's own default selection — what the native model page
+   * highlights as current. */
+  private nativeDefaultModel(): { provider: string; model: string } | null {
+    try {
+      const svc: any = this.ctx.get('agentDefaultModel')
+      const selection = typeof svc?.currentSelection === 'function' ? svc.currentSelection() : null
+      const provider = String(selection?.provider ?? '').trim()
+      const model = String(selection?.model ?? '').trim()
+      return provider !== '' && model !== '' ? { provider, model } : null
+    } catch {
+      return null
     }
   }
 
@@ -716,7 +884,7 @@ for (const m of [
   'gatewayInfo', 'list', 'workspaces', 'sessions',
   'create', 'createGroup', 'setGroupMembers', 'groupCap', 'pin', 'setHidden', 'update', 'remove', 'send', 'interrupt', 'readImage', 'openFile', 'transcriptTail', 'markRead', 'diag',
   'mcpServers', 'mcpTools', 'mcpAdd', 'mcpRemove', 'mcpRefresh', 'mcpExecute',
-  'workspaceList', 'workspaceGet', 'workspaceSet', 'modelConfig', 'setModelConfig',
+  'workspaceList', 'workspaceGet', 'workspaceSet', 'modelConfig', 'setModelConfig', 'applyModel',
   'eventsSince', 'sseState',
 ]) {
   markRemoteMethod(BotsRemote.prototype, m)

@@ -96,7 +96,7 @@ export interface GatewayInfo {
  * previous UI read `entry.content` unconditionally and drew blanks for every
  * kind that keeps its text somewhere else.
  */
-export type TranscriptDisplay = 'user' | 'assistant' | 'tool' | 'thinking' | 'event'
+export type TranscriptDisplay = 'user' | 'assistant' | 'tool' | 'thinking' | 'attachment' | 'event'
 
 export interface TranscriptEntry {
   id: string
@@ -113,8 +113,16 @@ export interface TranscriptEntry {
   isStreaming: boolean
   /** Tool name for `display: 'tool'` entries. */
   toolName: string | null
+  /** Engine-derived one-line summary (command, file path, query) for tools. */
+  toolSummary: string | null
   /** `running` | `ok` | `error` for `display: 'tool'` entries. */
   toolStatus: 'running' | 'ok' | 'error' | null
+  /** Image fields for `display: 'attachment'` (gateway `user-attachment`). */
+  filePath: string | null
+  fileName: string | null
+  width: number | null
+  height: number | null
+  byteSize: number | null
 }
 
 /**
@@ -131,6 +139,20 @@ export const DELEGATED_KIT_KEYS: Record<string, 'synthesized' | 'session-only' |
   /** Root-scope standard props — bound from the host face. */
   useSessions: 'synthesized',
   useWorkspaces: 'synthesized',
+  /** dsh 0.1.2-rc.2 kit growth (2026-09-10): forwarded generically from the
+   *  shell kit in synthesizeProps; listed so the delegation contract stays
+   *  conscious of every name the shell may hand the shadow. */
+  usePanelInfo: 'synthesized',
+  useResource: 'synthesized',
+  useSessionPendingInteraction: 'synthesized',
+  /** Session-scoped kit members — never assembled for our root slot, and
+   *  never faked (faking renderer internals is what blanked regions before). */
+  useSession: 'session-only',
+  useChat: 'session-only',
+  useConversation: 'session-only',
+  useInput: 'session-only',
+  useTrajectory: 'session-only',
+  inputActions: 'session-only',
   /** Locale seat, when the registration declares a namespace. */
   t: 'synthesized',
   /** Store pair, when the registration declares a store. */

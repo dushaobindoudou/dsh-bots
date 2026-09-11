@@ -223,11 +223,20 @@ function toEpochMs(raw: unknown): number | null {
 
 /** Collapse a wire `kind` (plus role) onto the closed display union. */
 function entryDisplay(kind: string, role: string | null): TranscriptDisplay {
+  if (kind === 'user-attachment') return 'attachment'
   if (kind.includes('tool')) return 'tool'
   if (kind === 'thinking' || kind === 'reasoning' || kind === 'redacted-reasoning') return 'thinking'
   if (kind === 'send-message' || kind === 'agent-message' || kind === 'assistant-text') return 'assistant'
   if (kind === 'message' || kind === 'user-message') return role === 'user' ? 'user' : 'assistant'
   return 'event'
+}
+
+/** First integer field of an entry, or null (attachments carry dimensions). */
+function entryDim(...candidates: unknown[]): number | null {
+  for (const c of candidates) {
+    if (typeof c === 'number' && Number.isFinite(c) && c > 0) return Math.round(c)
+  }
+  return null
 }
 
 /** Normalize one transcript entry for the UI's closed render switch. */
@@ -236,6 +245,7 @@ export function trimEntry(en: any): TranscriptEntry {
   const role = typeof en?.role === 'string' ? en.role : null
   const display = entryDisplay(kind, role)
   const failed = en?.isError === true || en?.status === 'error' || en?.status === 'failed'
+  const isAttachment = display === 'attachment'
   return {
     id: String(en?.id ?? ''),
     kind,
@@ -246,8 +256,22 @@ export function trimEntry(en: any): TranscriptEntry {
     authorId: en?.author?.id ?? null,
     authorName: en?.author?.name ?? null,
     isStreaming: en?.isStreaming === true,
+    // Gateway `user-attachment` entries keep the file on disk and reference
+    // it by path; the client renders them through the same readImage pipe
+    // bot-written inline images already use (allowlist stays the boundary).
+    filePath: isAttachment ? (typeof en?.file_path === 'string' && en.file_path !== '' ? en.file_path : null) : null,
+    fileName: isAttachment && typeof en?.file_name === 'string' && en.file_name !== '' ? en.file_name : null,
+    width: isAttachment ? entryDim(en?.width) : null,
+    height: isAttachment ? entryDim(en?.height) : null,
+    byteSize: isAttachment ? entryDim(en?.byteSize) : null,
     toolName: display === 'tool'
       ? String(en?.toolName ?? en?.name ?? en?.tool?.name ?? '工具')
+      : null,
+    // The engine derives a row summary for tool calls (the shell command,
+    // the file path, the search query) — exactly what the native tool row
+    // shows after the name, so carry it through instead of re-deriving.
+    toolSummary: display === 'tool'
+      ? (typeof en?.summary === 'string' && en.summary.trim() !== '' ? en.summary : null)
       : null,
     toolStatus: display !== 'tool'
       ? null
