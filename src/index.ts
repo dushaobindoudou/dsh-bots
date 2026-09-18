@@ -291,9 +291,12 @@ export class BotsRemote extends TypertRemoteService {
       .sort((a, b) => (b.header.createdAt ?? 0) - (a.header.createdAt ?? 0))
       .slice(0, 15)
     const titleMap = new Map<string, string>()
-    const titleSvc = this.ctx.get('sessionTitle')
-    if (titleSvc !== undefined && typeof titleSvc.readTitleSnapshots === 'function') {
-      const obs = await titleSvc.readTitleSnapshots(recent.map((r) => r.header.id)) as any[]
+    // readTitleSnapshots lives on sessionQuery (allSettled-style results), not
+    // sessionTitle — the old sessionTitle lookup never had the method, so the
+    // guard silently skipped it and every session fell back to its cwd name.
+    if (typeof (q as { readTitleSnapshots?: unknown }).readTitleSnapshots === 'function') {
+      const obs = await (q as { readTitleSnapshots(ids: readonly string[]): Promise<Array<{ status: string; value?: { title?: { title?: string } }; sessionId: string } | null>> })
+        .readTitleSnapshots(recent.map((r) => r.header.id))
       for (const o of Array.isArray(obs) ? obs : []) {
         if (o?.status === 'fulfilled' && o.value?.title?.title) titleMap.set(o.sessionId, o.value.title.title)
       }

@@ -9,7 +9,7 @@ shell: single bots, group chats, transcripts and live events, styled like the of
 [![npm](https://img.shields.io/npm/v/dsh-bots?logo=npm&color=cb3837)](https://www.npmjs.com/package/dsh-bots)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 [![Cordis](https://img.shields.io/badge/cordis-%5E4.0.1-blue)](./package.json)
-[![Tests](https://img.shields.io/badge/tests-83%20passed-brightgreen)](./scripts)
+[![Tests](https://img.shields.io/badge/tests-164%20passed-brightgreen)](./scripts)
 
 English · [简体中文](./README.zh-CN.md)
 
@@ -52,7 +52,7 @@ leaving the shell.
 
 **Under the hood**
 
-- Host half: a `TypertRemoteService` bridging 27 gateway RPC endpoints + SSE proxy
+- Host half: a `TypertRemoteService` bridging 33 gateway RPC endpoints + SSE proxy
 - Client half: plain-JS React via Cordis Slots (no build step), zh/en i18n
 - Workspace jail (macOS Seatbelt) editing per bot: root dir + extra writable paths
 
@@ -131,7 +131,7 @@ rosters — the member editor surfaces the cap instead of letting a save pretend
 │               settings.section (Bots card)                  │
 │                      │ botsCall RPC (lossless JSON)         │
 │  ┌─────────────────── Host half ───────────────────────┐    │
-│  │  TypertRemoteService · 27 endpoints                 │    │
+│  │  TypertRemoteService · 33 endpoints                 │    │
 │  │  SSE proxy (3k-entry ring buffer) · unread model    │    │
 │  └──────────────────────┬────────────────────────────┘    │
 └─────────────────────────┼──────────────────────────────────┘
@@ -152,8 +152,8 @@ rosters — the member editor surfaces the cap instead of letting a save pretend
 ```bash
 pnpm install
 pnpm build             # tsc host + client
-pnpm test              # vitest (83 tests)
-pnpm test:integration  # boots a fixture host, checks all 27 endpoints
+pnpm test              # vitest (164 tests)
+pnpm test:integration  # boots a fixture host, checks all 33 endpoints
 pnpm test:dsh-smoke    # plugin loads inside a real dsh profile
 ```
 

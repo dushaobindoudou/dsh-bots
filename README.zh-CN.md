@@ -8,7 +8,7 @@
 [![npm](https://img.shields.io/npm/v/dsh-bots?logo=npm&color=cb3837)](https://www.npmjs.com/package/dsh-bots)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 [![Cordis](https://img.shields.io/badge/cordis-%5E4.0.1-blue)](./package.json)
-[![Tests](https://img.shields.io/badge/tests-83%20passed-brightgreen)](./scripts)
+[![Tests](https://img.shields.io/badge/tests-164%20passed-brightgreen)](./scripts)
 
 [English](./README.md) · 简体中文
 
@@ -46,7 +46,7 @@
 
 **底层**
 
-- 宿主半边：`TypertRemoteService` 桥接 27 个网关 RPC 端点 + SSE 代理
+- 宿主半边：`TypertRemoteService` 桥接 33 个网关 RPC 端点 + SSE 代理
 - 客户端半边：纯 JS React 走 Cordis Slots（无构建产物依赖），中英双语
 - 每个 Bot 的工作区监狱（macOS Seatbelt）编辑：根目录 + 额外可写路径
 
@@ -123,7 +123,7 @@ dsh plugin --profile web add ./dsh-bots-0.2.22.tgz
 │               settings.section（Bots 卡片）                  │
 │                      │ botsCall RPC（无损 JSON）             │
 │  ┌─────────────────── Host半边 ────────────────────────┐    │
-│  │  TypertRemoteService · 27 端点                      │    │
+│  │  TypertRemoteService · 33 端点                      │    │
 │  │  SSE 代理（3k 环形缓冲）· 未读模型                   │    │
 │  └──────────────────────┬────────────────────────────┘    │
 └─────────────────────────┼──────────────────────────────────┘
@@ -144,7 +144,7 @@ dsh plugin --profile web add ./dsh-bots-0.2.22.tgz
 ```bash
 pnpm install
 pnpm build             # tsc 宿主 + 客户端
-pnpm test              # vitest（83 个测试）
+pnpm test              # vitest（164 个测试）
 pnpm test:integration  # 拉起夹具宿主，校验全部 27 个端点
 pnpm test:dsh-smoke    # 插件在真实 dsh profile 内加载
 ```
