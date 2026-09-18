@@ -24,13 +24,14 @@ import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { dirname, extname, join, resolve, sep } from 'node:path'
 import { appendFileSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
-import { spawn, spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import type {
   AgentInfo, Config, EventsSinceResult, GatewayInfo, McpServerInfo, McpToolInfo,
   SessionInfo, SseState, TranscriptEntry, WorkspaceInfo,
 } from './shared.js'
 import { callGateway, discover, effectiveDataDir, expandHome, nextNonce, normalizeAgents, readDiscoveryWithFallback, trimAgent, trimEntry } from './gateway.js'
+import { realDelay, realLaunchctl, reloadLaunchdJob } from './launchd.js'
 import { GatewaySseClient, SseRingBuffer } from './sse.js'
 import { UnreadStore } from './unread.js'
 import { listAgentWorkspaces, readAgentWorkspace, setAgentWorkspace } from './workspace.js'
@@ -723,8 +724,15 @@ export class BotsRemote extends TypertRemoteService {
    * would never reach the process (verified the hard way: the engine kept
    * running the previous model). Reloading the definition is therefore
    * mandatory: `bootout` then `bootstrap`, with a `kickstart` to make sure the
-   * freshly loaded job actually spawns. */
-  async applyModel(request: { modelId?: string } | null): Promise<{ modelId: string; restarted: boolean; reloaded: boolean }> {
+   * freshly loaded job actually spawns.
+   *
+   * The reload goes through `reloadLaunchdJob`, which waits for the outgoing
+   * process to release the label before re-bootstrapping — an immediate
+   * bootstrap races the still-exiting process and fails with "Bootstrap
+   * failed: 5: Input/output error", which (with stderr discarded) left the
+   * engine silently UNLOADED in the 2026-09-18 outage. Failures now come back
+   * as `errors` for the client to render. */
+  async applyModel(request: { modelId?: string } | null): Promise<{ modelId: string; restarted: boolean; reloaded: boolean; errors: string[] }> {
     const modelId = String(request?.modelId ?? '').trim()
     if (modelId === '') throw new Error('applyModel requires a model id')
     let xml = readFileSync(ENGINE_PLIST, 'utf8')
@@ -734,15 +742,61 @@ export class BotsRemote extends TypertRemoteService {
     }
     writeFileSync(ENGINE_PLIST, xml)
     const uid = typeof process.getuid === 'function' ? process.getuid() : 501
-    const target = `gui/${uid}/${ENGINE_LAUNCHD_LABEL}`
-    const run = (args: string[]): boolean => spawnSync('launchctl', args, { encoding: 'utf8' }).status === 0
-    // bootout is expected to be a no-op when the job is not loaded.
-    run(['bootout', target])
-    const reloaded = run(['bootstrap', `gui/${uid}`, ENGINE_PLIST])
-    // A bootstrap can load the job without spawning it (the outgoing process
-    // still holds the label); kickstart guarantees the new definition runs.
-    const started = run(['kickstart', target])
-    return { modelId, restarted: started, reloaded }
+    const outcome = await reloadLaunchdJob({
+      uid,
+      label: ENGINE_LAUNCHD_LABEL,
+      plistPath: ENGINE_PLIST,
+      run: realLaunchctl,
+    })
+    // A failed reload used to be invisible; record it where post-mortems look.
+    if (outcome.errors.length > 0) {
+      void this.diag({ stage: 'applyModel', detail: { modelId, ...outcome } })
+    }
+    return { modelId, restarted: outcome.restarted, reloaded: outcome.reloaded, errors: outcome.errors }
+  }
+
+  /**
+   * Engine self-check, scheduled a few seconds after activation: if the
+   * gateway is unreachable AND the launchd job is not loaded, bootstrap it
+   * back. This is the "跟 dsh web 一起活" half of the lifecycle — launchd
+   * keeps a loaded engine alive (RunAtLoad/KeepAlive), but the 2026-09-18
+   * outage showed an UNLOADED job stays dead until a human notices, and dsh
+   * web starting is when the user actually needs bots. The gateway may
+   * legitimately still be booting right after dsh starts (gateway.json lands
+   * late), so the probe retries before concluding anything; a
+   * loaded-but-unhealthy job stays launchd's business (KeepAlive + the
+   * watchdog's kickstart path) and is never bounced from here.
+   */
+  private async selfCheckEngine(): Promise<void> {
+    if (process.platform !== 'darwin') return
+    try {
+      let info = await discover(this.cfg.dataDir)
+      for (let i = 0; i < 3 && info.ok === false; i++) {
+        await realDelay(2000)
+        info = await discover(this.cfg.dataDir)
+      }
+      const reason = info.reason
+      if (info.ok) {
+        void this.diag({ stage: 'engineSelfCheck', detail: { ok: true } })
+        return
+      }
+      const uid = typeof process.getuid === 'function' ? process.getuid() : 501
+      const target = `gui/${uid}/${ENGINE_LAUNCHD_LABEL}`
+      if (realLaunchctl(['print', target]).ok) {
+        void this.diag({ stage: 'engineSelfCheck', detail: { ok: false, reason, loaded: true } })
+        return
+      }
+      const outcome = await reloadLaunchdJob({ uid, label: ENGINE_LAUNCHD_LABEL, plistPath: ENGINE_PLIST, run: realLaunchctl })
+      void this.diag({ stage: 'engineSelfCheck', detail: { ok: outcome.restarted, reason, ...outcome } })
+    } catch (e) {
+      void this.diag({ stage: 'engineSelfCheck', detail: { ok: false, error: String((e as any)?.message ?? e) } })
+    }
+  }
+
+  /** Fire-and-forget the self-check; activation must never wait on the engine. */
+  scheduleEngineSelfCheck(): void {
+    const t = setTimeout(() => { void this.selfCheckEngine() }, 4000)
+    if (typeof t === 'object' && t !== null && 'unref' in t) (t as { unref(): void }).unref()
   }
 
   /** Models one provider route advertises; an unreachable/declared-only route
@@ -898,4 +952,8 @@ export function apply(ctx: Context, config: Config): void {
   assertPeerCompatible()
   const remote = new BotsRemote(ctx, config)
   ctx.effect(() => () => { remote.stopSse() })
+  // Lifecycle, other half: launchd owns a loaded job's survival; this owns
+  // "comes alive with dsh web" — self-check after activation and bootstrap an
+  // unloaded engine back. Fire-and-forget, never blocks activation.
+  remote.scheduleEngineSelfCheck()
 }

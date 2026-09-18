@@ -671,6 +671,7 @@
         'settings.model.engineApply': '应用并重启引擎',
         'settings.model.engineApplying': '重启中…',
         'settings.model.engineRestarted': '已重启并生效',
+        'settings.model.applyFailed': '应用失败——引擎没有重启成功，模型选择未生效：',
         'settings.model.deepseek': 'DeepSeek',
         'settings.model.native': 'DSH 默认模型（与其他会话一致）',
         'settings.model.nativeDefault': '当前默认：{provider} / {model}',
@@ -820,6 +821,7 @@
         'settings.model.engineApply': 'Apply and restart engine',
         'settings.model.engineApplying': 'Restarting…',
         'settings.model.engineRestarted': 'Restarted and live',
+        'settings.model.applyFailed': 'Apply failed — the engine did not restart, the pick is NOT live:',
         'settings.model.deepseek': 'DeepSeek',
         'settings.model.native': 'DSH default model (same as other sessions)',
         'settings.model.nativeDefault': 'Default: {provider} / {model}',
@@ -3028,12 +3030,19 @@
         }
         /** The engine reads its model from the environment at startup, so this
          * rewrites the launchd env and restarts the job — the only thing that
-         * makes a pick real. The restart is reported, never implied. */
+         * makes a pick real. The restart is reported, never implied — and a
+         * FAILED restart is shouted, never swallowed (the 2026-09-18 outage
+         * hid behind exactly this silence: the engine sat unloaded for hours
+         * while the picker looked successful). */
         async function applyEngine(modelId: string) {
           setWorking(true); setErr(null); setRebooted(false)
           try {
             const r: any = await botsCall('applyModel', { modelId })
             setRebooted(r?.restarted === true)
+            if (r?.restarted !== true) {
+              const detail = Array.isArray(r?.errors) && r.errors.length > 0 ? ' ' + r.errors.join(' | ') : ''
+              setErr(t('settings.model.applyFailed') + detail)
+            }
             await refresh()
           } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
           setWorking(false)

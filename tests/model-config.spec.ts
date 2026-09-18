@@ -23,15 +23,22 @@ describe('engine model knob (host)', () => {
     expect(HOST).toMatch(/<key>SAND_OPENROUTER_MODEL<\\\/key>/)
   })
 
-  it('writes both model env keys and RELOADS the job to apply a pick', () => {
+  it('writes both model env keys and RELOADS the job via reloadLaunchdJob', () => {
     expect(HOST).toMatch(/ENGINE_MODEL_ENV_KEYS = \['SAND_OPENROUTER_MODEL', 'SAND_AGENT_MODEL'\]/)
     expect(HOST).toMatch(/for \(const key of ENGINE_MODEL_ENV_KEYS\)/)
     // launchd caches the loaded definition: kickstart alone restarts the OLD
-    // env, so the plist edit never reaches the process.
-    expect(HOST).toMatch(/run\(\['bootout', target\]\)/)
-    expect(HOST).toMatch(/run\(\['bootstrap', `gui\/\$\{uid\}`, ENGINE_PLIST\]\)/)
-    expect(HOST).toMatch(/run\(\['kickstart', target\]\)/)
-    expect(HOST).toMatch(/return \{ modelId, restarted: started, reloaded \}/)
+    // env, so the plist edit never reaches the process. The bootout→wait→
+    // bootstrap→kickstart orchestration is shared with the activation
+    // self-check and behaviorally pinned in launchd.spec.ts.
+    expect(HOST).toContain('reloadLaunchdJob({')
+    expect(HOST).toMatch(/label: ENGINE_LAUNCHD_LABEL/)
+    expect(HOST).toMatch(/run: realLaunchctl/)
+  })
+
+  it('surfaces reload failures instead of swallowing stderr (2026-09-18 outage)', () => {
+    expect(HOST).toMatch(/errors: outcome\.errors/)
+    expect(HOST).toMatch(/if \(outcome\.errors\.length > 0\)/)
+    expect(HOST).toMatch(/stage: 'applyModel'/)
   })
 
   it('registers the apply RPC', () => {
@@ -82,6 +89,11 @@ describe('model card (client)', () => {
   it('shows the DSH default selection as the reference', () => {
     expect(CLIENT).toMatch(/cfg\?\.native !== null && cfg\?\.native !== undefined/)
     expect(CLIENT).toContain("t('settings.model.nativeDefault', { provider: cfg.native.default.provider, model: cfg.native.default.model })")
+  })
+
+  it('shouts when the engine restart fails instead of looking successful', () => {
+    expect(CLIENT).toMatch(/r\?\.restarted !== true/)
+    expect(CLIENT).toContain("t('settings.model.applyFailed')")
   })
 
   it('tells the truth about when a pick takes effect', () => {
