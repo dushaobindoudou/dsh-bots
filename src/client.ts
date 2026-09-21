@@ -377,11 +377,11 @@
 .dbs-md h1{font-size:20px}.dbs-md h2{font-size:18px}.dbs-md h3{font-size:16px}.dbs-md h4{font-size:15px}
 .dbs-md ul,.dbs-md ol{margin:0 0 8px;padding-left:22px}
 .dbs-md li{margin:2px 0}
-.dbs-md code{font-family:var(--dsw-font-family-mono,ui-monospace,monospace);font-size:.9em;background:var(--dsw-alias-markdown-code-block,var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06)));border-radius:6px;padding:1px 5px}
-.dbs-md pre{margin:0 0 10px;background:var(--dsw-alias-markdown-code-block,var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06)));border:0;border-radius:12px;padding:12px 14px;overflow-x:auto;font:var(--dsw-font-markdown-code-block-small,inherit)}
+.dbs-md code{font-family:var(--ds-font-family-code,ui-monospace,monospace);font-size:.9em;background:var(--dsw-alias-markdown-code-block,var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06)));border-radius:6px;padding:1px 5px}
+.dbs-md pre{margin:0 0 10px;background:var(--dsw-alias-markdown-code-block,var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06)));border:0;border-radius:12px;padding:12px 14px;overflow-x:auto;font-family:var(--ds-font-family-code,ui-monospace,monospace);font-size:var(--dsw-font-markdown-code-block-small-font-size,11px);line-height:var(--dsw-font-markdown-code-block-small-line-height,16px)}
 .dbs-md .dbs-imglink{display:inline-block;max-width:min(320px,100%);border-radius:10px;overflow:hidden;margin:4px 0;box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:zoom-in}
 .dbs-md .dbs-imglink img{display:block;width:100%;height:auto}
-.dbs-md pre code{background:transparent;padding:0;font-size:.9em}
+.dbs-md pre code{background:transparent;padding:0;font-size:1em}
 .dbs-md blockquote{margin:0 0 8px;padding:2px 0 2px 10px;border-left:3px solid var(--dsw-alias-border-l2,rgba(0,0,0,.2));color:var(--dsw-alias-label-secondary)}
 .dbs-md a{color:var(--dsw-alias-state-business-primary,#1a6dff)}
 .dbs-md hr{border:none;border-top:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.15));margin:10px 0}
@@ -393,7 +393,7 @@
 .dbs-toolRow,.dbs-thinkRow{flex-direction:column;display:flex;min-width:0}
 .dbs-toolRowLine{position:relative;display:flex;align-items:center;overflow:hidden;min-width:0;line-height:24px;border-radius:8px}
 .dbs-toolRowLine[role="button"]{cursor:pointer}
-.dbs-toolRowLine[role="button"]:hover{background:var(--dsw-alias-fill-l1,rgba(0,0,0,.04))}
+.dbs-toolRowLine[role="button"]:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.04))}
 .dbs-toolRow[data-state="running"] .dbs-toolRowLine:after,.dbs-thinkRow[data-state="running"] .dbs-toolRowLine:after{content:"";position:absolute;top:0;bottom:0;left:0;width:300px;background:linear-gradient(90deg,transparent 0%,color-mix(in srgb,var(--dsw-alias-bg-base) 60%,transparent) 55%,transparent 100%);pointer-events:none;animation:2.6s ease-out infinite dbs-row-sweep}
 @keyframes dbs-row-sweep{0%{left:-300px}90%,to{left:100%}}
 @media (prefers-reduced-motion:reduce){.dbs-toolRow[data-state="running"] .dbs-toolRowLine:after,.dbs-thinkRow[data-state="running"] .dbs-toolRowLine:after{animation:none}}
@@ -409,8 +409,8 @@
 .dbs-thinkBody{padding:4px 0 4px 22px;color:var(--dsw-alias-label-tertiary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:20px;white-space:pre-wrap;word-break:break-word}
 /* File-change (diff) body: hunk headers stay quiet, added/removed lines get
    the semantic state tints the tool row already uses for ok/error. */
-.dbs-diffStat{font-family:var(--ds-font-family-code,var(--dsw-font-family-mono,monospace));font-size:calc(var(--dsh-content-font-size-secondary,13px) - 2px);color:var(--dsw-alias-label-caption);flex:none;margin-left:10px;transform:translateY(.5px);font-variant-numeric:tabular-nums}
-.dbs-diff{font-family:var(--ds-font-family-code,var(--dsw-font-family-mono,monospace));font-size:12px;line-height:18px;white-space:pre;overflow-x:auto;padding:2px 0}
+.dbs-diffStat{font-family:var(--ds-font-family-code,monospace);font-size:calc(var(--dsh-content-font-size-secondary,13px) - 2px);color:var(--dsw-alias-label-caption);flex:none;margin-left:10px;transform:translateY(.5px);font-variant-numeric:tabular-nums}
+.dbs-diff{font-family:var(--ds-font-family-code,monospace);font-size:12px;line-height:18px;white-space:pre;overflow-x:auto;padding:2px 0}
 .dbs-diffLine{display:block;padding:0 6px;border-radius:3px}
 .dbs-diffLine[data-kind="add"]{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 14%,transparent);color:var(--dsw-alias-state-success-primary)}
 .dbs-diffLine[data-kind="del"]{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 14%,transparent);color:var(--dsw-alias-state-error-primary)}
@@ -672,6 +672,8 @@
         'settings.model.engineApplying': '重启中…',
         'settings.model.engineRestarted': '已重启并生效',
         'settings.model.applyFailed': '应用失败——引擎没有重启成功，模型选择未生效：',
+        'errors.gatewayDown': 'Bots 引擎未运行——watchdog 会自动拉起；若持续报错请检查 com.sdk-bots.host launchd 任务',
+        'errors.gatewayAuth': '网关需要鉴权——请在引擎侧配置 token 或改回 loopback 绑定',
         'settings.model.deepseek': 'DeepSeek',
         'settings.model.native': 'DSH 默认模型（与其他会话一致）',
         'settings.model.nativeDefault': '当前默认：{provider} / {model}',
@@ -822,6 +824,8 @@
         'settings.model.engineApplying': 'Restarting…',
         'settings.model.engineRestarted': 'Restarted and live',
         'settings.model.applyFailed': 'Apply failed — the engine did not restart, the pick is NOT live:',
+        'errors.gatewayDown': 'The bots engine is not running — the watchdog will restart it; if this persists, check the com.sdk-bots.host launchd job',
+        'errors.gatewayAuth': 'The gateway requires auth — configure a token on the engine or switch back to loopback binding',
         'settings.model.deepseek': 'DeepSeek',
         'settings.model.native': 'DSH default model (same as other sessions)',
         'settings.model.nativeDefault': 'Default: {provider} / {model}',
@@ -870,6 +874,22 @@
         const template = zh[key] ?? key
         if (params === undefined) return template
         return template.replace(/\{(\w+)\}/g, (m, name) => (name in params ? String(params[name]) : m))
+      }
+
+      /**
+       * Localize a host-side error for rendering.
+       *
+       * Host errors arrive in engine-internal wording — `callGateway` throws
+       * "gateway.json not found — sdk-bots host 是否在运行？" and friends —
+       * and a raw passthrough strands half the UI in the wrong language. The
+       * recurring, user-actionable ones map to locale strings; anything else
+       * passes through verbatim, so an unknown error is never masked.
+       */
+      function errText(e2: unknown): string {
+        const msg = String((e2 as any)?.message ?? e2 ?? '')
+        if (/gateway\.json not found/.test(msg)) return t('errors.gatewayDown')
+        if (/gateway unauthorized/.test(msg)) return t('errors.gatewayAuth')
+        return msg
       }
 
       // =========================================================
@@ -2843,12 +2863,12 @@
             setServers((s?.servers ?? []) as any[])
             const tl = await botsCall<{ tools?: any[] }>('mcpTools', {})
             setToolCount((tl?.tools ?? []).length)
-          } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
+          } catch (e2: any) { setErr(errText(e2)) }
         }
         React.useEffect(() => { void reload() }, [])
         async function run(fn: () => Promise<unknown>) {
           setBusy(true); setErr(null)
-          try { await fn(); await reload() } catch (e2: any) { setErr(String(e2?.message ?? e2)) } finally { setBusy(false) }
+          try { await fn(); await reload() } catch (e2: any) { setErr(errText(e2)) } finally { setBusy(false) }
         }
         function dotState(status: string): string {
           if (status === 'connected') return 'done'
@@ -2951,7 +2971,7 @@
             const map: Record<string, string> = {}
             for (const a of agents?.agents ?? []) map[a.id] = a.name
             setNames(map)
-          } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
+          } catch (e2: any) { setErr(errText(e2)) }
         }
         React.useEffect(() => { void reload() }, [])
         async function toggle(row: any) {
@@ -2965,7 +2985,7 @@
               await botsCall('workspaceSet', { agentId: row.agentId, workspaceRoot: null })
             }
             await reload()
-          } catch (e2: any) { setErr(String(e2?.message ?? e2)) } finally { setBusy(false) }
+          } catch (e2: any) { setErr(errText(e2)) } finally { setBusy(false) }
         }
         const jailed = (rows ?? []).filter((r: any) => r.workspaceRoot !== null).length
         return e('div', { className: 'dbs-setcard' },
@@ -3013,7 +3033,7 @@
         const [rebooted, setRebooted] = React.useState(false)
         async function refresh() {
           setCfg(undefined); setErr(null)
-          try { setCfg(await botsCall('modelConfig', {})) } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
+          try { setCfg(await botsCall('modelConfig', {})) } catch (e2: any) { setErr(errText(e2)) }
         }
         React.useEffect(() => { void refresh() }, [])
         const current = cfg?.agentDefaultModel ?? null
@@ -3025,7 +3045,7 @@
           try {
             await botsCall('setModelConfig', { modelId })
             await refresh()
-          } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
+          } catch (e2: any) { setErr(errText(e2)) }
           setWorking(false)
         }
         /** The engine reads its model from the environment at startup, so this
@@ -3044,7 +3064,7 @@
               setErr(t('settings.model.applyFailed') + detail)
             }
             await refresh()
-          } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
+          } catch (e2: any) { setErr(errText(e2)) }
           setWorking(false)
         }
         // Provider rows. freeroute groups by upstream aggregator, which hides
@@ -3153,7 +3173,7 @@
         React.useEffect(() => {
           botsCall<{ max: number }>('groupCap', {})
             .then((r: { max: number }) => { setCap(String(r.max)); setLoaded(true) })
-            .catch((e2: any) => { setErr(String(e2?.message ?? e2)); setLoaded(true) })
+            .catch((e2: any) => { setErr(errText(e2)); setLoaded(true) })
         }, [])
         const n = Math.floor(Number(cap))
         const valid = cap.trim() !== '' && String(n) === cap.trim() && n >= 1 && n <= 16
@@ -3163,7 +3183,7 @@
           try {
             const r = await botsCall<{ max: number }>('groupCap', { max: n })
             setCap(String(r.max))
-          } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
+          } catch (e2: any) { setErr(errText(e2)) }
           setWorking(false)
         }
         return e('div', { className: 'dbs-setcard' },
@@ -3193,7 +3213,7 @@
           try {
             setInfo(await botsCall('gatewayInfo', {}))
             setSse(await botsCall('sseState'))
-          } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
+          } catch (e2: any) { setErr(errText(e2)) }
         }
         React.useEffect(() => { void refresh() }, [])
         const ok = info?.ok === true
@@ -3253,7 +3273,7 @@
             patch({ create: null, createName: '', createDesc: '', createMembers: {}, createWorking: false })
             await refreshAgents()
             return
-          } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
+          } catch (e2: any) { setErr(errText(e2)) }
           patch({ createWorking: false })
         }
 
@@ -3370,7 +3390,7 @@
             patch({ manageMembers: null })
             await refreshAgents()
             return
-          } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
+          } catch (e2: any) { setErr(errText(e2)) }
           setWorking(false)
         }
 
@@ -3480,7 +3500,7 @@
             patch({ settingsAgentId: null })
             await refreshAgents()
             return
-          } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
+          } catch (e2: any) { setErr(errText(e2)) }
           setWorking(false)
         }
 
@@ -3562,7 +3582,7 @@
             if (closeChat) patch({ chatAgentId: null })
             await refreshAgents()
             return
-          } catch (e2: any) { setErr(String(e2?.message ?? e2)) }
+          } catch (e2: any) { setErr(errText(e2)) }
           setWorking(false)
         }
 

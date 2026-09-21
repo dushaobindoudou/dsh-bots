@@ -4,6 +4,41 @@ All notable changes to this project are documented in this file. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.63] - 2026-09-18
+
+The i18n/theme conformance release: locale and dark/light support audited
+against the running shell, gaps closed.
+
+### Changed
+
+- **Host errors are localized (i18n)**: `callGateway`'s engine-internal
+  messages ("gateway.json not found — sdk-bots host 是否在运行？", "gateway
+  unauthorized") rendered raw in every panel, stranding half the UI in the
+  wrong language. A shared `errText` maps the recurring, user-actionable ones
+  to locale strings (`errors.gatewayDown` / `errors.gatewayAuth`); unknown
+  errors still pass through verbatim so nothing is masked.
+- **Theme audit vs the shell's real token source** (dsh-client-ui-theme's
+  embedded CSS — light on `body{…}`, dark on `body[data-ds-dark-theme]{…}`):
+  41 of 44 variables the plugin uses are shell-verified; three phantoms fell
+  back to hardcoded colors and are fixed —
+  - `--dsw-alias-fill-l1` (does not exist) → `--dsw-alias-interactive-bg-hover`
+    for tool-row hover, killing a light smear on dark backgrounds;
+  - `--dsw-font-family-mono` (does not exist) → the shell's mono stack
+    `--ds-font-family-code`, matching the plugin's own duration/diff chips;
+  - bare `--dsw-font-markdown-code-block-small` (the shell ships per-property
+    composites) → `…-font-size` / `…-line-height`, so `pre` finally gets the
+    native 11px/16px code-block typography instead of `inherit`.
+- `tests/theme.spec.ts` pins the audit: phantom tokens stay out, the mono
+  stack comes from the shell, and every bare `var()` is a shell-verified
+  dual-mode or invariant token.
+
+### Dependencies
+
+- `@deepseek-ai/cordis` dev-installed at 4.0.2 (peer range unchanged).
+- `@types/node` ^22 → ^24 (matches the node 24 runtime; 22 predated it).
+- TS 7 / vitest 5 majors noted, intentionally not chased in a maintenance
+  round.
+
 ## [0.2.62] - 2026-09-18
 
 The engine-restart reliability release: an `applyModel` pick could leave the

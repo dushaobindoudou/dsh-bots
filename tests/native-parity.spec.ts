@@ -82,7 +82,13 @@ describe('message stream parity (native MessageItem / ChatView)', () => {
   it('uses the native code-block tokens for markdown', () => {
     expect(CLIENT).toMatch(/\.dbs-md code\{[^}]*var\(--dsw-alias-markdown-code-block/)
     expect(CLIENT).toMatch(/\.dbs-md pre\{[^}]*var\(--dsw-alias-markdown-code-block/)
-    expect(CLIENT).toMatch(/\.dbs-md pre\{[^}]*font:var\(--dsw-font-markdown-code-block-small/)
+    // The shell ships code-block typography as per-property composites that
+    // resolve to --ds-font-family-code; the bare
+    // --dsw-font-markdown-code-block-small is a phantom (2026-09-18 audit).
+    expect(CLIENT).toMatch(/\.dbs-md code\{[^}]*font-family:var\(--ds-font-family-code/)
+    expect(CLIENT).toMatch(/\.dbs-md pre\{[^}]*font-family:var\(--ds-font-family-code/)
+    expect(CLIENT).toMatch(/\.dbs-md pre\{[^}]*font-size:var\(--dsw-font-markdown-code-block-small-font-size/)
+    expect(CLIENT).toMatch(/\.dbs-md pre\{[^}]*line-height:var\(--dsw-font-markdown-code-block-small-line-height/)
   })
 
   it('makes the scroll container a query container for responsive tables', () => {

@@ -1,6 +1,6 @@
 {
   "name": "dsh-bots",
-  "version": "0.2.62",
+  "version": "0.2.63",
   "description": "Multi-bot workbench for DeepSeek Harness: bridges the sdk-bots orchestration gateway (group chats, single bots) into the dsh web shell with official-styled UI.",
   "type": "module",
   "main": "lib/index.js",
@@ -50,9 +50,9 @@
     }
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/cordis": "^4.0.2",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.2",
-    "@types/node": "^22.20.0",
+    "@types/node": "^24.13.6",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"
   },
