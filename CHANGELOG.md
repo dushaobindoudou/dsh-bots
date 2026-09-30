@@ -4,6 +4,31 @@ All notable changes to this project are documented in this file. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.64] - 2026-09-30
+
+The dsh 0.2.0 compatibility release. No code changes.
+
+### Changed
+
+- **Widen the dsh peer range for dsh 0.2.0** (install-gate adaptation, audited
+  against the npm tarballs of 0.1.7-rc.1 → 0.2.0-rc.2): the plugin manager
+  evaluates `@deepseek-ai/dsh-*` peers with
+  `semver.satisfies(runtime, range, {includePrerelease: true})`, so
+  `^0.1.5-rc.2` still admits 0.2.0-rc.x (prerelease ordering) but would
+  **reject dsh 0.2.0 final**. Peer
+  `@deepseek-ai/dsh-typert-protocol` is now
+  `^0.1.5-rc.2 || ^0.2.0-rc.2`, which admits 0.1.5-rc.2+ and 0.2.x
+  (rc and final).
+- **0.2.0-rc.2 contract audit (zero breakage)**: every surface this plugin
+  touches is additive between 0.1.7-rc.1 and 0.2.0-rc.2 — typert-protocol is
+  code-identical; `sessionQuery` only gained a `@throws` doc line; the llm
+  service gained `ToolUpdate`/`ToolHistory`/`ACCOUNT_QUOTA` without touching
+  existing signatures; `agentDefaultModel.saveSelection` now serializes saves
+  (same API); the web-app slot graph only adds telemetry/shortcuts rows.
+- Also ships the previously unpublished 0.2.62 (engine applyModel
+  bootout→bootstrap race fix) and 0.2.63 (host-error localization + theme
+  token audit) to npm.
+
 ## [0.2.63] - 2026-09-18
 
 The i18n/theme conformance release: locale and dark/light support audited
