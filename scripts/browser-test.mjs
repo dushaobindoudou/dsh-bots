@@ -11,6 +11,11 @@ import { GoalWorkflow } from '../lib/goals.js'
 const dir = mkdtempSync(join(tmpdir(), 'dsh-bots-browser-'))
 const agent = { id: 'bot', name: '测试 Bot', isGroup: false, memberIds: [], isRunning: false, isActive: true }
 const autos = []
+const skills = [
+  { id: 'weekly', name: '周报生成', description: '每周五生成周报草稿', body: '# 步骤', source: 'workflow', isEnabledForAgent: true, trigger: null },
+  { id: 'dsh-bridged', name: 'DSH 桥接技能', description: '来自 ~/.dsh/skills', body: 'bridged', source: 'plugin', isEnabledForAgent: true, trigger: null },
+  { id: 'routine', name: '每日站会提醒', description: 'cron 例行', body: 'remind', source: 'workflow', isEnabledForAgent: true, trigger: { schedule: '0 9 * * *', isEnabled: true }, scheduleDescription: '每天 09:00' },
+]
 const workflow = new GoalWorkflow(dir, async (method, args) => {
   if (method === 'listAgents') return [agent]
   if (method === 'getAgentAutomations') return autos
@@ -33,6 +38,25 @@ const server = createServer(async (req, res) => {
       const { method, request } = JSON.parse(body)
       let value = null
       if (method === 'list') value = [agent]
+      else if (method === 'skillsList') value = { skills }
+      else if (method === 'skillsEnable') {
+        const row = skills.find((s) => s.id === request.workflowId)
+        if (row) row.isEnabledForAgent = request.isEnabled === true
+        value = { skills }
+      }
+      else if (method === 'skillsSave') {
+        if (request.id) {
+          const row = skills.find((s) => s.id === request.id)
+          if (row) { row.name = request.name; row.description = request.description; row.body = request.body }
+        } else skills.push({ id: 'new-' + skills.length, name: request.name, description: request.description, body: request.body, source: 'workflow', isEnabledForAgent: true, trigger: null })
+        value = { skills }
+      }
+      else if (method === 'skillsDelete') {
+        const at = skills.findIndex((s) => s.id === request.workflowId)
+        if (at >= 0) skills.splice(at, 1)
+        value = { skills }
+      }
+      else if (method === 'skillsRunNow' || method === 'skillsImportText') value = { skills }
       else if (method === 'goals') value = await workflow.list(request.agentId)
       else if (method === 'createGoal') value = await workflow.create(request)
       else if (method === 'goalAction') value = await workflow.act(request)
@@ -104,8 +128,29 @@ try {
   await page.waitForTimeout(150)
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
   await page.screenshot({ path: process.env.BROWSER_SCREENSHOT ?? '/tmp/dsh-bots-goals.png', fullPage: true })
+  // Skills card: the settings section mounts in the fixture shell; the skills
+  // tab lists the engine library with per-bot enablement (plugin rows locked)
+  // and create/edit flows through the same save RPC.
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.getByRole('button', { name: 'Plugin settings' }).click()
+  await page.getByRole('tab', { name: '技能' }).click()
+  await page.getByText('周报生成', { exact: true }).waitFor()
+  await page.getByText('DSH 桥接技能', { exact: true }).waitFor()
+  assert.equal(await page.getByRole('button', { name: '停用', exact: true }).count(), 1,
+    'exactly the workflow-sourced row is toggleable (plugin row locked)')
+  await page.getByRole('button', { name: '停用', exact: true }).click()
+  await page.getByRole('button', { name: '启用', exact: true }).waitFor()
+  assert.equal(skills[0].isEnabledForAgent, false)
+  await page.getByRole('button', { name: '新建技能' }).click()
+  await page.getByPlaceholder('技能名，例如 weekly-report').fill('冒烟技能')
+  await page.getByPlaceholder('一句话说明何时使用（会随库路径提示给 Bot）').fill('测试用')
+  await page.getByPlaceholder('技能正文（Markdown）。可粘贴带 frontmatter 的 SKILL.md，引擎会解析 name/description。').fill('# 正文')
+  await page.getByRole('button', { name: '保存技能' }).click()
+  await page.getByText('冒烟技能', { exact: true }).waitFor()
+  assert.equal(skills.some((s) => s.name === '冒烟技能'), true)
+  await page.screenshot({ path: process.env.BROWSER_SKILLS_SCREENSHOT ?? '/tmp/dsh-bots-skills.png', fullPage: true })
   assert.deepEqual(errors, [])
-  console.log('browser: goal create/pause/resume/review/revise, native navigation, Escape, fold geometry and narrow layout passed')
+  console.log('browser: goal create/pause/resume/review/revise, native navigation, Escape, fold geometry, narrow layout and skills card passed')
 } finally {
   await browser?.close(); await new Promise(resolve => server.close(resolve)); rmSync(dir, { recursive: true, force: true })
 }

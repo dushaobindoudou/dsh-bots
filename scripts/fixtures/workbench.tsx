@@ -23,14 +23,17 @@ function App() {
   const [, update] = React.useState(0)
   redraw = () => update(n => n + 1)
   const [folded, setFolded] = React.useState(false)
+  const [showSettings, setShowSettings] = React.useState(false)
   return <div id="frame" style={{ display: 'grid', gridTemplateColumns: folded ? '80px minmax(0,1fr)' : '280px minmax(0,1fr)', height: '100vh', transition: 'grid-template-columns .1s' }}>
     <aside style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', background: 'var(--dsw-specific-sidebar-fill)' }}>
       <button onClick={() => setFolded(!folded)}>Fold sidebar</button>
       <button onClick={() => layout.selectPanel(null)}>Native workspace</button>
+      <button onClick={() => setShowSettings(!showSettings)}>Plugin settings</button>
       {entries.get('sidebar.workspaces')?.render({ wide: true })}
     </aside>
     <main style={{ display: 'flex', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
-      {active === 'dsh-bots' ? entries.get('main')?.render({}) : <p>Native workspace content</p>}
+      {showSettings ? <section style={{ overflow: 'auto' }}>{entries.get('settings.section')?.render({})}</section>
+        : active === 'dsh-bots' ? entries.get('main')?.render({}) : <p>Native workspace content</p>}
     </main>
     <div data-shell-overlay style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>{entries.get('shell.overlay')?.render({})}</div>
   </div>

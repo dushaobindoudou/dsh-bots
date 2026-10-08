@@ -803,6 +803,103 @@ export class BotsRemote extends TypertRemoteService {
     return { modelId, restarted: outcome.restarted, reloaded: outcome.reloaded, errors: outcome.errors }
   }
 
+  /* =============================================================
+   * Skills (engine "workflows"): the engine ships a dsh-shaped skill
+   * system — SKILL.md files (frontmatter name/description) in a global
+   * library, plus plugin/managed sources and per-agent enablement — and
+   * its gateway already exposes the full CRUD. This surface is a thin,
+   * clamped proxy so the workbench can manage it (docs/
+   * bots-skills-and-model-picker.md Part A). The agentId selects the
+   * enablement view; created skills land in the engine's GLOBAL library
+   * (shared by every bot), exactly like the engine's own UI.
+   * ============================================================= */
+
+  /** Clamp helpers mirroring the engine's own limits (workflow-model.ts):
+   * a 1-line name, a 1-line description, a block body. */
+  private static clampSkillText(value: unknown, max: number, block = false): string {
+    const raw = typeof value === 'string' ? value : ''
+    return block
+      ? raw.trim().slice(0, max)
+      : raw.replace(/[\r\n]+/g, ' ').trim().slice(0, max)
+  }
+
+  private requireAgentId(request: { agentId?: string } | null): string {
+    const agentId = String(request?.agentId ?? '').trim()
+    if (agentId === '') throw new Error('agentId is required')
+    return agentId
+  }
+
+  /** List the skill catalog as one agent sees it (includes per-agent
+   * enablement and the source tags the UI badges on). */
+  async skillsList(request: { agentId?: string } | null): Promise<{ skills: any[] }> {
+    const agentId = this.requireAgentId(request)
+    const workflows = await callGateway<any>(this.cfg.dataDir, 'getAgentWorkflows', { id: agentId })
+    const skills = Array.isArray(workflows) ? workflows : []
+    return { skills }
+  }
+
+  /** Create (no id) or edit (id) a skill in the global library. Trigger-less
+   * only — scheduled routines are automations, edited on the goals surface. */
+  async skillsSave(request: {
+    agentId?: string; id?: string; name?: string; description?: string; body?: string
+  } | null): Promise<{ skills: any[] }> {
+    const agentId = this.requireAgentId(request)
+    const spec = {
+      name: BotsRemote.clampSkillText(request?.name, 80),
+      description: BotsRemote.clampSkillText(request?.description, 1536),
+      body: BotsRemote.clampSkillText(request?.body, 100_000, true),
+      trigger: null,
+    }
+    if (spec.name === '' || spec.body === '') throw new Error('skillsSave requires name and body')
+    const id = typeof request?.id === 'string' ? request.id.trim() : ''
+    const workflows = id === ''
+      ? await callGateway<any>(this.cfg.dataDir, 'createAgentWorkflow', { id: agentId, spec })
+      : await callGateway<any>(this.cfg.dataDir, 'updateAgentWorkflow', { id: agentId, workflowId: id, spec })
+    return { skills: Array.isArray(workflows) ? workflows : [] }
+  }
+
+  /** Per-agent enable toggle. The engine only honors this for the user
+   * library ("workflow" source); plugin/managed rows stay always-on — the
+   * UI greys those out before this is ever called. */
+  async skillsEnable(request: { agentId?: string; workflowId?: string; isEnabled?: boolean } | null): Promise<{ skills: any[] }> {
+    const agentId = this.requireAgentId(request)
+    const workflowId = String(request?.workflowId ?? '').trim()
+    if (workflowId === '') throw new Error('skillsEnable requires workflowId')
+    const workflows = await callGateway<any>(this.cfg.dataDir, 'setAgentWorkflowEnabled', {
+      id: agentId, workflowId, isEnabled: request?.isEnabled === true,
+    })
+    return { skills: Array.isArray(workflows) ? workflows : [] }
+  }
+
+  async skillsDelete(request: { agentId?: string; workflowId?: string } | null): Promise<{ skills: any[] }> {
+    const agentId = this.requireAgentId(request)
+    const workflowId = String(request?.workflowId ?? '').trim()
+    if (workflowId === '') throw new Error('skillsDelete requires workflowId')
+    const workflows = await callGateway<any>(this.cfg.dataDir, 'deleteAgentWorkflow', { id: agentId, workflowId })
+    return { skills: Array.isArray(workflows) ? workflows : [] }
+  }
+
+  /** Manual fire for scheduled routines; a no-op for plain skills. */
+  async skillsRunNow(request: { agentId?: string; workflowId?: string } | null): Promise<void> {
+    const agentId = this.requireAgentId(request)
+    const workflowId = String(request?.workflowId ?? '').trim()
+    if (workflowId === '') throw new Error('skillsRunNow requires workflowId')
+    await callGateway(this.cfg.dataDir, 'runAgentWorkflowNow', { id: agentId, workflowId })
+  }
+
+  /** Paste-in import: markdown with optional frontmatter becomes a library
+   * skill (the engine parses the same SKILL.md format dsh uses). */
+  async skillsImportText(request: { agentId?: string; markdown?: string; name?: string } | null): Promise<{ skills: any[] }> {
+    const agentId = this.requireAgentId(request)
+    const markdown = typeof request?.markdown === 'string' ? request.markdown.trim() : ''
+    if (markdown === '') throw new Error('skillsImportText requires markdown')
+    const name = BotsRemote.clampSkillText(request?.name, 80)
+    const workflows = await callGateway<any>(this.cfg.dataDir, 'importAgentWorkflowText', {
+      id: agentId, markdown, ...(name === '' ? {} : { name }),
+    })
+    return { skills: Array.isArray(workflows) ? workflows : [] }
+  }
+
   /**
    * Engine self-check, scheduled a few seconds after activation: if the
    * gateway is unreachable AND the launchd job is not loaded, bootstrap it

@@ -731,6 +731,7 @@
         'settings.tab.models': '模型',
         'settings.tab.workspace': '工作区',
         'settings.tab.mcp': 'MCP',
+        'settings.tab.skills': '技能',
         'settings.tabs': 'Bots 设置页签',
         'settings.probing': '检测中…',
         'settings.address': '地址：',
@@ -765,6 +766,32 @@
         'settings.model.engineApplying': '重启中…',
         'settings.model.engineRestarted': '已重启并生效',
         'settings.model.applyFailed': '应用失败——引擎没有重启成功，模型选择未生效：',
+        'settings.skills': '技能',
+        'settings.skills.summary': '技能是可复用的指令库（SKILL.md，与 DSH 同格式）。Bot 在系统提示里看到技能库路径并自行读取；消息里 @技能名 会把该技能正文注入上下文。库全局共享，启停按 Bot 生效。',
+        'settings.skills.empty': '暂无技能——新建一个，或粘贴 markdown 导入',
+        'settings.skills.add': '新建技能',
+        'settings.skills.import': '导入 markdown',
+        'settings.skills.importing': '导入中…',
+        'settings.skills.namePlaceholder': '技能名，例如 weekly-report',
+        'settings.skills.descPlaceholder': '一句话说明何时使用（会随库路径提示给 Bot）',
+        'settings.skills.bodyPlaceholder': '技能正文（Markdown）。可粘贴带 frontmatter 的 SKILL.md，引擎会解析 name/description。',
+        'settings.skills.save': '保存技能',
+        'settings.skills.saving': '保存中…',
+        'settings.skills.cancel': '取消',
+        'settings.skills.edit': '编辑',
+        'settings.skills.delete': '删除',
+        'settings.skills.deleteConfirm': '确认删除？',
+        'settings.skills.run': '运行',
+        'settings.skills.on': '停用',
+        'settings.skills.off': '启用',
+        'settings.skills.source.workflow': '技能',
+        'settings.skills.source.plugin': '插件提供',
+        'settings.skills.source.managed': '托管',
+        'settings.skills.source.automation': '例行',
+        'settings.skills.schedule': '例行 · ',
+        'settings.skills.lockedHint': '由插件/托管提供，不能单独停用',
+        'settings.skills.agent': '作用 Bot：',
+        'settings.skills.failed': '技能操作失败：',
         'errors.gatewayDown': 'Bots 引擎未运行——watchdog 会自动拉起；若持续报错请检查 com.sdk-bots.host launchd 任务',
         'errors.gatewayAuth': '网关需要鉴权——请在引擎侧配置 token 或改回 loopback 绑定',
         'settings.model.deepseek': 'DeepSeek',
@@ -928,6 +955,7 @@
         'settings.tab.models': 'Models',
         'settings.tab.workspace': 'Workspace',
         'settings.tab.mcp': 'MCP',
+        'settings.tab.skills': 'Skills',
         'settings.tabs': 'Bots settings tabs',
         'settings.probing': 'Probing…',
         'settings.address': 'Address: ',
@@ -962,6 +990,32 @@
         'settings.model.engineApplying': 'Restarting…',
         'settings.model.engineRestarted': 'Restarted and live',
         'settings.model.applyFailed': 'Apply failed — the engine did not restart, the pick is NOT live:',
+        'settings.skills': 'Skills',
+        'settings.skills.summary': 'Skills are a reusable instruction library (SKILL.md, same format as DSH). Bots see the library path in their system prompt and read files themselves; @skillName in a message injects that skill body into context. The library is global; enablement is per-bot.',
+        'settings.skills.empty': 'No skills yet — create one, or paste markdown to import',
+        'settings.skills.add': 'New skill',
+        'settings.skills.import': 'Import markdown',
+        'settings.skills.importing': 'Importing…',
+        'settings.skills.namePlaceholder': 'Skill name, e.g. weekly-report',
+        'settings.skills.descPlaceholder': 'One line on when to use it (surfaced to the bot alongside the library path)',
+        'settings.skills.bodyPlaceholder': 'Skill body (Markdown). A pasted SKILL.md with frontmatter works — the engine parses name/description.',
+        'settings.skills.save': 'Save skill',
+        'settings.skills.saving': 'Saving…',
+        'settings.skills.cancel': 'Cancel',
+        'settings.skills.edit': 'Edit',
+        'settings.skills.delete': 'Delete',
+        'settings.skills.deleteConfirm': 'Delete for real?',
+        'settings.skills.run': 'Run',
+        'settings.skills.on': 'Disable',
+        'settings.skills.off': 'Enable',
+        'settings.skills.source.workflow': 'skill',
+        'settings.skills.source.plugin': 'plugin',
+        'settings.skills.source.managed': 'managed',
+        'settings.skills.source.automation': 'routine',
+        'settings.skills.schedule': 'routine · ',
+        'settings.skills.lockedHint': 'Provided by a plugin/managed feed — cannot be disabled per-bot',
+        'settings.skills.agent': 'For bot:',
+        'settings.skills.failed': 'Skill operation failed: ',
         'errors.gatewayDown': 'The bots engine is not running — the watchdog will restart it; if this persists, check the com.sdk-bots.host launchd job',
         'errors.gatewayAuth': 'The gateway requires auth — configure a token on the engine or switch back to loopback binding',
         'settings.model.deepseek': 'DeepSeek',
@@ -6150,6 +6204,184 @@ class BotEngine {
       }
 
       /**
+       * Skills card: manage the engine's built-in skill library (SKILL.md
+       * files, dsh's own format — see docs/bots-skills-and-model-picker.md
+       * Part A). The engine gateway exposes the full CRUD; the library is
+       * GLOBAL across bots while enablement is per-bot, so the card pins a
+       * bot selector and drives everything through that view. Plugin and
+       * managed rows are always-on (the engine refuses per-agent disable for
+       * those sources), and rows with a trigger are scheduled routines.
+       */
+      function SkillsCard() {
+        const [agents, setAgents] = React.useState(null as any[] | null)
+        const [agentId, setAgentId] = React.useState('')
+        const [rows, setRows] = React.useState(null as any[] | null)
+        const [editing, setEditing] = React.useState(null as { id?: string; name: string; description: string; body: string } | null)
+        const [importing, setImporting] = React.useState(false)
+        const [importMarkdown, setImportMarkdown] = React.useState('')
+        const [importName, setImportName] = React.useState('')
+        const [busy, setBusy] = React.useState(false)
+        const [confirmId, setConfirmId] = React.useState(null as string | null)
+        const [err, setErr] = React.useState(null as string | null)
+        async function reload(pid?: string) {
+          setErr(null)
+          try {
+            const id = pid ?? agentId
+            let pool = agents
+            if (pool === null || id === '') {
+              const lst = await botsCall<any>('list', {})
+              // The RPC returns a bare AgentInfo[] (the sidebar relies on it);
+              // accept the object wrapper too for future-proofing.
+              pool = (Array.isArray(lst) ? lst : (lst?.agents ?? [])) as any[]
+              setAgents(pool)
+            }
+            const next = id !== '' ? id : String(pool?.[0]?.id ?? '')
+            if (next !== '' && next !== agentId) setAgentId(next)
+            if (next === '') { setRows([]); return }
+            const res = await botsCall<{ skills?: any[] }>('skillsList', { agentId: next })
+            setRows((res?.skills ?? []) as any[])
+          } catch (e2: any) { setErr(errText(e2)) }
+        }
+        React.useEffect(() => { void reload() }, [])
+        async function run(fn: () => Promise<unknown>) {
+          setBusy(true); setErr(null)
+          try { await fn(); await reload() } catch (e2: any) { setErr(errText(e2)) } finally { setBusy(false) }
+        }
+        function sourceKey(row: any): string {
+          return row?.trigger != null ? 'automation' : String(row?.source ?? 'workflow')
+        }
+        function editable(row: any): boolean {
+          return row?.trigger == null && row?.source === 'workflow'
+        }
+        async function submitEdit() {
+          if (editing === null || editing.name.trim() === '' || editing.body.trim() === '') return
+          await run(async () => {
+            await botsCall('skillsSave', {
+              agentId, ...(editing.id !== undefined ? { id: editing.id } : {}),
+              name: editing.name, description: editing.description, body: editing.body,
+            })
+            setEditing(null)
+          })
+        }
+        async function submitImport() {
+          if (importMarkdown.trim() === '') return
+          await run(async () => {
+            await botsCall('skillsImportText', { agentId, markdown: importMarkdown, ...(importName.trim() === '' ? {} : { name: importName.trim() }) })
+            setImporting(false); setImportMarkdown(''); setImportName('')
+          })
+        }
+        return e('div', { className: 'dbs-setcard' },
+          e('div', { className: 'dbs-sethead' },
+            e('span', { className: 'dbs-title' }, t('settings.skills')),
+            e('span', { style: { flex: 1 } }),
+            e(Button, { variant: 'ghost', size: 'sm', disabled: busy, onClick: () => void reload() }, t('action.refresh')),
+            e(Button, { variant: 'ghost', size: 'sm', disabled: busy, onClick: () => setImporting(!importing) }, t('settings.skills.import')),
+            e(Button, { variant: 'outline', size: 'sm', disabled: busy, onClick: () => setEditing({ name: '', description: '', body: '' }) }, t('settings.skills.add'))),
+          e('div', { className: 'dbs-setrow' }, t('settings.skills.summary')),
+          (agents ?? []).length > 0 ? e('div', { className: 'dbs-setrow', style: { alignItems: 'center' } },
+            t('settings.skills.agent'),
+            e('select', {
+              className: 'dbs-select', value: agentId, disabled: busy,
+              onChange: (ev: any) => { setAgentId(ev.target.value); void reload(ev.target.value) },
+            }, (agents ?? []).map((a: any) => e('option', { key: a.id, value: a.id }, a.name ?? a.id)))) : null,
+          editing !== null ? e('div', { className: 'dbs-setcard', style: { margin: '6px 0' } },
+            e(Input, {
+              placeholder: t('settings.skills.namePlaceholder'), value: editing.name, disabled: busy,
+              onChange: (ev: any) => setEditing({ ...editing, name: ev.target.value }),
+            }),
+            e(Input, {
+              placeholder: t('settings.skills.descPlaceholder'), value: editing.description, disabled: busy,
+              onChange: (ev: any) => setEditing({ ...editing, description: ev.target.value }),
+            }),
+            e('textarea', {
+              placeholder: t('settings.skills.bodyPlaceholder'), value: editing.body, disabled: busy, rows: 10,
+              onChange: (ev: any) => setEditing({ ...editing, body: ev.target.value }),
+              style: {
+                width: '100%', marginTop: 6, padding: '6px 8px', fontSize: 12, lineHeight: '18px',
+                borderRadius: 8, border: '1px solid var(--dsw-alias-border-l, #ccc)', resize: 'vertical',
+                background: 'transparent', color: 'var(--dsw-alias-label-primary, inherit)', fontFamily: 'monospace',
+              },
+            }),
+            e('div', { className: 'dbs-setrow', style: { marginTop: 6 } },
+              e(Button, { variant: 'ghost', size: 'sm', disabled: busy, onClick: () => setEditing(null) }, t('settings.skills.cancel')),
+              e('span', { style: { flex: 1 } }),
+              e(Button, {
+                variant: 'primary', size: 'sm', disabled: busy || editing.name.trim() === '' || editing.body.trim() === '',
+                onClick: () => void submitEdit(),
+              }, busy ? t('settings.skills.saving') : t('settings.skills.save')))) : null,
+          importing ? e('div', { className: 'dbs-setcard', style: { margin: '6px 0' } },
+            e(Input, {
+              placeholder: t('settings.skills.namePlaceholder'), value: importName, disabled: busy,
+              onChange: (ev: any) => setImportName(ev.target.value),
+            }),
+            e('textarea', {
+              placeholder: t('settings.skills.bodyPlaceholder'), value: importMarkdown, disabled: busy, rows: 8,
+              onChange: (ev: any) => setImportMarkdown(ev.target.value),
+              style: {
+                width: '100%', marginTop: 6, padding: '6px 8px', fontSize: 12, lineHeight: '18px',
+                borderRadius: 8, border: '1px solid var(--dsw-alias-border-l, #ccc)', resize: 'vertical',
+                background: 'transparent', color: 'var(--dsw-alias-label-primary, inherit)', fontFamily: 'monospace',
+              },
+            }),
+            e('div', { className: 'dbs-setrow', style: { marginTop: 6 } },
+              e(Button, { variant: 'ghost', size: 'sm', disabled: busy, onClick: () => setImporting(false) }, t('settings.skills.cancel')),
+              e('span', { style: { flex: 1 } }),
+              e(Button, {
+                variant: 'primary', size: 'sm', disabled: busy || importMarkdown.trim() === '',
+                onClick: () => void submitImport(),
+              }, busy ? t('settings.skills.importing') : t('settings.skills.import')))) : null,
+          rows === null
+            ? e('div', { className: 'dbs-setrow' }, t('settings.reading'))
+            : rows.length === 0
+              ? e('div', { className: 'dbs-setrow' }, t('settings.skills.empty'))
+              : rows.map((row: any) => {
+                  const key = sourceKey(row)
+                  const canToggle = editable(row)
+                  // Literal keys only — the locale guard scans t-call literals.
+                  const sourceLabel = key === 'automation' ? t('settings.skills.source.automation')
+                    : key === 'managed' ? t('settings.skills.source.managed')
+                    : key === 'plugin' ? t('settings.skills.source.plugin')
+                    : t('settings.skills.source.workflow')
+                  return e('div', { key: row.id, className: 'dbs-setrow', style: { alignItems: 'center' } },
+                    e('b', null, row.name ?? row.id),
+                    e('span', { className: 'dbs-meta' },
+                      ` ${sourceLabel}`,
+                      row.trigger != null && row.scheduleDescription ? ' · ' + t('settings.skills.schedule') + row.scheduleDescription : '',
+                      row.description ? ' · ' + String(row.description).split('\n')[0].slice(0, 120) : ''),
+                    e('span', { style: { flex: 1 } }),
+                    canToggle
+                      ? e(Button, {
+                          variant: 'ghost', size: 'sm', disabled: busy,
+                          title: row.isEnabledForAgent === false ? t('settings.skills.off') : t('settings.skills.on'),
+                          onClick: () => void run(() => botsCall('skillsEnable', {
+                            agentId, workflowId: row.id, isEnabled: row.isEnabledForAgent !== true,
+                          })),
+                        }, row.isEnabledForAgent === false ? t('settings.skills.off') : t('settings.skills.on'))
+                      : e('span', { className: 'dbs-meta', title: t('settings.skills.lockedHint') }, ' '),
+                    row.trigger != null
+                      ? e(Button, {
+                          variant: 'ghost', size: 'sm', disabled: busy,
+                          onClick: () => void run(() => botsCall('skillsRunNow', { agentId, workflowId: row.id })),
+                        }, t('settings.skills.run'))
+                      : null,
+                    editable(row)
+                      ? e(Button, { variant: 'ghost', size: 'sm', disabled: busy, onClick: () => setEditing({ id: row.id, name: row.name ?? '', description: row.description ?? '', body: row.body ?? '' }) }, t('settings.skills.edit'))
+                      : null,
+                    editable(row)
+                      ? e(Button, {
+                          variant: 'ghost', size: 'sm', disabled: busy,
+                          onClick: () => {
+                            if (confirmId !== row.id) { setConfirmId(row.id); return }
+                            setConfirmId(null)
+                            void run(() => botsCall('skillsDelete', { agentId, workflowId: row.id }))
+                          },
+                        }, confirmId === row.id ? t('settings.skills.deleteConfirm') : t('settings.skills.delete'))
+                      : null)
+                }),
+          err !== null ? e('div', { className: 'dbs-setrow' }, t('settings.skills.failed'), err) : null)
+      }
+
+      /**
        * Workspace card: per-agent Seatbelt jail management (the engine owns
        * the isolation; this surface edits each agent's settings.json jail
        * keys — see DEVELOPMENT.md §14). Toggling writes the config; the jail
@@ -6408,9 +6640,10 @@ class BotEngine {
         const [sse, setSse] = React.useState(null)
         const [err, setErr] = React.useState(null)
         const [tab, setTab] = React.useState('overview')
-        const tabs = ['overview', 'models', 'workspace', 'mcp']
+        const tabs = ['overview', 'models', 'skills', 'workspace', 'mcp']
         const tabLabels: Record<string, string> = {
           overview: t('settings.tab.overview'), models: t('settings.tab.models'),
+          skills: t('settings.tab.skills'),
           workspace: t('settings.tab.workspace'), mcp: t('settings.tab.mcp'),
         }
         async function refresh() {
@@ -6468,6 +6701,9 @@ class BotEngine {
           e('div', { id: 'dbs-settings-panel-models', className: 'dbs-settingsPanel', role: 'tabpanel',
             'aria-labelledby': 'dbs-settings-tab-models', hidden: tab !== 'models' },
             info?.ok === true ? e(ModelCard) : null),
+          e('div', { id: 'dbs-settings-panel-skills', className: 'dbs-settingsPanel', role: 'tabpanel',
+            'aria-labelledby': 'dbs-settings-tab-skills', hidden: tab !== 'skills' },
+            info?.ok === true ? e(SkillsCard) : null),
           e('div', { id: 'dbs-settings-panel-workspace', className: 'dbs-settingsPanel', role: 'tabpanel',
             'aria-labelledby': 'dbs-settings-tab-workspace', hidden: tab !== 'workspace' },
             info?.ok === true ? e(WorkspaceCard) : null),

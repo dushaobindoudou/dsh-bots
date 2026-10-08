@@ -13,6 +13,7 @@ const EXPECTED = [
   'markRead', 'diag', 'eventsSince', 'sseState',
   'mcpServers', 'mcpTools', 'mcpAdd', 'mcpRemove', 'mcpRefresh', 'mcpExecute',
   'workspaceList', 'workspaceGet', 'workspaceSet', 'modelConfig', 'setModelConfig',
+  'skillsList', 'skillsSave', 'skillsEnable', 'skillsDelete', 'skillsRunNow', 'skillsImportText',
 ]
 
 let failed = 0
