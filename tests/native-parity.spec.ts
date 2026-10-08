@@ -31,6 +31,20 @@ describe('composer parity (native InputBar)', () => {
     expect(CLIENT).toMatch(/\.dbs-composer\{padding:0 var\(--dsh-composer-side-clearance\) 8px/)
   })
 
+  it('keeps the literal 22px card radius (the radius-token scale is gone in 0.2.0-rc.2)', () => {
+    // The shipped InputBar card hardcodes border-radius:22px; --dsw-radius-*
+    // no longer exists anywhere in the native packages.
+    expect(CLIENT).toMatch(/\.dbs-composerCard\{[^}]*border-radius:22px/)
+    expect(CLIENT).not.toContain('var(--dsw-radius-panel)')
+    expect(CLIENT).not.toContain('var(--dsw-radius-xl)')
+    expect(CLIENT).toMatch(/\.dbs-bubble\{[^}]*border-radius:22px/)
+    expect(CLIENT).toMatch(/\.dbs-prow,\.dbs-srow\{[^}]*border-radius:8px/)
+  })
+
+  it('carries no character counter in the trailing group (native shows none)', () => {
+    expect(CLIENT).not.toMatch(/dbs-composerTrailing' \},\s*\n\s*e\('span', \{ className: 'dbs-meta' \}/)
+  })
+
   it('sizes the input like the native one (36px, 4px 8px 0 14px)', () => {
     expect(CLIENT).toMatch(/\.dbs-composerInput\{[^}]*min-height:36px/)
     expect(CLIENT).toMatch(/\.dbs-composerInput\{[^}]*padding:4px 8px 0 14px/)
@@ -104,10 +118,42 @@ describe('message stream parity (native MessageItem / ChatView)', () => {
   it('shows the running turn with the native shimmer plus an elapsed clock', () => {
     expect(CLIENT).toContain("className: 'dbs-turnStatus'")
     expect(CLIENT).toContain("className: 'dbs-turnStatusClock'")
-    expect(CLIENT).toMatch(/animation:1\.8s linear infinite dbsTurnShimmer/)
-    expect(CLIENT).toMatch(/dbs-turnStatusClock' \}, formatDurationMs\(elapsedMs\)/)
+    expect(CLIENT).toContain("e(NATIVE.TextShimmer, { active: true, className: 'dbs-turnStatus' }")
+    // Native TurnStatus: the clock only appears past 15s, in the whole
+    // seconds / minutes+seconds format, and no icon rides the row.
+    expect(CLIENT).toMatch(/dbs-turnStatusClock'[^}]*\}, formatRunDuration\(elapsedMs\)/)
+    expect(CLIENT).toMatch(/elapsedMs !== null && elapsedMs >= 15000/)
     expect(CLIENT).toMatch(/setInterval\(\(\) => setElapsedMs\(Date\.now\(\) - started\), 1000\)/)
-    expect(CLIENT).toMatch(/@media \(prefers-reduced-motion:reduce\)\{\.dbs-turnStatus\{/)
+    expect(CLIENT).not.toContain('dbs-typingIcon')
+  })
+
+  it('formats the turn clock like the native formatRunDuration', () => {
+    expect(CLIENT).toMatch(/const total = Math\.max\(0, Math\.floor\(ms \/ 1e3\)\)/)
+    expect(CLIENT).toMatch(/seconds: String\(seconds\)\.padStart\(2, '0'\)/)
+    expect(CLIENT).toContain("'duration.minutes': '{minutes}分{seconds}秒'")
+  })
+
+  it('keeps the turn status at the native TurnStatus metrics', () => {
+    expect(CLIENT).toMatch(/\.dbs-turnStatus\{height:calc\(26px \+ var\(--dsh-content-font-delta,0px\)\)/)
+    expect(CLIENT).toMatch(/\.dbs-turnStatus\{[^}]*line-height:calc\(22px \+ var\(--dsh-content-font-delta,0px\)\)/)
+    // The native label is the deepDiving string; the plugin's own label copy
+    // and stop pill (which the native row never had) are gone.
+    expect(CLIENT).toContain("'chat.composing': '深度求索中...'")
+    expect(CLIENT).not.toContain('dbs-typingStop')
+  })
+
+  it('resolves the content column with the native responsive clamp', () => {
+    // 0.2.0-rc.2 made --dsh-chat-content-width responsive (column*.64 within
+    // 680..920px); the fixed 748px override is gone, and the panel publishes
+    // its measured width exactly as the conversation root does.
+    expect(CLIENT).toMatch(/--dsh-chat-content-width:var\(--dsh-chat-user-width,clamp\(680px,calc\(var\(--dsh-conversation-column-width,0px\)\*\.64\),920px\)\)/)
+    expect(CLIENT).toMatch(/setProperty\('--dsh-conversation-column-width', `\$\{el\.offsetWidth\}px`\)/)
+  })
+
+  it('keeps single-bot transcripts headerless like the native stream', () => {
+    // Author attribution (avatar + name) is group-chat-only; the native
+    // transcript renders no per-message header.
+    expect(CLIENT).toMatch(/if \(p\.isGroup !== true\) \{\s*\n\s*return e\('div', \{ className: 'dbs-botRow' \},/)
   })
 })
 
@@ -259,7 +305,37 @@ describe('plugin-facing theme contract', () => {
     expect(CLIENT).not.toMatch(/var\(--dsw-static-[a-z0-9-]+\)/)
     expect(CLIENT).not.toMatch(/var\(--dsw-specific-[a-z-]+\)/)
     expect(CLIENT).toMatch(/var\(--dsw-elevation-soft,0 2px 8px rgba\(0,0,0,\.08\)\)/)
-    expect(CLIENT).toMatch(/var\(--dsw-static-deepseek-500,var\(--dsw-alias-brand-primary\)\)/)
+    expect(CLIENT).toContain("e(NATIVE.TextShimmer, { active: true, className: 'dbs-turnStatus' }")
+  })
+})
+
+describe('settings section (native settings shell)', () => {
+  it('opens the section with the native 16px/500 title over a tertiary intro', () => {
+    // Native section headers (ModelsSection): 16px/500 title, 14px/22px
+    // tertiary intro — not a 13px secondary line.
+    expect(CLIENT).toMatch(/\.dbs-settingsTitle\{font-size:16px;line-height:24px;font-weight:500/)
+    expect(CLIENT).toMatch(/\.dbs-settingsIntro\{font-size:14px;line-height:22px;color:var\(--dsw-alias-label-tertiary\)/)
+    expect(CLIENT).toMatch(/className: 'dbs-settingsTitle' \}, t\('nav\.bots'\)/)
+  })
+
+  it('styles the internal tabs on the native tab anatomy', () => {
+    // Native conversation-header tabs: 13px/500 tertiary labels, 36px gaps,
+    // 2px business underline on the active tab, no rail border.
+    expect(CLIENT).toMatch(/\.dbs-settingsTabs\{display:flex;align-items:flex-end;gap:36px/)
+    expect(CLIENT).toMatch(/\.dbs-settingsTab\{[^}]*font-size:13px;font-weight:500/)
+    expect(CLIENT).toMatch(/\.dbs-settingsTab\[aria-selected="true"\]\{color:var\(--dsw-alias-state-business-primary\)\}/)
+    expect(CLIENT).toMatch(/\.dbs-settingsTab\[aria-selected="true"\]:after\{[^}]*background:var\(--dsw-alias-state-business-primary\)\}/)
+    expect(CLIENT).not.toMatch(/\.dbs-settingsTabs\{[^}]*border-bottom/)
+  })
+
+  it('draws cards on the native rowCard anatomy', () => {
+    // ModelsSection.rowCard: .5px l4 border, 16px radius, 12px 14px padding,
+    // 12px gap, no fill; heads at 500, rows at the 14px content scale.
+    expect(CLIENT).toMatch(/\.dbs-setcard\{border:\.5px solid var\(--dsw-alias-border-l4,var\(--dsw-alias-border-l2\)\);border-radius:16px;padding:12px 14px;/)
+    expect(CLIENT).toMatch(/\.dbs-sethead\{[^}]*font-weight:500\}/)
+    expect(CLIENT).toMatch(/\.dbs-setrow\{[^}]*font-size:14px;line-height:22px/)
+    expect(CLIENT).toMatch(/\.dbs-settings \.dbs-select\{[^}]*border-radius:8px/)
+    expect(CLIENT).not.toContain('var(--dsw-radius-lg')
   })
 })
 
@@ -318,25 +394,13 @@ describe('dialogs and entry menus (current surface spec)', () => {
   })
 })
 
-describe('layout following (sidebar fold)', () => {
-  it('follows the animated grid instead of sampling its start value', () => {
-    // The frame CSS transitions `grid-template-columns`, so the inline style
-    // (and the mutation observer) fires ONCE at the start while the computed
-    // value keeps moving. Reading only there pinned the panel to the pre-fold
-    // width and it never followed the collapsing sidebar.
-    expect(CLIENT).toMatch(/const sample = \(\): void => \{\n\s*const cols = apply\(\)/)
-    expect(CLIENT).toMatch(/if \(cols !== lastCols\) \{ lastCols = cols; raf = requestAnimationFrame\(sample\) \}/)
-    expect(CLIENT).toMatch(/raf = requestAnimationFrame\(sample\)/)
-    expect(CLIENT).toMatch(/frame\.addEventListener\('transitionend', kick\)/)
-    expect(CLIENT).toMatch(/window\.addEventListener\('resize', kick\)/)
-    expect(CLIENT).toMatch(/cancelAnimationFrame\(raf\)/)
-  })
-
-  it('watches the fold attributes the layout actually writes', () => {
-    // `data-details-collapsed` does not exist (the right column's track is the
-    // only "details" seat); the real flags are these.
-    expect(CLIENT).toContain("attributeFilter: ['style', 'data-sidebar-collapsed', 'data-rightbar-collapsed', 'data-rightbar-fullscreen', 'data-dragging']")
-    expect(CLIENT).not.toContain("'data-details-collapsed'")
+describe('native main panel', () => {
+  it('lets the host own panel geometry and navigation', () => {
+    expect(CLIENT.includes("name: 'main', key: 'dsh-bots'")).toBe(true)
+    expect(CLIENT.includes("layoutSvc.selectPanel('dsh-bots')")).toBe(true)
+    expect(CLIENT.includes('useCentreInset')).toBe(false)
+    expect(CLIENT.includes('gridTemplateColumns')).toBe(false)
+    expect(CLIENT.includes('layers.push(e(ChatView')).toBe(false)
   })
 
   it('renders the rail control on the native rail button spec', () => {

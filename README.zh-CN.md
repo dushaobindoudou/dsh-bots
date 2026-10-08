@@ -8,7 +8,6 @@
 [![npm](https://img.shields.io/npm/v/dsh-bots?logo=npm&color=cb3837)](https://www.npmjs.com/package/dsh-bots)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 [![Cordis](https://img.shields.io/badge/cordis-%5E4.0.1-blue)](./package.json)
-[![Tests](https://img.shields.io/badge/tests-164%20passed-brightgreen)](./scripts)
 
 [English](./README.md) · 简体中文
 
@@ -31,11 +30,17 @@
 
 **对话**
 
+- 聊天显示在 dsh 原生主面板；弹窗仍使用 overlay
 - 完整聊天界面：日期分割线、贴底滚动 + 跳到最新、IME 安全输入框、同作者连续发言合并
 - 群聊发言调度：@提及定向回复、一跳接力、`@全员` 全员唤醒——由引擎的 responder 选举驱动
 - Markdown 渲染、带状态圆点的工具调用卡片、思考块
 - **停止生成**：输入框发送键在生成中变形为停止方块，直连网关 `interruptAgent`
 - 本地媒体：Bot 提到的本地路径直接内联图片预览、文件一键打开
+
+**持续目标（单 Bot）**
+
+- 在「目标」页填写目标、逐条验收标准和推进间隔；引擎例行任务负责页面关闭后的执行
+- 查看每轮记录与进展，暂停、恢复、退回改进或结束目标；Bot 声明达成后由用户确认验收
 
 **管理**
 
@@ -46,7 +51,7 @@
 
 **底层**
 
-- 宿主半边：`TypertRemoteService` 桥接 33 个网关 RPC 端点 + SSE 代理
+- 宿主半边：`TypertRemoteService` 桥接网关 RPC 端点 + SSE 代理，并持久化目标意图与验收状态
 - 客户端半边：纯 JS React 走 Cordis Slots（无构建产物依赖），中英双语
 - 每个 Bot 的工作区监狱（macOS Seatbelt）编辑：根目录 + 额外可写路径
 
@@ -67,14 +72,15 @@ dsh plugin --profile web add dsh-bots
 
 # 或从本地打包安装
 pnpm pack
-dsh plugin --profile web add ./dsh-bots-0.2.22.tgz
+dsh plugin --profile web add ./dsh-bots-*.tgz
 ```
 
 然后重启 `dsh web` 并刷新页面。工作台出现在侧栏第二个分组；设置页多出 **Bots** 卡片。
 
 > ⚠️ **两半边加载陷阱**：插件客户端半边每次页面加载都现读，但宿主半边只在 `dsh web` 启动时
 > 加载一次。升级后 UI 改动刷新即可；宿主 RPC 有变化时必须重启 `dsh web`（否则新 UI 打旧
-> host，新端点 404）。
+> host，新端点 404）。升级 dsh 本身后也必须重启 `dsh web`，避免旧进程加载新版客户端包后出现
+> `Failed to load plugins` 和缺失 `shortcuts` 等服务的错误。
 
 ## ⚙️ 配置
 
@@ -99,6 +105,8 @@ dsh plugin --profile web add ./dsh-bots-0.2.22.tgz
 | 任务 | 操作 |
 |---|---|
 | 打开对话 | 点击单聊中的 Bot 或群聊中的群 |
+| 创建持续目标 | 打开单 Bot →「目标」→ 填写目标与验收标准 →「开始持续推进」 |
+| 验收目标 | 在「目标」页核对实际产物和进展记录，再确认验收或退回改进 |
 | 让群里某人回话 | 输入 `@` 选成员；`@全员` 唤醒所有人 |
 | 停止生成 | 点击 ⏹ 方块（生成中替换 ▲ 发送键） |
 | 改名 / 工作区隔离 | 聊天栏右上角齿轮 |
@@ -119,11 +127,12 @@ dsh plugin --profile web add ./dsh-bots-0.2.22.tgz
 ```
 ┌────────────────────────── dsh web ──────────────────────────┐
 │  shell ── Slots: sidebar.workspaces（影子替换）              │
-│               shell.overlay（聊天 + 弹窗）                   │
+│               main（Bot 聊天与目标）                         │
+│               shell.overlay（弹窗）                          │
 │               settings.section（Bots 卡片）                  │
 │                      │ botsCall RPC（无损 JSON）             │
 │  ┌─────────────────── Host半边 ────────────────────────┐    │
-│  │  TypertRemoteService · 33 端点                      │    │
+│  │  TypertRemoteService · RPC 桥接 + 目标工作流          │    │
 │  │  SSE 代理（3k 环形缓冲）· 未读模型                   │    │
 │  └──────────────────────┬────────────────────────────┘    │
 └─────────────────────────┼──────────────────────────────────┘
@@ -135,7 +144,7 @@ dsh plugin --profile web add ./dsh-bots-0.2.22.tgz
 
 - **Host**（`src/index.ts`、`src/gateway.ts`、`src/sse.ts` 等）：网关发现与调用、SSE 环形缓冲
   （重连 + 转录重放对账）、未读账本、媒体 `readImage`/`openFile`（realpath 白名单 fail-closed）、
-  诊断文件。
+  诊断文件。`src/goals.ts` 负责目标持久化、调度连接和用户验收。
 - **Client**（`src/client.ts`）：整个 UI 在一个工厂里——侧栏导航、聊天界面、六个弹窗、设置
   卡片——通过 Cordis Slots 注册，中英双语字典。
 
@@ -144,8 +153,9 @@ dsh plugin --profile web add ./dsh-bots-0.2.22.tgz
 ```bash
 pnpm install
 pnpm build             # tsc 宿主 + 客户端
-pnpm test              # vitest（164 个测试）
-pnpm test:integration  # 拉起夹具宿主，校验全部 27 个端点
+pnpm test              # vitest
+pnpm test:integration  # 校验宿主 RPC 端点
+pnpm test:browser      # 隔离浏览器交互回归；需要本机 Chrome
 pnpm test:dsh-smoke    # 插件在真实 dsh profile 内加载
 ```
 

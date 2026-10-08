@@ -23,10 +23,8 @@ describe('theme tokens', () => {
     for (const phantom of ['--dsw-font-family-mono', '--dsw-alias-fill-l1']) {
       expect(SOURCE.includes(phantom), `dead token in CSS: ${phantom}`).toBe(false)
     }
-    // The bare form is a phantom too: the shell ships per-property composites
-    // (--dsw-font-markdown-code-block-small-font-size / -line-height), so a
-    // bare var() always missed and dropped to `inherit`.
-    expect(SOURCE.includes('var(--dsw-font-markdown-code-block-small)')).toBe(false)
+    // dsh 0.2 ships the shorthand as well as its per-property composites.
+    expect(SOURCE).toContain('var(--dsw-font-markdown-code-block-small)')
   })
 
   it('takes the mono stack from the shell (--ds-font-family-code)', () => {
@@ -52,7 +50,12 @@ describe('theme tokens', () => {
       // Mode-invariant or dual-mode tokens verified in the 2026-09-18 audit:
       '--dsw-shadow-lv2', '--dsw-font-family', '--dsw-alias-border-l3',
       '--dsw-alias-brand-primary', '--dsw-alias-interactive-bg-hover-solid',
+      '--dsw-alias-border-l4',
+      '--dsw-font-markdown-code-block-small',
+      // The --dsw-radius-* scale does not exist in 0.2.0-rc.2 (native CSS
+      // modules hardcode their radii); a bare radius var() must never return.
     ])
+    expect(bare.filter((v) => v.startsWith('--dsw-radius-'))).toEqual([])
     const offenders = bare.filter((v) => !KNOWN_SAFE.has(v))
     expect(offenders, `bare var() without fallback — verify it exists in both shell modes: ${offenders.join(', ')}`).toEqual([])
   })

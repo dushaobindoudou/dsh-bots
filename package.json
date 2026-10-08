@@ -1,7 +1,8 @@
 {
   "name": "dsh-bots",
-  "version": "0.2.64",
+  "version": "0.2.65",
   "description": "Multi-bot workbench for DeepSeek Harness: bridges the sdk-bots orchestration gateway (group chats, single bots) into the dsh web shell with official-styled UI.",
+  "icon": "./icon.svg",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -11,10 +12,13 @@
       "default": "./lib/index.js"
     },
     "./client": "./lib/client.js",
+    "./locale/*.json": "./locale/*.json",
     "./package.json": "./package.json"
   },
   "files": [
     "lib",
+    "locale",
+    "icon.svg",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"
@@ -24,6 +28,7 @@
     "prepare": "pnpm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:browser": "node scripts/browser-test.mjs",
     "test:integration": "node scripts/integration-test.mjs",
     "test:dsh-smoke": "bash scripts/dsh-smoke.sh"
   },
@@ -53,6 +58,10 @@
     "@deepseek-ai/cordis": "^4.0.2",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.2",
     "@types/node": "^24.13.6",
+    "esbuild": "^0.28.2",
+    "playwright-core": "^1.64.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"
   },

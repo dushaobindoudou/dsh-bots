@@ -4,6 +4,55 @@ All notable changes to this project are documented in this file. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.65] - 2026-10-08
+
+Native-parity pass against the running dsh 0.2.0-rc.2 web UI: every value
+below was read out of the shipped CSS modules and bundles
+(`dsh-client-ui-chat`, `-conversation`, `-tool`, `-workspace`,
+`-settings-general`, `-settings-models`) and re-pinned in tests.
+
+### Fixed
+
+- **Dead radius tokens made corners square** — dsh 0.2.0-rc.2 deleted the
+  `--dsw-radius-*` scale entirely (native CSS modules hardcode radii), so
+  every `var(--dsw-radius-*)` in the plugin resolved to 0. Now the native
+  literals: composer card and user bubble 22px, ioCard 12px, sidebar rows 8px,
+  avatar 6px, settings cards 16px, settings selects 8px.
+- **思考中 (turn status)**: the label is the native `chat.deepDiving` copy
+  (「深度求索中...」/ "Deep diving...") at the native TurnStatus metrics
+  (26px+delta row, content font, 22px+delta line); the elapsed clock only
+  appears past the native 15s threshold and uses the native
+  `formatRunDuration` form ("35秒" / "1分35秒"); the fish glyph and the
+  typing-row stop pill (which the native row never had) are gone — stop lives
+  only in the composer corner while the draft is empty, exactly the native
+  `primaryStops` gate.
+- **思考内容 (ReasoningRow)**: the one-line summary strips markdown bold like
+  the native preview; summary and expanded body ride the 20px secondary line
+  (`--dsh-content-font-delta-secondary`); the streaming tail stays visible via
+  the native `data-follow-end` text rules; the chevron is always shown, as in
+  the shipped DisclosureRow.
+- **会话 (content column)**: `--dsh-chat-content-width` follows the native
+  responsive clamp (680px..920px, 64% of the measured column) instead of the
+  stale fixed 748px; the panel publishes its measured width as
+  `--dsh-conversation-column-width` via a ResizeObserver, mirroring the
+  conversation root. Sidebar session rows: time text at the native 12px/20px,
+  hover actions gap 12px.
+- **头像 (avatars)**: single-bot transcripts no longer render an author
+  header (the native stream has none); avatar + name attribution remains only
+  in group rooms where multiple authors make it load-bearing.
+- **输入框 (composer)**: the character counter is gone (the native trailing
+  group carries none); the queued-send tooltip is the native "排队发送" /
+  "Queue message"; the stop glyph matches the native rx=3 square.
+- **设置 (settings)**: sections open with the native 16px/500 title over a
+  14px/22px tertiary intro; internal tabs follow the native conversation-tab
+  anatomy (13px/500 tertiary labels, 36px gaps, 2px business underline, no
+  rail border); cards match the native `rowCard` (.5px l4 border, 16px
+  radius, 12px 14px padding, 12px gap, no fill) with 500-weight heads and
+  14px/22px rows.
+- **Delegation kit**: `useSessionRetainInfo` / `useSessionStatus` (new in the
+  0.2.0-rc.2 workspace shadow kit) classified `synthesized` — the generic
+  forward already carries them.
+
 ## [0.2.64] - 2026-09-30
 
 The dsh 0.2.0 compatibility release. No code changes.

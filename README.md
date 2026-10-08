@@ -9,7 +9,6 @@ shell: single bots, group chats, transcripts and live events, styled like the of
 [![npm](https://img.shields.io/npm/v/dsh-bots?logo=npm&color=cb3837)](https://www.npmjs.com/package/dsh-bots)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 [![Cordis](https://img.shields.io/badge/cordis-%5E4.0.1-blue)](./package.json)
-[![Tests](https://img.shields.io/badge/tests-164%20passed-brightgreen)](./scripts)
 
 English · [简体中文](./README.zh-CN.md)
 
@@ -34,6 +33,7 @@ leaving the shell.
 
 **Conversations**
 
+- Chat renders in dsh's native main panel; dialogs use the overlay
 - Full chat surface: day dividers, stick-to-bottom with jump-to-latest, IME-safe composer,
   same-author run compaction
 - Group chat turn-taking: @-mention directed replies, one-hop delegation, `@全员` broadcast —
@@ -42,6 +42,11 @@ leaving the shell.
 - **Stop generating**: composer send button morphs into a stop square wired to the gateway's
   `interruptAgent`
 - Local media: inline image previews and one-click file chips for paths mentioned by bots
+
+**Persistent goals (single bots)**
+
+- Set an objective, acceptance criteria, and run interval; the engine schedules work after the page closes
+- Inspect runs and progress, pause or resume, request changes, or end a goal; users accept the result after the bot claims completion
 
 **Management**
 
@@ -52,7 +57,7 @@ leaving the shell.
 
 **Under the hood**
 
-- Host half: a `TypertRemoteService` bridging 33 gateway RPC endpoints + SSE proxy
+- Host half: a `TypertRemoteService` bridging gateway RPC endpoints + SSE proxy, with durable goal intent and review state
 - Client half: plain-JS React via Cordis Slots (no build step), zh/en i18n
 - Workspace jail (macOS Seatbelt) editing per bot: root dir + extra writable paths
 
@@ -74,7 +79,7 @@ dsh plugin --profile web add dsh-bots
 
 # or from a packed tarball
 pnpm pack
-dsh plugin --profile web add ./dsh-bots-0.2.22.tgz
+dsh plugin --profile web add ./dsh-bots-*.tgz
 ```
 
 Then restart `dsh web` and refresh the page. The workbench appears as the second group in the
@@ -83,6 +88,8 @@ sidebar; the settings page gains a **Bots** section.
 > ⚠️ **Half-loading trap**: the plugin's Client half is served fresh on every page load, but the
 > Host half only loads at `dsh web` boot. After upgrading, refresh for UI changes — restart
 > `dsh web` when host RPCs change (otherwise the new UI hits a stale host and new endpoints 404).
+> Restart `dsh web` after upgrading dsh itself as well: an old process can load newer client
+> packages and report `Failed to load plugins` with missing services such as `shortcuts`.
 
 ## ⚙️ Configuration
 
@@ -107,6 +114,8 @@ The plugin reads a single option (via `cordis.patch.yml`):
 | Task | How |
 |---|---|
 | Open a conversation | Click a bot in 单聊 or a group in 群聊 |
+| Create a persistent goal | Open a single bot → Goals → enter objective and acceptance criteria → Start scheduled work |
+| Review a goal | Check the actual deliverables and progress record, then accept or request changes |
 | Direct a group reply | Type `@` and pick a member; `@全员` wakes everyone |
 | Stop a generation | Click the ⏹ square (replaces ▲ send while composing) |
 | Rename / jail a bot | Gear button (top-right of the chat bar) |
@@ -127,11 +136,12 @@ rosters — the member editor surfaces the cap instead of letting a save pretend
 ```
 ┌────────────────────────── dsh web ──────────────────────────┐
 │  shell ── Slots: sidebar.workspaces (shadow)                │
-│               shell.overlay (chat + modals)                 │
+│               main (bot chat and goals)                      │
+│               shell.overlay (dialogs)                       │
 │               settings.section (Bots card)                  │
 │                      │ botsCall RPC (lossless JSON)         │
 │  ┌─────────────────── Host half ───────────────────────┐    │
-│  │  TypertRemoteService · 33 endpoints                 │    │
+│  │  TypertRemoteService · RPC bridge + goal workflow    │    │
 │  │  SSE proxy (3k-entry ring buffer) · unread model    │    │
 │  └──────────────────────┬────────────────────────────┘    │
 └─────────────────────────┼──────────────────────────────────┘
@@ -143,7 +153,8 @@ rosters — the member editor surfaces the cap instead of letting a save pretend
 
 - **Host** (`src/index.ts`, `src/gateway.ts`, `src/sse.ts`, …): gateway discovery + calls, SSE
   ring with reconnect + transcript rebase, unread ledger, media `readImage`/`openFile` with a
-  fail-closed realpath allowlist, diagnostics file.
+  fail-closed realpath allowlist, diagnostics file. `src/goals.ts` owns goal persistence,
+  scheduling connection, and user acceptance.
 - **Client** (`src/client.ts`): the whole UI in one factory — sidebar nav, chat surface, six
   modals, settings cards — registered through Cordis Slots with zh/en dictionaries.
 
@@ -152,8 +163,9 @@ rosters — the member editor surfaces the cap instead of letting a save pretend
 ```bash
 pnpm install
 pnpm build             # tsc host + client
-pnpm test              # vitest (164 tests)
-pnpm test:integration  # boots a fixture host, checks all 33 endpoints
+pnpm test              # vitest
+pnpm test:integration  # checks host RPC endpoints
+pnpm test:browser      # isolated browser regression; requires local Chrome
 pnpm test:dsh-smoke    # plugin loads inside a real dsh profile
 ```
 

@@ -38,7 +38,9 @@ describe('tool row anatomy', () => {
   })
 
   it('expands into an ioCard-style body, not a bare pre block', () => {
-    expect(CLIENT).toMatch(/\.dbs-toolBody\{margin:4px 0 4px 22px;.*border-radius:12px/)
+    // 0.2.0-rc.2 dropped the --dsw-radius-* scale; the ioCard radius is a
+    // literal 12px in the shipped ToolRow module.
+    expect(CLIENT).toMatch(/\.dbs-toolBody\{margin:4px 0 4px 4px;.*border-radius:12px/)
     expect(CLIENT).toMatch(/max-height:260px;overflow-y:auto/)
   })
 })
@@ -70,8 +72,17 @@ describe('thinking row', () => {
   it('follows the native ReasoningRow: think glyph, tail-follow summary, expandable body', () => {
     expect(CLIENT).toContain("Ico('IconThinkOutline14', { size: 14 })")
     expect(CLIENT).toContain("'data-follow-end': running || undefined")
-    expect(CLIENT).toContain('const summary = running ? (lines[lines.length - 1] ?? \'\') : (lines[0] ?? \'\')')
+    // The native preview strips markdown bold before showing the line.
+    expect(CLIENT).toContain(".replaceAll('**', '')")
     expect(CLIENT).toContain("className: 'dbs-thinkBody'")
+  })
+
+  it('keeps the native ReasoningRow metrics on summary and body', () => {
+    // Summary rides the 20px secondary line, not the tool row's 24px.
+    expect(CLIENT).toMatch(/\.dbs-thinkRow \.dbs-toolSummary\{line-height:calc\(20px \+ var\(--dsh-content-font-delta-secondary,0px\)\)\}/)
+    expect(CLIENT).toMatch(/\.dbs-thinkBody\{[^}]*line-height:calc\(20px \+ var\(--dsh-content-font-delta-secondary,0px\)\)/)
+    // The tail stays visible while streaming (native data-follow-end text rules).
+    expect(CLIENT).toMatch(/\.dbs-toolSummary\[data-follow-end\]\{[^}]*width:max-content/)
   })
 })
 

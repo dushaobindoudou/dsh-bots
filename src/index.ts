@@ -36,6 +36,7 @@ import { GatewaySseClient, SseRingBuffer } from './sse.js'
 import { UnreadStore } from './unread.js'
 import { listAgentWorkspaces, readAgentWorkspace, setAgentWorkspace } from './workspace.js'
 import { satisfiesCaret } from './version.js'
+import { GoalWorkflow, type GoalCreate, type GoalAction } from './goals.js'
 
 export const name = 'dsh-bots'
 
@@ -172,6 +173,25 @@ export class BotsRemote extends TypertRemoteService {
   private readonly sse: GatewaySseClient
   private readonly unread: UnreadStore
   private rebasing = false
+
+  private goalWorkflow(): GoalWorkflow {
+    return new GoalWorkflow(effectiveDataDir(this.cfg.dataDir),
+      (method, args) => callGateway(this.cfg.dataDir, method, args))
+  }
+
+  async goals(request: { agentId: string }): Promise<import('./goals.js').GoalView[]> {
+    return this.goalWorkflow().list(request?.agentId)
+  }
+
+  async createGoal(request: GoalCreate): Promise<import('./goals.js').GoalView[]> {
+    if (!request) throw new Error('Goal is required')
+    return this.goalWorkflow().create(request)
+  }
+
+  async goalAction(request: GoalAction): Promise<import('./goals.js').GoalView[]> {
+    if (!request) throw new Error('Goal action is required')
+    return this.goalWorkflow().act(request)
+  }
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'bots')
@@ -943,6 +963,7 @@ for (const m of [
   'mcpServers', 'mcpTools', 'mcpAdd', 'mcpRemove', 'mcpRefresh', 'mcpExecute',
   'workspaceList', 'workspaceGet', 'workspaceSet', 'modelConfig', 'setModelConfig', 'applyModel',
   'eventsSince', 'sseState',
+  'goals', 'createGoal', 'goalAction',
 ]) {
   markRemoteMethod(BotsRemote.prototype, m)
 }

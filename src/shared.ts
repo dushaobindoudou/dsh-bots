@@ -145,6 +145,11 @@ export const DELEGATED_KIT_KEYS: Record<string, 'synthesized' | 'session-only' |
   usePanelInfo: 'synthesized',
   useResource: 'synthesized',
   useSessionPendingInteraction: 'synthesized',
+  /** dsh 0.2.0-rc.2 kit growth (2026-10-08): the root workspace shadow also
+   *  receives the session retain-info and status readers; both are plain
+   *  hook functions, so the generic forward in synthesizeProps carries them. */
+  useSessionRetainInfo: 'synthesized',
+  useSessionStatus: 'synthesized',
   /** Session-scoped kit members — never assembled for our root slot, and
    *  never faked (faking renderer internals is what blanked regions before). */
   useSession: 'session-only',

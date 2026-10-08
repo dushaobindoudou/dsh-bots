@@ -23,9 +23,8 @@
  *                 child slots and its rail branch intact (see DelegatedBrowser).
  *   - 「Bots」   — our bot/group tree; clicking opens the chat.
  *
- * Chat lives in the `shell.overlay` layer but is inset to the frame's centre
- * column, so the sidebar stays visible and usable while a bot conversation is
- * open — matching how a native session behaves.
+ * Chat lives in the native `main` panel, selected through ctx.layout.
+ * Only dialogs use `shell.overlay`; the host owns all column geometry.
  *
  * Live data: the host keeps an SSE ring fed from the sdk-bots `/events`
  * channel. ONE bus drains it here and fans channels out to subscribers; no
@@ -54,7 +53,8 @@
 
       /** Render a shipped icon by export name, or nothing if it is gone. */
       function Ico(name: string, props?: any): any {
-        const C = NATIVE[name]
+        const currentName = name.replace(/14$/, 'Regular').replace(/16$/, 'Medium')
+        const C = NATIVE[currentName] ?? NATIVE[name]
         return C === undefined ? null : e(C, props ?? {})
       }
 
@@ -77,7 +77,7 @@
        */
       function StopSquareIcon(): any {
         return e('svg', { viewBox: '0 0 16 16', width: '16', height: '16', 'aria-hidden': true },
-          e('rect', { x: 3, y: 3, width: 10, height: 10, rx: 2.5, fill: 'currentColor' }))
+          e('rect', { x: 3, y: 3, width: 10, height: 10, rx: 3, fill: 'currentColor' }))
       }
       /** Paperclip glyph — the native composer's attach control draws
        * IconPaperclipOutline16; this stands in only if that export is gone. */
@@ -290,7 +290,7 @@
 .dbs-prow .dbs-title{font-weight:500}
 .dbs-time{color:var(--dsw-alias-label-tertiary);flex:none;font-size:12px;line-height:20px}
 .dbs-meta{text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:20px;overflow:hidden}
-.dbs-rowActions{flex:none;align-items:center;gap:4px;display:none}
+.dbs-rowActions{flex:none;align-items:center;gap:12px;display:none}
 .dbs-prow:hover .dbs-rowActions,.dbs-srow:hover .dbs-rowActions{display:inline-flex}
 .dbs-prow:hover .dbs-hideOnHover,.dbs-srow:hover .dbs-hideOnHover{display:none}
 .dbs-avatar{width:20px;height:20px;border-radius:6px;flex:none;display:grid;place-items:center;font-size:11px;line-height:1;font-weight:600;color:#fff;overflow:hidden;user-select:none}
@@ -319,7 +319,31 @@
 .dbs-member.checked{color:var(--dsw-alias-state-business-primary,#1a6dff)}
 .dbs-error{margin:4px 8px;padding:5px 9px;border-radius:8px;font-size:12px;line-height:18px;cursor:pointer;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-state-error-primary,#f85149)}
 
-.dbs-chatview{position:absolute;top:0;bottom:0;pointer-events:auto;display:flex;flex-direction:column;background:var(--dsw-alias-bg-base);font-family:var(--dsw-font-family,inherit);z-index:2;--dsh-chat-content-width:748px;--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;--dsh-composer-text-max-height:336px;min-width:0}
+
+.dbs-goalTabs{display:flex;gap:2px;border-radius:10px;padding:3px;background:var(--dsw-alias-interactive-bg-hover)}
+.dbs-goalTabs button{border:0;background:transparent;color:var(--dsw-alias-label-secondary);padding:4px 10px;border-radius:8px;font:inherit;cursor:pointer}
+.dbs-goalTabs button[aria-pressed=true]{background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)}
+.dbs-goalPanel{flex:1;min-height:0;overflow:auto;padding:24px 20px;color:var(--dsw-alias-label-primary)}
+.dbs-goalContent{max-width:748px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+.dbs-goalHeader{display:flex;align-items:center;gap:12px;justify-content:space-between}
+.dbs-goalHeader h2{font-size:18px;line-height:26px;margin:0;font-weight:600}
+.dbs-goalCard{padding:20px;border:1px solid var(--dsw-alias-border-l2);border-radius:16px;display:flex;flex-direction:column;gap:14px}
+.dbs-goalCard h3{font-size:16px;line-height:24px;margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.dbs-goalStatus{font-size:12px;line-height:20px;color:var(--dsw-alias-label-secondary)}
+.dbs-goalCriteria{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px}
+.dbs-goalCriteria li{display:flex;gap:8px;align-items:baseline;line-height:22px;overflow-wrap:anywhere}
+.dbs-goalCriteria li span:first-child{flex:none;color:var(--dsw-alias-label-secondary)}
+.dbs-goalActions{display:flex;flex-wrap:wrap;gap:8px}
+.dbs-goalForm{display:flex;flex-direction:column;gap:14px}
+.dbs-goalForm label{display:flex;flex-direction:column;gap:6px;font-size:13px;line-height:20px}
+.dbs-goalForm textarea{box-sizing:border-box;width:100%;resize:vertical;min-height:80px;padding:10px 12px;font:inherit;color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-specific-input-major,var(--dsw-alias-bg-base))}
+.dbs-goalPanel :is(button,textarea,select,summary):focus-visible,.dbs-goalTabs button:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:3px}
+.dbs-goalPanel summary{cursor:pointer;font-size:13px;line-height:22px}
+.dbs-goalPanel details pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:13px;line-height:22px;max-height:320px;overflow:auto}
+.dbs-goalRun{padding:8px 0;border-bottom:1px solid var(--dsw-alias-border-l1);font-size:12px;line-height:20px;overflow-wrap:anywhere}
+@media(max-width:600px){.dbs-goalPanel{padding:16px 12px}.dbs-goalCard{padding:14px}.dbs-goalHeader{align-items:flex-start}}
+
+.dbs-chatview{position:relative;flex:1;min-height:0;pointer-events:auto;display:flex;flex-direction:column;background:var(--dsw-alias-bg-base);font-family:var(--dsw-font-family,inherit);z-index:2;--dsh-chat-content-width:var(--dsh-chat-user-width,clamp(680px,calc(var(--dsh-conversation-column-width,0px)*.64),920px));--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;--dsh-composer-text-max-height:336px;min-width:0}
 /* Not a standalone block: shrink to the chips/images, hug the text end in
    bot rows and the bubble's right edge in user messages. */
 .dbs-mediaRefs{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;align-items:center;width:fit-content;max-width:100%}
@@ -391,7 +415,7 @@
  * tertiary 13px summary, duration chip — with the shipped sweep highlight
  * while running and an ioCard-style expandable body. */
 .dbs-toolRow,.dbs-thinkRow{flex-direction:column;display:flex;min-width:0}
-.dbs-toolRowLine{position:relative;display:flex;align-items:center;overflow:hidden;min-width:0;line-height:24px;border-radius:8px}
+.dbs-toolRowLine{position:relative;display:flex;align-items:center;overflow:hidden;min-width:0;line-height:24px;border-radius:6px}
 .dbs-toolRowLine[role="button"]{cursor:pointer}
 .dbs-toolRowLine[role="button"]:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.04))}
 .dbs-toolRow[data-state="running"] .dbs-toolRowLine:after,.dbs-thinkRow[data-state="running"] .dbs-toolRowLine:after{content:"";position:absolute;top:0;bottom:0;left:0;width:300px;background:linear-gradient(90deg,transparent 0%,color-mix(in srgb,var(--dsw-alias-bg-base) 60%,transparent) 55%,transparent 100%);pointer-events:none;animation:2.6s ease-out infinite dbs-row-sweep}
@@ -402,11 +426,18 @@
 .dbs-toolTitle{font-weight:400;flex:none}
 .dbs-toolSep{background:var(--dsw-alias-label-caption);border-radius:1px;flex:none;width:2px;height:2px;margin:0 8px}
 .dbs-toolSummary{text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:var(--dsh-content-font-size-secondary,13px);line-height:24px;color:var(--dsw-alias-label-tertiary);flex:auto;overflow:hidden}
-.dbs-toolSummary[data-follow-end]{justify-content:flex-end;display:flex}
+.dbs-toolSummary[data-follow-end]{justify-content:flex-end;display:flex;text-overflow:clip;flex:none;width:max-content;min-width:100%;overflow:visible;text-align:start}
 .dbs-toolDuration{font-family:var(--ds-font-family-code,monospace);font-size:calc(var(--dsh-content-font-size-secondary,13px) - 2px);color:var(--dsw-alias-label-caption);flex:none;margin-left:10px;transform:translateY(.5px);font-variant-numeric:tabular-nums}
 .dbs-toolChevron{flex:none;display:flex;align-items:center;color:var(--dsw-alias-label-secondary);margin-left:4px}
-.dbs-toolBody{margin:4px 0 4px 22px;border:.5px solid var(--dsw-alias-border-l1,rgba(0,0,0,.08));background:var(--dsw-alias-markdown-code-block,var(--dsw-specific-bubble,var(--dsw-alias-bg-layer-2,rgba(0,0,0,.05))));border-radius:12px;padding:10px 14px;font-size:13px;line-height:20px;max-height:260px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;color:var(--dsw-alias-label-secondary)}
-.dbs-thinkBody{padding:4px 0 4px 22px;color:var(--dsw-alias-label-tertiary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:20px;white-space:pre-wrap;word-break:break-word}
+.dbs-toolBody{margin:4px 0 4px 4px;border:.5px solid var(--dsw-alias-border-l1,rgba(0,0,0,.08));background:var(--dsw-alias-markdown-code-block,var(--dsw-specific-bubble,var(--dsw-alias-bg-layer-2,rgba(0,0,0,.05))));border-radius:12px;padding:12px 16px;font:var(--dsw-font-markdown-code-block-small);max-height:260px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;color:var(--dsw-alias-label-primary)}
+.dbs-thinkBody{padding:4px 0 4px calc(22px + var(--dsh-content-font-delta,0px));color:var(--dsw-alias-label-tertiary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(20px + var(--dsh-content-font-delta-secondary,0px));white-space:pre-wrap;word-break:break-word}
+.dbs-thinkRow .dbs-toolRowLine{border:0;background:none;color:var(--dsw-alias-label-tertiary);font:inherit;padding:0;cursor:pointer;text-align:left;width:100%}
+.dbs-thinkRow .dbs-toolRowLine:hover{color:var(--dsw-alias-label-secondary)}
+.dbs-thinkRow .dbs-toolLead{color:inherit}
+/* The reasoning row keeps the native ReasoningRow metrics: a 20px secondary
+   summary line (not the tool row's 24px), with the chevron always shown. */
+.dbs-thinkRow .dbs-toolSummary{line-height:calc(20px + var(--dsh-content-font-delta-secondary,0px))}
+.dbs-thinkRow .dbs-toolChevron{opacity:1}
 /* File-change (diff) body: hunk headers stay quiet, added/removed lines get
    the semantic state tints the tool row already uses for ok/error. */
 .dbs-diffStat{font-family:var(--ds-font-family-code,monospace);font-size:calc(var(--dsh-content-font-size-secondary,13px) - 2px);color:var(--dsw-alias-label-caption);flex:none;margin-left:10px;transform:translateY(.5px);font-variant-numeric:tabular-nums}
@@ -429,7 +460,7 @@
 .dbs-userRow .dbs-msgTime,.dbs-botRow .dbs-msgTime{padding:0 4px}
 .dbs-dayDivider{display:flex;align-items:center;justify-content:center}
 .dbs-dayDivider span{padding:2px 10px;border-radius:999px;background:var(--dsw-specific-bubble,var(--dsw-alias-bg-layer-2,rgba(0,0,0,.05)));color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;user-select:none}
-.dbs-turnStatus{height:26px;font-size:14px;font-weight:600;white-space:nowrap;background:linear-gradient(90deg,var(--dsw-static-deepseek-500,#4d6bfe) 0%,var(--dsw-static-deepseek-500,#4d6bfe) 40%,var(--dsw-static-deepseek-200,#b6c2ff) 50%,var(--dsw-static-deepseek-500,#4d6bfe) 60%,var(--dsw-static-deepseek-500,#4d6bfe) 100%);color:#0000;-webkit-text-fill-color:transparent;background-position:100% 0;background-size:250% 100%;-webkit-background-clip:text;background-clip:text;flex:none;align-self:flex-start;align-items:center;animation:1.8s linear infinite dbs-turn-status-shimmer;display:inline-flex}
+.dbs-turnStatus{height:calc(26px + var(--dsh-content-font-delta,0px));font-size:var(--dsh-content-font-size,14px);line-height:calc(22px + var(--dsh-content-font-delta,0px));font-weight:400;white-space:nowrap;background:linear-gradient(90deg,var(--dsw-static-deepseek-500,#4d6bfe) 0%,var(--dsw-static-deepseek-500,#4d6bfe) 40%,var(--dsw-static-deepseek-200,#b6c2ff) 50%,var(--dsw-static-deepseek-500,#4d6bfe) 60%,var(--dsw-static-deepseek-500,#4d6bfe) 100%);color:#0000;-webkit-text-fill-color:transparent;background-position:100% 0;background-size:250% 100%;-webkit-background-clip:text;background-clip:text;flex:none;align-self:flex-start;align-items:center;animation:1.8s linear infinite dbs-turn-status-shimmer;display:inline-flex}
 @keyframes dbs-turn-status-shimmer{to{background-position:0 0}}
 @media (prefers-reduced-motion:reduce){.dbs-turnStatus{background-position:0 0;background-size:100% 100%;animation:none}.dbs-arrow{transition:none}}
 .dbs-composerSeat{flex:none;display:flex;flex-direction:column;z-index:7;background:linear-gradient(180deg,color-mix(in srgb,var(--dsw-alias-bg-base) 0%,transparent) 0px,var(--dsw-alias-bg-base) 36px)}
@@ -447,12 +478,6 @@
 .dbs-send{corner-shape:round;background:var(--dsw-alias-button-info-fill,#1a6dff);color:#fff;cursor:pointer;border:none;border-radius:999px;flex:none;place-items:center;width:34px;height:34px;transition:background-color .1s;display:grid;transform:translateY(-2px)}
 .dbs-send:hover:not(:disabled){background:var(--dsw-alias-button-info-hover,var(--dsw-alias-button-info-fill,#1a6dff))}
 .dbs-send:disabled{opacity:.4;cursor:default}
-.dbs-typingStop{display:inline-flex;align-items:center;gap:4px;border:none;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:12px;line-height:16px;padding:2px 8px;border-radius:999px}
-.dbs-typingStop:hover:not(:disabled){color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}
-.dbs-typingStop:disabled{opacity:.4;cursor:default}
-.dbs-typingStop{display:inline-flex;align-items:center;gap:4px;border:none;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:12px;line-height:16px;padding:2px 8px;border-radius:999px}
-.dbs-typingStop:hover:not(:disabled){color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}
-.dbs-typingStop:disabled{opacity:.4;cursor:default}
 .dbs-modalBackdrop{position:fixed;inset:0;z-index:1000;background:var(--dsw-alias-bg-mask-1,var(--dsw-alias-bg-overlay,rgba(0,0,0,.45)));backdrop-filter:var(--dsw-mask-blur,none);display:flex;align-items:center;justify-content:center;padding:24px;pointer-events:auto}
 .dbs-modalCard{position:relative;width:min(440px,calc(100vw - 48px));max-height:calc(100vh - 48px);overflow-y:auto;background:var(--dsw-alias-bg-layer-2,var(--dsw-alias-bg-layer-1,#fff));--dsw-elevation-stroke-color:var(--dsw-alias-border-l2);border:0;border-radius:20px;padding:20px 20px 22px;box-shadow:var(--dsw-elevation-prominent,var(--dsw-shadow-lv3,0 24px 80px rgba(0,0,0,.3)));animation:dbs-modal-in .18s ease-out}
 /* Confirm-class dialogs carry one sentence, not a form: 440px reads as a
@@ -513,12 +538,10 @@
 .dbs-railMark[data-busy="true"]:before{animation:1s ease-in-out infinite dbsRailBusy}
 @keyframes dbsRailBusy{0%,100%{opacity:.35}50%{opacity:1}}
 @media (prefers-reduced-motion:reduce){.dbs-railMark[data-busy="true"]:before{animation:none}}
-/* In-flight turn status, rebuilt on the native turnStatus: a shimmering
-   label over the DeepSeek gradient plus a tabular elapsed clock. */
-.dbs-typing{display:inline-flex;align-items:center;gap:8px;padding:2px 0}
-.dbs-turnStatus{font-size:var(--dsh-content-font-size,14px);line-height:calc(22px + var(--dsh-content-font-delta,0px));font-weight:600;white-space:nowrap;background:linear-gradient(90deg,var(--dsw-static-deepseek-500,var(--dsw-alias-brand-primary)) 0%,var(--dsw-static-deepseek-500,var(--dsw-alias-brand-primary)) 40%,var(--dsw-static-deepseek-200,var(--dsw-alias-label-tertiary)) 50%,var(--dsw-static-deepseek-500,var(--dsw-alias-brand-primary)) 60%,var(--dsw-static-deepseek-500,var(--dsw-alias-brand-primary)) 100%);color:#0000;-webkit-text-fill-color:transparent;background-position:100% 0;background-size:250% 100%;-webkit-background-clip:text;background-clip:text;animation:1.8s linear infinite dbsTurnShimmer}
-@keyframes dbsTurnShimmer{to{background-position:0 0}}
-@media (prefers-reduced-motion:reduce){.dbs-turnStatus{background-position:0 0;background-size:100% 100%;animation:none;color:var(--dsw-alias-label-primary);-webkit-text-fill-color:var(--dsw-alias-label-primary)}}
+/* In-flight turn status, rebuilt on the native TurnStatus row: the shimmering
+ * "深度求索中..." label over the DeepSeek gradient plus a tabular elapsed
+ * clock that only appears past the native 15s threshold. */
+.dbs-typing{display:inline-flex;align-items:center;gap:8px;padding:2px 0;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size,14px);line-height:calc(22px + var(--dsh-content-font-delta,0px))}
 .dbs-turnStatusClock{font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(20px + var(--dsh-content-font-delta-secondary,0px));font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-caption);font-weight:400}
 @keyframes dbsSpin{to{transform:rotate(360deg)}}
 .dbs-mdRow{display:flex;align-items:flex-start;gap:0;min-width:0;width:100%}
@@ -534,13 +557,38 @@
 .dbs-skeleton{display:flex;flex-direction:column;gap:18px;padding:24px 0;max-width:560px}
 .dbs-skelRow{height:16px;border-radius:8px;background:linear-gradient(90deg,var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06)) 25%,var(--dsw-alias-border-l1,rgba(0,0,0,.08)) 50%,var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06)) 75%);background-size:200% 100%;animation:dbsShimmer 1.4s ease-in-out infinite}
 @keyframes dbsShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
-.dbs-composerCard:focus-within{border-color:var(--dsw-alias-state-business-primary,#1a6dff)}
+.dbs-composerCard:focus-within{--dsw-elevation-stroke-color:var(--dsw-alias-border-l2)}
 
-.dbs-settings{padding:4px 0 24px;max-width:640px;font-family:var(--dsw-font-family,inherit)}
-.dbs-setcard{border:1px solid var(--dsw-alias-border-l,rgba(0,0,0,.12));border-radius:12px;padding:14px 16px;margin-top:14px}
-.dbs-setrow{display:flex;align-items:center;gap:8px;font-size:13px;line-height:22px;color:var(--dsw-alias-label-secondary);padding:3px 0}
-.dbs-setrow b{color:var(--dsw-alias-label-primary);font-weight:600;word-break:break-all}
-.dbs-sethead{display:flex;align-items:center;gap:8px;font-size:14px;line-height:22px;color:var(--dsw-alias-label-primary);font-weight:600}
+.dbs-settings{padding:0 0 24px;color:var(--dsw-alias-label-primary);font-family:var(--dsw-font-family,inherit);display:flex;flex-direction:column;gap:12px}
+/* Native section header pattern (ModelsSection): 16px/500 title over a
+ * 14px/22px tertiary intro. */
+.dbs-settingsTitle{font-size:16px;line-height:24px;font-weight:500;color:var(--dsw-alias-label-primary);margin:0}
+.dbs-settingsIntro{font-size:14px;line-height:22px;color:var(--dsw-alias-label-tertiary)}
+/* Tabs follow the native conversation-header tab anatomy: no rail border, a
+ * 13px/500 tertiary label, 36px gaps, and a 2px business underline on the
+ * active tab only. */
+.dbs-settingsTabs{display:flex;align-items:flex-end;gap:36px;overflow-x:auto;scrollbar-width:none}
+.dbs-settingsTabs::-webkit-scrollbar{display:none}
+.dbs-settingsTab{position:relative;flex:none;padding:0 0 9px;border:0;background:none;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:13px;font-weight:500;line-height:16px;cursor:pointer}
+.dbs-settingsTab:hover{color:var(--dsw-alias-label-primary)}
+.dbs-settingsTab[aria-selected="true"]{color:var(--dsw-alias-state-business-primary)}
+.dbs-settingsTab[aria-selected="true"]:after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;border-radius:2px;background:var(--dsw-alias-state-business-primary)}
+.dbs-settingsTab:focus-visible,.dbs-settings :is(button,input,textarea,select):focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}
+.dbs-settingsPanel{display:flex;flex-direction:column;gap:10px;min-width:0;padding-top:2px}
+.dbs-settingsPanel[hidden]{display:none}
+/* Cards mirror the native settings rowCard: .5px l4 border, 16px radius,
+ * 12px 14px padding, 12px gap, no fill. */
+.dbs-setcard{border:.5px solid var(--dsw-alias-border-l4,var(--dsw-alias-border-l2));border-radius:16px;padding:12px 14px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.dbs-setcard .dbs-setcard{background:var(--dsw-alias-bg-layer-1);margin:4px 0}
+.dbs-sethead{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-width:0;font-size:14px;line-height:22px;color:var(--dsw-alias-label-primary);font-weight:500}
+.dbs-sethead .dbs-title{margin:0}
+.dbs-setrow{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:14px;line-height:22px;color:var(--dsw-alias-label-secondary);min-width:0;overflow-wrap:anywhere}
+.dbs-setrow b{color:var(--dsw-alias-label-primary);font-weight:500;word-break:break-word}
+.dbs-setcard>.dbs-setrow+.dbs-setrow{border-top:.5px solid var(--dsw-alias-border-l2);padding-top:9px}
+.dbs-settings .dbs-select{height:32px;margin-left:auto;border-color:var(--dsw-alias-border-l4);border-radius:8px}
+.dbs-settings textarea{box-sizing:border-box}
+@media(max-width:600px){.dbs-settingsTabs{gap:16px}.dbs-setcard{padding:12px}.dbs-settings .dbs-select{width:100%;margin-left:0;min-width:0}}
+
 `
 
       // =========================================================
@@ -556,6 +604,46 @@
       const NS = 'bots'
 
       const zh: Record<string, string> = {
+        'goal.chooseBot': '从侧栏选择一个 Bot，开始对话或创建目标。',
+        'goal.views': '会话视图',
+        'goal.chat': '对话',
+        'goal.title': '目标',
+        'goal.retrySetup': '重试创建',
+        'goal.refresh': '刷新状态',
+        'goal.intro': '把目标和验收标准交给 Bot，关闭页面后仍会按设定间隔推进。',
+        'goal.new': '创建目标',
+        'goal.objective': '希望完成什么？',
+        'goal.criteria': '验收标准（每行一条）',
+        'goal.interval': '推进间隔',
+        'goal.minutes': '每 {n} 分钟',
+        'goal.start': '开始持续推进',
+        'goal.working': '正在保存…',
+        'goal.loading': '正在读取目标…',
+        'goal.pause': '暂停目标',
+        'goal.resume': '恢复推进',
+        'goal.complete': '确认验收通过',
+        'goal.revise': '退回继续改进',
+        'goal.cancel': '结束目标',
+        'goal.cancelConfirm': '确认结束此目标？',
+        'goal.keep': '保留目标',
+        'goal.feedback': '还需要完成什么？',
+        'goal.sendFeedback': '保存并继续推进',
+        'goal.progress': 'Bot 声明已满足 {done}/{total} 条 · 第 {cycle} 轮',
+        'goal.reviewHint': '请核对下方证据与实际产物，再确认验收；Bot 的完成声明尚未经过独立验证。',
+        'goal.checkpoint': '进展与证据（Bot 记录）',
+        'goal.noEvidence': '尚无进展记录。首轮运行后在这里查看证据和下一步。',
+        'goal.history': '运行历史',
+        'goal.next': '下次计划：{time}',
+        'goal.scheduled': '等待下一轮',
+        'goal.running': '正在推进',
+        'goal.paused': '已暂停',
+        'goal.blocked': '需要处理阻塞',
+        'goal.review': '等待验收',
+        'goal.completed': '已验收完成',
+        'goal.cancelled': '已结束',
+        'goal.attention': '需要检查',
+        'goal.runOk': '本轮已结束',
+        'goal.runError': '本轮失败',
         'nav.workspaces': '工作区',
         'nav.bots': 'Bots',
         'nav.bots.aria': 'Bots',
@@ -620,25 +708,30 @@
         'chat.empty.single': '给 {name} 发第一条消息，开始你们的对话',
         'chat.empty.group': '在群里说点什么，成员们会接龙回复',
         'chat.jump': '回到底部',
-        'chat.composing': '生成中',
+        'chat.composing': '深度求索中...',
         'chat.thinking': '思考',
         'action.copy': '复制',
         'action.copied': '已复制',
-        'chat.queuedSend': '排队发送（当前回合结束后送达）',
+        'chat.queuedSend': '排队发送',
+        'duration.seconds': '{seconds}秒',
+        'duration.minutes': '{minutes}分{seconds}秒',
         'chat.placeholder.group': '@名字 可定向，默认全员',
         'chat.placeholder.single': '给 {name} 发消息…',
         'chat.placeholder.busy': '生成中… 发送将排队，当前回合结束后送达',
-        'chat.charCount': '{n} 字',
         'chat.attach': '添加图片',
         'chat.attach.remove': '移除图片',
         'chat.attach.limit': '一次最多 4 张图片',
-        'chat.attach.count': '{n} 张图片',
         'time.today': '今天',
         'time.yesterday': '昨天',
         'time.date': '{m} 月 {d} 日',
         'time.dateFull': '{y} 年 {m} 月 {d} 日',
         'tool.fallbackName': '工具',
         'settings.summary': '多 Bot 工作台，桥接 sdk-bots 编排网关。',
+        'settings.tab.overview': '概览',
+        'settings.tab.models': '模型',
+        'settings.tab.workspace': '工作区',
+        'settings.tab.mcp': 'MCP',
+        'settings.tabs': 'Bots 设置页签',
         'settings.probing': '检测中…',
         'settings.address': '地址：',
         'settings.pid': 'PID：',
@@ -708,6 +801,46 @@
       }
 
       const en: Record<string, string> = {
+        'goal.chooseBot': 'Choose a bot in the sidebar to chat or create a goal.',
+        'goal.views': 'Conversation views',
+        'goal.chat': 'Chat',
+        'goal.title': 'Goals',
+        'goal.retrySetup': 'Retry setup',
+        'goal.refresh': 'Refresh status',
+        'goal.intro': 'Give the bot a goal and acceptance criteria. Scheduled work continues with this page closed.',
+        'goal.new': 'Create goal',
+        'goal.objective': 'What should be accomplished?',
+        'goal.criteria': 'Acceptance criteria (one per line)',
+        'goal.interval': 'Run interval',
+        'goal.minutes': 'Every {n} minutes',
+        'goal.start': 'Start scheduled work',
+        'goal.working': 'Saving…',
+        'goal.loading': 'Loading goals…',
+        'goal.pause': 'Pause goal',
+        'goal.resume': 'Resume goal',
+        'goal.complete': 'Accept result',
+        'goal.revise': 'Request changes',
+        'goal.cancel': 'End goal',
+        'goal.cancelConfirm': 'End this goal?',
+        'goal.keep': 'Keep goal',
+        'goal.feedback': 'What still needs work?',
+        'goal.sendFeedback': 'Save and resume',
+        'goal.progress': 'Bot reports {done}/{total} criteria met · Cycle {cycle}',
+        'goal.reviewHint': 'Check the evidence and actual deliverables before accepting. The bot’s claims have not been independently verified.',
+        'goal.checkpoint': 'Progress and evidence (reported by bot)',
+        'goal.noEvidence': 'No checkpoint yet. Evidence and next steps will appear after a run.',
+        'goal.history': 'Run history',
+        'goal.next': 'Next scheduled run: {time}',
+        'goal.scheduled': 'Scheduled',
+        'goal.running': 'Running',
+        'goal.paused': 'Paused',
+        'goal.blocked': 'Blocked',
+        'goal.review': 'Awaiting review',
+        'goal.completed': 'Accepted',
+        'goal.cancelled': 'Ended',
+        'goal.attention': 'Needs attention',
+        'goal.runOk': 'Run finished',
+        'goal.runError': 'Run failed',
         'nav.workspaces': 'Workspaces',
         'nav.bots': 'Bots',
         'nav.bots.aria': 'Bots',
@@ -772,25 +905,30 @@
         'chat.empty.single': 'Send the first message to {name} and start the conversation.',
         'chat.empty.group': 'Say something in the room — members will pick it up.',
         'chat.jump': 'Jump to latest',
-        'chat.composing': 'Generating',
+        'chat.composing': 'Deep diving...',
         'chat.thinking': 'Thinking',
         'action.copy': 'Copy',
         'action.copied': 'Copied',
-        'chat.queuedSend': 'Queue send (delivered after the current turn)',
+        'chat.queuedSend': 'Queue message',
+        'duration.seconds': '{seconds}s',
+        'duration.minutes': '{minutes}m {seconds}s',
         'chat.placeholder.group': 'Use @name to direct a turn; everyone by default',
         'chat.placeholder.single': 'Message {name}…',
         'chat.placeholder.busy': 'Generating… sends will queue and land after the current turn',
-        'chat.charCount': '{n} chars',
         'chat.attach': 'Add images',
         'chat.attach.remove': 'Remove image',
         'chat.attach.limit': 'Up to 4 images per message',
-        'chat.attach.count': '{n} image(s)',
         'time.today': 'Today',
         'time.yesterday': 'Yesterday',
         'time.date': '{m}/{d}',
         'time.dateFull': '{y}/{m}/{d}',
         'tool.fallbackName': 'Tool',
         'settings.summary': 'Multi-bot workbench, bridged to the sdk-bots orchestration gateway.',
+        'settings.tab.overview': 'Overview',
+        'settings.tab.models': 'Models',
+        'settings.tab.workspace': 'Workspace',
+        'settings.tab.mcp': 'MCP',
+        'settings.tabs': 'Bots settings tabs',
         'settings.probing': 'Probing…',
         'settings.address': 'Address: ',
         'settings.pid': 'PID: ',
@@ -898,6 +1036,7 @@
       let ctx: any = null
       let connectionSvc: any = null
       let slotsSvc: any = null
+      let layoutSvc: any = null
 
       /** Cadence for draining the host's in-memory SSE ring (no gateway hop). */
       const RING_DRAIN_MS = 1000
@@ -1067,6 +1206,7 @@
       }
 
       function openChat(id: string): void {
+        layoutSvc.selectPanel('dsh-bots')
         patch({ chatAgentId: id, unreadCounts: { ...state.unreadCounts, [id]: 0 } })
         // Clear the badge at the source; the gateway owns unread state.
         void botsCall('markRead', { id, atMs: Date.now() }).then(refreshAgents).catch(() => {})
@@ -1302,6 +1442,19 @@
       // Shared row pieces.
       // =========================================================
 
+      // DiceBear Voxel Bot (CC0 1.0), generated once from fixed seeds.
+      // Local data URIs keep avatars available offline and avoid sharing bot IDs with an image host.
+      const BOT_AVATARS = [
+        'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4IiBmaWxsPSJub25lIiBzaGFwZS1yZW5kZXJpbmc9ImF1dG8iIGFyaWEtaGlkZGVuPSJ0cnVlIj48ZGVmcz48ZyBpZD0iY2hlc3Qtc2xvdC1jNjdlZGQ5ZSI+PHBhdGggZD0iTTQ3IDg4LjZoMjV2NUg0N1oiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjM1Ii8+PHBhdGggZD0iTTQ5LjUgOTYuMWg1djVoLTVabTE1IDBoNXY1aC01WiIgZmlsbD0iI2ZmZjNiZiIgZmlsbC1vcGFjaXR5PSIuOCIvPjwvZz48ZyBpZD0iZXllcy1oYXBweS1jNjdlZGQ5ZSI+PHBhdGggZmlsbD0iI2ZmZjNiZiIgZD0iTTEwIDIuNWgxMFY1SDEwek0xMCA1aDIuNXYyLjVIMTB6bTcuNSAwSDIwdjIuNWgtMi41ek00MCAyLjVoMTBWNUg0MHpNNDAgNWgyLjV2Mi41SDQwem03LjUgMEg1MHYyLjVoLTIuNXoiLz48L2c+PGcgaWQ9Im1vdXRoLWdyaWxsLWM2N2VkZDllIj48cGF0aCBmaWxsPSIjZmZmM2JmIiBkPSJNMjIuNSAyLjVIMjV2NWgtMi41em01IDBIMzB2NWgtMi41em01IDBIMzV2NWgtMi41em01IDBINDB2NWgtMi41eiIvPjwvZz48ZyBpZD0iYW5pbWF0aW9uLW5vbmUtYzY3ZWRkOWUiPjwvZz48ZyBpZD0idG9wLWxpZ2h0YmFyLWM2N2VkZDllIj48cGF0aCBkPSJNNDggMjAuOGgzMHY1SDQ4Wm0wIDBoMzBsMi0xLjZINTBabTMwIDAgMi0xLjZ2NWwtMiAxLjZaIiBmaWxsPSIjMmYzYjRjIi8+PHBhdGggZD0iTTQ4IDIwLjhoMzBsMi0xLjZINTBaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im03OCAyMC44IDItMS42djVsLTIgMS42WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNNTAuNSAxOC4zaDV2Mi41aC01Wm0wIDBoNWwyLTEuNmgtNVptNSAwIDItMS42djIuNWwtMiAxLjZaIiBmaWxsPSIjZmZmM2JmIi8+PHBhdGggZD0iTTUwLjUgMTguM2g1bDItMS42aC01WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtNTUuNSAxOC4zIDItMS42djIuNWwtMiAxLjZaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik02MC41IDE4LjNoNXYyLjVoLTVabTAgMGg1bDItMS42aC01Wm01IDAgMi0xLjZ2Mi41bC0yIDEuNloiIGZpbGw9IiNmZmYzYmYiLz48cGF0aCBkPSJNNjAuNSAxOC4zaDVsMi0xLjZoLTVaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im02NS41IDE4LjMgMi0xLjZ2Mi41bC0yIDEuNloiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTcwLjUgMTguM2g1djIuNWgtNVptMCAwaDVsMi0xLjZoLTVabTUgMCAyLTEuNnYyLjVsLTIgMS42WiIgZmlsbD0iI2ZmZjNiZiIvPjxwYXRoIGQ9Ik03MC41IDE4LjNoNWwyLTEuNmgtNVoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTc1LjUgMTguMyAyLTEuNnYyLjVsLTIgMS42WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48L2c+PGNsaXBQYXRoIGlkPSJjbGlwLWM2N2VkZDllIj48cmVjdCB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgcng9IjAiIHJ5PSIwIi8+PC9jbGlwUGF0aD48L2RlZnM+PGcgY2xpcC1wYXRoPSJ1cmwoI2NsaXAtYzY3ZWRkOWUpIj48cmVjdCB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgZmlsbD0iI2ZmZGZiZiIvPjxwYXRoIGQ9Ik0zMyAxMjQuOGg1MGwxMC41LTguNGgtNTBaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4wOCIvPjxwYXRoIGQ9Ik0zNiAxMTkuNGgyMHY1SDM2Wm0wIDBoMjBsOC41LTYuOGgtMjBabTIwIDAgOC41LTYuOHY1bC04LjUgNi44WiIgZmlsbD0iIzJmM2I0YyIvPjxwYXRoIGQ9Ik0zNiAxMTkuNGgyMGw4LjUtNi44aC0yMFoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTU2IDExOS40IDguNS02Ljh2NWwtOC41IDYuOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTYxIDExOS40aDIwdjVINjFabTAgMGgyMGw4LjUtNi44aC0yMFptMjAgMCA4LjUtNi44djVsLTguNSA2LjhaIiBmaWxsPSIjMmYzYjRjIi8+PHBhdGggZD0iTTYxIDExOS40aDIwbDguNS02LjhoLTIwWiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtODEgMTE5LjQgOC41LTYuOHY1bC04LjUgNi44WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNNDQuNSAxMDEuMWgxMHYxNy41aC0xMFptMCAwaDEwbDctNS42aC0xMFptMTAgMCA3LTUuNlYxMTNsLTcgNS42WiIgZmlsbD0iIzJmM2I0YyIvPjxwYXRoIGQ9Ik00NC41IDEwMS4xaDEwbDctNS42aC0xMFoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTU0LjUgMTAxLjEgNy01LjZWMTEzbC03IDUuNloiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTY0LjUgMTAxLjFoMTB2MTcuNWgtMTBabTAgMGgxMGw3LTUuNmgtMTBabTEwIDAgNy01LjZWMTEzbC03IDUuNloiIGZpbGw9IiMyZjNiNGMiLz48cGF0aCBkPSJNNjQuNSAxMDEuMWgxMGw3LTUuNmgtMTBaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im03NC41IDEwMS4xIDctNS42VjExM2wtNyA1LjZaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxnIGNsYXNzPSJ2Yi11cHBlciI+PHBhdGggZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMTYiIGQ9Ik02NC41IDEwNi4xaDEwdjJoLTEweiIvPjxwYXRoIGQ9Ik0zMi41IDEwNS43SDM1djcuNWgtMi41Wm0wIDBIMzVsNi00LjhoLTIuNVptMi41IDAgNi00Ljh2Ny41bC02IDQuOFoiIGZpbGw9IiMyZjNiNGMiLz48cGF0aCBkPSJNMzIuNSAxMDUuN0gzNWw2LTQuOGgtMi41WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtMzUgMTA1LjcgNi00Ljh2Ny41bC02IDQuOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTM3LjUgMTA1LjdINDB2Ny41aC0yLjVabTAgMEg0MGw2LTQuOGgtMi41Wm0yLjUgMCA2LTQuOHY3LjVsLTYgNC44WiIgZmlsbD0iIzJmM2I0YyIvPjxwYXRoIGQ9Ik0zNy41IDEwNS43SDQwbDYtNC44aC0yLjVaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im00MCAxMDUuNyA2LTQuOHY3LjVsLTYgNC44WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4xNiIgZD0iTTM5LjUgMTA2LjFoLjV2MmgtLjV6Ii8+PHBhdGggZD0iTTMyLjUgODUuN0g0MHYyMGgtNy41Wm0wIDBINDBsNi00LjhoLTcuNVoiIGZpbGw9IiM2M2U2YmUiLz48cGF0aCBkPSJNMzIuNSA4NS43SDQwbDYtNC44aC03LjVaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Ik0zMi41IDg1LjdINDB2MjBoLTcuNVoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjA4Ii8+PHBhdGggZD0iTTMyLjUgODUuN0g0MGw2LTQuOGgtNy41WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMiIvPjxwYXRoIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjE2IiBkPSJNNDQuNSAxMDYuMWgxMHYyaC0xMHoiLz48cGF0aCBkPSJNMzkuNSA4My42aDQwdjIyLjVoLTQwWm0wIDBoNDBsNy01LjZoLTQwWm00MCAwIDctNS42djIyLjVsLTcgNS42WiIgZmlsbD0iIzYzZTZiZSIvPjxwYXRoIGQ9Ik0zOS41IDgzLjZoNDBsNy01LjZoLTQwWiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtNzkuNSA4My42IDctNS42djIyLjVsLTcgNS42WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNMzkuNSA4My42aDQwbDctNS42aC00MFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjIiLz48cGF0aCBkPSJNODAgMTA1LjdoMi41djcuNUg4MFptMCAwaDIuNWw2LTQuOEg4NlptMi41IDAgNi00Ljh2Ny41bC02IDQuOFoiIGZpbGw9IiMyZjNiNGMiLz48cGF0aCBkPSJNODAgMTA1LjdoMi41bDYtNC44SDg2WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtODIuNSAxMDUuNyA2LTQuOHY3LjVsLTYgNC44WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNODUgMTA1LjdoMi41djcuNUg4NVptMCAwaDIuNWw2LTQuOEg5MVptMi41IDAgNi00Ljh2Ny41bC02IDQuOFoiIGZpbGw9IiMyZjNiNGMiLz48cGF0aCBkPSJNODUgMTA1LjdoMi41bDYtNC44SDkxWiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtODcuNSAxMDUuNyA2LTQuOHY3LjVsLTYgNC44WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNODAgODUuN2g3LjV2MjBIODBabTAgMGg3LjVsNi00LjhIODZabTcuNSAwIDYtNC44djIwbC02IDQuOFoiIGZpbGw9IiM2M2U2YmUiLz48cGF0aCBkPSJNODAgODUuN2g3LjVsNi00LjhIODZaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im04Ny41IDg1LjcgNi00Ljh2MjBsLTYgNC44WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNODAgODUuN2g3LjV2MjBIODBaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4wOCIvPjxwYXRoIGQ9Ik04MCA4NS43aDcuNWw2LTQuOEg4NloiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjIiLz48dXNlIGhyZWY9IiNjaGVzdC1zbG90LWM2N2VkZDllIi8+PHBhdGggZD0iTTU0LjUgNzEuNmgxNXYxMGgtMTVabTAgMGgxNWw0LTMuMmgtMTVabTE1IDAgNC0zLjJ2MTBsLTQgMy4yWiIgZmlsbD0iIzJmM2I0YyIvPjxwYXRoIGQ9Ik01NC41IDcxLjZoMTVsNC0zLjJoLTE1WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtNjkuNSA3MS42IDQtMy4ydjEwbC00IDMuMloiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PGcgY2xhc3M9InZiLWhlYWQiPjxwYXRoIGQ9Ik0yOCA1MC4zaDIuNXYxMEgyOFptMCAwaDIuNWw0LTMuMkgzMloiIGZpbGw9IiMyZjNiNGMiLz48cGF0aCBkPSJNMjggNTAuM2gyLjVsNC0zLjJIMzJaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Ik0yOSAyOWg2MHY1MEgyOVptMCAwaDYwbDEwLThIMzlabTYwIDAgMTAtOHY1MGwtMTAgOFoiIGZpbGw9IiM2M2U2YmUiLz48cGF0aCBkPSJNMjkgMjloNjBsMTAtOEgzOVoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTg5IDI5IDEwLTh2NTBsLTEwIDhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik0zNi41IDM2LjVoNDVWMzlIODR2MzIuNWgtMi41Vjc0aC00NXYtMi41SDM0VjM5aDIuNVoiIGZpbGw9IiMyMTEwMTYiLz48cGF0aCBkPSJNOTAuNSA1MC4zSDkzdjEwaC0yLjVabTAgMEg5M2w0LTMuMmgtMi41Wm0yLjUgMCA0LTMuMnYxMGwtNCAzLjJaIiBmaWxsPSIjMmYzYjRjIi8+PHBhdGggZD0iTTkwLjUgNTAuM0g5M2w0LTMuMmgtMi41WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtOTMgNTAuMyA0LTMuMnYxMGwtNCAzLjJaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjx1c2UgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMjkgNDQpIiBocmVmPSIjZXllcy1oYXBweS1jNjdlZGQ5ZSIvPjx1c2UgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMjkgNjQpIiBocmVmPSIjbW91dGgtZ3JpbGwtYzY3ZWRkOWUiLz48dXNlIGhyZWY9IiNhbmltYXRpb24tbm9uZS1jNjdlZGQ5ZSIvPjx1c2UgaHJlZj0iI3RvcC1saWdodGJhci1jNjdlZGQ5ZSIvPjwvZz48L2c+PC9nPjwvc3ZnPg==',
+        'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4IiBmaWxsPSJub25lIiBzaGFwZS1yZW5kZXJpbmc9ImF1dG8iIGFyaWEtaGlkZGVuPSJ0cnVlIj48ZGVmcz48ZyBpZD0iY2hlc3Qtc2NyZWVuLWJlNjBjZDk1Ij48cGF0aCBkPSJNNDQuNSA4Ni4xaDMwdjE1aC0zMFoiIGZpbGw9IiMyMTEwMTYiIGZpbGwtb3BhY2l0eT0iMSIvPjxwYXRoIGQ9Ik00NyA5MS4xaDI1djIuNUg0N1oiIGZpbGw9IiNmZjZiNmIiIGZpbGwtb3BhY2l0eT0iLjYiLz48cGF0aCBkPSJNNDcgOTYuMWg1djIuNWgtNVoiIGZpbGw9IiNmZjZiNmIiIGZpbGwtb3BhY2l0eT0iMSIvPjwvZz48ZyBpZD0iZXllcy1wbHVzLWJlNjBjZDk1Ij48cGF0aCBmaWxsPSIjZmY2YjZiIiBkPSJNMTIuNSAyLjVIMTVWMTBoLTIuNXoiLz48cGF0aCBmaWxsPSIjZmY2YjZiIiBkPSJNMTAgNWg3LjV2Mi41SDEwem0zMi41LTIuNUg0NVYxMGgtMi41eiIvPjxwYXRoIGZpbGw9IiNmZjZiNmIiIGQ9Ik00MCA1aDcuNXYyLjVINDB6Ii8+PC9nPjxnIGlkPSJtb3V0aC16aWd6YWctYmU2MGNkOTUiPjxwYXRoIGZpbGw9IiNmZjZiNmIiIGQ9Ik0yMCAyLjVoMi41VjVIMjB6TTIyLjUgNUgyNXYyLjVoLTIuNXpNMjUgMi41aDIuNVY1SDI1ek0yNy41IDVIMzB2Mi41aC0yLjV6TTMwIDIuNWgyLjVWNUgzMHpNMzIuNSA1SDM1djIuNWgtMi41ek0zNSAyLjVoMi41VjVIMzV6TTM3LjUgNUg0MHYyLjVoLTIuNXoiLz48L2c+PGcgaWQ9ImFuaW1hdGlvbi1ub25lLWJlNjBjZDk1Ij48L2c+PGcgaWQ9InRvcC1zdHVkcy1iZTYwY2Q5NSI+PHBhdGggZD0iTTM1LjUgMTguM0g0M3Y3LjVoLTcuNVptMCAwSDQzbDItMS42aC03LjVabTcuNSAwIDItMS42djcuNWwtMiAxLjZaIiBmaWxsPSIjNWY2YjdhIi8+PHBhdGggZD0iTTM1LjUgMTguM0g0M2wyLTEuNmgtNy41WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtNDMgMTguMyAyLTEuNnY3LjVsLTIgMS42WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNODMgMTguM2g3LjV2Ny41SDgzWm0wIDBoNy41bDItMS42SDg1Wm03LjUgMCAyLTEuNnY3LjVsLTIgMS42WiIgZmlsbD0iIzVmNmI3YSIvPjxwYXRoIGQ9Ik04MyAxOC4zaDcuNWwyLTEuNkg4NVoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTkwLjUgMTguMyAyLTEuNnY3LjVsLTIgMS42WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48L2c+PGNsaXBQYXRoIGlkPSJjbGlwLWJlNjBjZDk1Ij48cmVjdCB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgcng9IjAiIHJ5PSIwIi8+PC9jbGlwUGF0aD48L2RlZnM+PGcgY2xpcC1wYXRoPSJ1cmwoI2NsaXAtYmU2MGNkOTUpIj48cmVjdCB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgZmlsbD0iI2I2ZTNmNCIvPjxwYXRoIGQ9Ik0zMyAxMjQuOGg1MGwxMC41LTguNGgtNTBaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4wOCIvPjxwYXRoIGQ9Ik0zNiAxMTkuNGgyMHY1SDM2Wm0wIDBoMjBsOC41LTYuOGgtMjBabTIwIDAgOC41LTYuOHY1bC04LjUgNi44WiIgZmlsbD0iIzVmNmI3YSIvPjxwYXRoIGQ9Ik0zNiAxMTkuNGgyMGw4LjUtNi44aC0yMFoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTU2IDExOS40IDguNS02Ljh2NWwtOC41IDYuOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTYxIDExOS40aDIwdjVINjFabTAgMGgyMGw4LjUtNi44aC0yMFptMjAgMCA4LjUtNi44djVsLTguNSA2LjhaIiBmaWxsPSIjNWY2YjdhIi8+PHBhdGggZD0iTTYxIDExOS40aDIwbDguNS02LjhoLTIwWiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtODEgMTE5LjQgOC41LTYuOHY1bC04LjUgNi44WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNNDQuNSAxMDEuMWgxMHYxNy41aC0xMFptMCAwaDEwbDctNS42aC0xMFptMTAgMCA3LTUuNlYxMTNsLTcgNS42WiIgZmlsbD0iIzVmNmI3YSIvPjxwYXRoIGQ9Ik00NC41IDEwMS4xaDEwbDctNS42aC0xMFoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTU0LjUgMTAxLjEgNy01LjZWMTEzbC03IDUuNloiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTY0LjUgMTAxLjFoMTB2MTcuNWgtMTBabTAgMGgxMGw3LTUuNmgtMTBabTEwIDAgNy01LjZWMTEzbC03IDUuNloiIGZpbGw9IiM1ZjZiN2EiLz48cGF0aCBkPSJNNjQuNSAxMDEuMWgxMGw3LTUuNmgtMTBaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im03NC41IDEwMS4xIDctNS42VjExM2wtNyA1LjZaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxnIGNsYXNzPSJ2Yi11cHBlciI+PHBhdGggZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMTYiIGQ9Ik02NC41IDEwNi4xaDEwdjJoLTEweiIvPjxwYXRoIGQ9Ik0zMi41IDEwNS43SDM1djcuNWgtMi41Wm0wIDBIMzVsNi00LjhoLTIuNVptMi41IDAgNi00Ljh2Ny41bC02IDQuOFoiIGZpbGw9IiM1ZjZiN2EiLz48cGF0aCBkPSJNMzIuNSAxMDUuN0gzNWw2LTQuOGgtMi41WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtMzUgMTA1LjcgNi00Ljh2Ny41bC02IDQuOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTM3LjUgMTA1LjdINDB2Ny41aC0yLjVabTAgMEg0MGw2LTQuOGgtMi41Wm0yLjUgMCA2LTQuOHY3LjVsLTYgNC44WiIgZmlsbD0iIzVmNmI3YSIvPjxwYXRoIGQ9Ik0zNy41IDEwNS43SDQwbDYtNC44aC0yLjVaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im00MCAxMDUuNyA2LTQuOHY3LjVsLTYgNC44WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4xNiIgZD0iTTM5LjUgMTA2LjFoLjV2MmgtLjV6Ii8+PHBhdGggZD0iTTMyLjUgODUuN0g0MHYyMGgtNy41Wm0wIDBINDBsNi00LjhoLTcuNVoiIGZpbGw9IiNlOWVjZWYiLz48cGF0aCBkPSJNMzIuNSA4NS43SDQwbDYtNC44aC03LjVaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Ik0zMi41IDg1LjdINDB2MjBoLTcuNVoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjA4Ii8+PHBhdGggZD0iTTMyLjUgODUuN0g0MGw2LTQuOGgtNy41WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMiIvPjxwYXRoIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjE2IiBkPSJNNDQuNSAxMDYuMWgxMHYyaC0xMHoiLz48cGF0aCBkPSJNMzkuNSA4My42aDQwdjIyLjVoLTQwWm0wIDBoNDBsNy01LjZoLTQwWm00MCAwIDctNS42djIyLjVsLTcgNS42WiIgZmlsbD0iI2U5ZWNlZiIvPjxwYXRoIGQ9Ik0zOS41IDgzLjZoNDBsNy01LjZoLTQwWiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtNzkuNSA4My42IDctNS42djIyLjVsLTcgNS42WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNMzkuNSA4My42aDQwbDctNS42aC00MFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjIiLz48cGF0aCBkPSJNODAgMTA1LjdoMi41djcuNUg4MFptMCAwaDIuNWw2LTQuOEg4NlptMi41IDAgNi00Ljh2Ny41bC02IDQuOFoiIGZpbGw9IiM1ZjZiN2EiLz48cGF0aCBkPSJNODAgMTA1LjdoMi41bDYtNC44SDg2WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtODIuNSAxMDUuNyA2LTQuOHY3LjVsLTYgNC44WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNODUgMTA1LjdoMi41djcuNUg4NVptMCAwaDIuNWw2LTQuOEg5MVptMi41IDAgNi00Ljh2Ny41bC02IDQuOFoiIGZpbGw9IiM1ZjZiN2EiLz48cGF0aCBkPSJNODUgMTA1LjdoMi41bDYtNC44SDkxWiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtODcuNSAxMDUuNyA2LTQuOHY3LjVsLTYgNC44WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNODAgODUuN2g3LjV2MjBIODBabTAgMGg3LjVsNi00LjhIODZabTcuNSAwIDYtNC44djIwbC02IDQuOFoiIGZpbGw9IiNlOWVjZWYiLz48cGF0aCBkPSJNODAgODUuN2g3LjVsNi00LjhIODZaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im04Ny41IDg1LjcgNi00Ljh2MjBsLTYgNC44WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNODAgODUuN2g3LjV2MjBIODBaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4wOCIvPjxwYXRoIGQ9Ik04MCA4NS43aDcuNWw2LTQuOEg4NloiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjIiLz48dXNlIGhyZWY9IiNjaGVzdC1zY3JlZW4tYmU2MGNkOTUiLz48cGF0aCBkPSJNNTQuNSA3MS42aDE1djEwaC0xNVptMCAwaDE1bDQtMy4yaC0xNVptMTUgMCA0LTMuMnYxMGwtNCAzLjJaIiBmaWxsPSIjNWY2YjdhIi8+PHBhdGggZD0iTTU0LjUgNzEuNmgxNWw0LTMuMmgtMTVaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im02OS41IDcxLjYgNC0zLjJ2MTBsLTQgMy4yWiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48ZyBjbGFzcz0idmItaGVhZCI+PHBhdGggZD0iTTI4IDUwLjNoMi41djEwSDI4Wm0wIDBoMi41bDQtMy4ySDMyWiIgZmlsbD0iIzVmNmI3YSIvPjxwYXRoIGQ9Ik0yOCA1MC4zaDIuNWw0LTMuMkgzMloiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0iTTI5IDI5aDYwdjUwSDI5Wm0wIDBoNjBsMTAtOEgzOVptNjAgMCAxMC04djUwbC0xMCA4WiIgZmlsbD0iI2U5ZWNlZiIvPjxwYXRoIGQ9Ik0yOSAyOWg2MGwxMC04SDM5WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtODkgMjkgMTAtOHY1MGwtMTAgOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTM2LjUgMzYuNWg0NVYzOUg4NHYzMi41aC0yLjVWNzRoLTQ1di0yLjVIMzRWMzloMi41WiIgZmlsbD0iIzIxMTAxNiIvPjxwYXRoIGQ9Ik05MC41IDUwLjNIOTN2MTBoLTIuNVptMCAwSDkzbDQtMy4yaC0yLjVabTIuNSAwIDQtMy4ydjEwbC00IDMuMloiIGZpbGw9IiM1ZjZiN2EiLz48cGF0aCBkPSJNOTAuNSA1MC4zSDkzbDQtMy4yaC0yLjVaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im05MyA1MC4zIDQtMy4ydjEwbC00IDMuMloiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHVzZSB0cmFuc2Zvcm09InRyYW5zbGF0ZSgyOSA0NCkiIGhyZWY9IiNleWVzLXBsdXMtYmU2MGNkOTUiLz48dXNlIHRyYW5zZm9ybT0idHJhbnNsYXRlKDI5IDY0KSIgaHJlZj0iI21vdXRoLXppZ3phZy1iZTYwY2Q5NSIvPjx1c2UgaHJlZj0iI2FuaW1hdGlvbi1ub25lLWJlNjBjZDk1Ii8+PHVzZSBocmVmPSIjdG9wLXN0dWRzLWJlNjBjZDk1Ii8+PC9nPjwvZz48L2c+PC9zdmc+',
+        'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4IiBmaWxsPSJub25lIiBzaGFwZS1yZW5kZXJpbmc9ImF1dG8iIGFyaWEtaGlkZGVuPSJ0cnVlIj48ZGVmcz48ZyBpZD0iY2hlc3QtZGlhbC03NDIzMzA3NyI+PHBhdGggZD0iTTUyIDg2LjFoMTV2MTVINTJaIiBmaWxsPSIjMTAxYzE3IiBmaWxsLW9wYWNpdHk9IjEiLz48cGF0aCBkPSJNNTcgOTEuMWg1djVoLTVaIiBmaWxsPSIjZmY2YjZiIiBmaWxsLW9wYWNpdHk9IjEiLz48cGF0aCBkPSJNNjIgODguNmgyLjV2Mi41SDYyWiIgZmlsbD0iI2ZmNmI2YiIgZmlsbC1vcGFjaXR5PSIuNyIvPjwvZz48ZyBpZD0iZXllcy1yb3VuZC03NDIzMzA3NyI+PHBhdGggZD0iTTEyLjUgMi41aDVWNUgyMHY1aC0yLjV2Mi41aC01VjEwSDEwVjVoMi41WiIgZmlsbD0iI2ZmNmI2YiIvPjxwYXRoIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjkyIiBkPSJNMTIuNSA1aDV2NWgtNXoiLz48cGF0aCBkPSJNNDIuNSAyLjVoNVY1SDUwdjVoLTIuNXYyLjVoLTVWMTBINDBWNWgyLjVaIiBmaWxsPSIjZmY2YjZiIi8+PHBhdGggZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuOTIiIGQ9Ik00Mi41IDVoNXY1aC01eiIvPjwvZz48ZyBpZD0ibW91dGgtZ3JpbGwtNzQyMzMwNzciPjxwYXRoIGZpbGw9IiNmZjZiNmIiIGQ9Ik0yMi41IDIuNUgyNXY1aC0yLjV6bTUgMEgzMHY1aC0yLjV6bTUgMEgzNXY1aC0yLjV6bTUgMEg0MHY1aC0yLjV6Ii8+PC9nPjxnIGlkPSJhbmltYXRpb24tbm9uZS03NDIzMzA3NyI+PC9nPjxnIGlkPSJ0b3Atc2lyZW4tNzQyMzMwNzciPjxwYXRoIGQ9Ik01Mi41IDIzLjdoMjB2Mi41aC0yMFptMCAwaDIwbDMtMi40aC0yMFptMjAgMCAzLTIuNHYyLjVsLTMgMi40WiIgZmlsbD0iIzI0M2I1MyIvPjxwYXRoIGQ9Ik01Mi41IDIzLjdoMjBsMy0yLjRoLTIwWiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtNzIuNSAyMy43IDMtMi40djIuNWwtMyAyLjRaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik01NS41IDE1LjhoMTV2Ny41aC0xNVptMCAwaDE1bDItMS42aC0xNVptMTUgMCAyLTEuNnY3LjVsLTIgMS42WiIgZmlsbD0iI2ZmNmI2YiIvPjxwYXRoIGQ9Ik01NS41IDE1LjhoMTVsMi0xLjZoLTE1WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtNzAuNSAxNS44IDItMS42djcuNWwtMiAxLjZaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjwvZz48Y2xpcFBhdGggaWQ9ImNsaXAtNzQyMzMwNzciPjxyZWN0IHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiByeD0iMCIgcnk9IjAiLz48L2NsaXBQYXRoPjwvZGVmcz48ZyBjbGlwLXBhdGg9InVybCgjY2xpcC03NDIzMzA3NykiPjxyZWN0IHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiBmaWxsPSIjYjZlM2Y0Ii8+PHBhdGggZD0iTTMzIDEyNC44aDUwbDEwLjUtOC40aC01MFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjA4Ii8+PHBhdGggZD0iTTM2IDExOS40aDIwdjVIMzZabTAgMGgyMGw4LjUtNi44aC0yMFptMjAgMCA4LjUtNi44djVsLTguNSA2LjhaIiBmaWxsPSIjMjQzYjUzIi8+PHBhdGggZD0iTTM2IDExOS40aDIwbDguNS02LjhoLTIwWiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtNTYgMTE5LjQgOC41LTYuOHY1bC04LjUgNi44WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNNjEgMTE5LjRoMjB2NUg2MVptMCAwaDIwbDguNS02LjhoLTIwWm0yMCAwIDguNS02Ljh2NWwtOC41IDYuOFoiIGZpbGw9IiMyNDNiNTMiLz48cGF0aCBkPSJNNjEgMTE5LjRoMjBsOC41LTYuOGgtMjBaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im04MSAxMTkuNCA4LjUtNi44djVsLTguNSA2LjhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik00NC41IDEwMS4xaDEwdjE3LjVoLTEwWm0wIDBoMTBsNy01LjZoLTEwWm0xMCAwIDctNS42VjExM2wtNyA1LjZaIiBmaWxsPSIjMjQzYjUzIi8+PHBhdGggZD0iTTQ0LjUgMTAxLjFoMTBsNy01LjZoLTEwWiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtNTQuNSAxMDEuMSA3LTUuNlYxMTNsLTcgNS42WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNNjQuNSAxMDEuMWgxMHYxNy41aC0xMFptMCAwaDEwbDctNS42aC0xMFptMTAgMCA3LTUuNlYxMTNsLTcgNS42WiIgZmlsbD0iIzI0M2I1MyIvPjxwYXRoIGQ9Ik02NC41IDEwMS4xaDEwbDctNS42aC0xMFoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTc0LjUgMTAxLjEgNy01LjZWMTEzbC03IDUuNloiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PGcgY2xhc3M9InZiLXVwcGVyIj48cGF0aCBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4xNiIgZD0iTTY0LjUgMTA2LjFoMTB2MmgtMTB6Ii8+PHBhdGggZD0iTTMyLjUgMTA1LjdIMzV2Ny41aC0yLjVabTAgMEgzNWw2LTQuOGgtMi41Wm0yLjUgMCA2LTQuOHY3LjVsLTYgNC44WiIgZmlsbD0iIzI0M2I1MyIvPjxwYXRoIGQ9Ik0zMi41IDEwNS43SDM1bDYtNC44aC0yLjVaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im0zNSAxMDUuNyA2LTQuOHY3LjVsLTYgNC44WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNMzcuNSAxMDUuN0g0MHY3LjVoLTIuNVptMCAwSDQwbDYtNC44aC0yLjVabTIuNSAwIDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjMjQzYjUzIi8+PHBhdGggZD0iTTM3LjUgMTA1LjdINDBsNi00LjhoLTIuNVoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTQwIDEwNS43IDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjE2IiBkPSJNMzkuNSAxMDYuMWguNXYyaC0uNXoiLz48cGF0aCBkPSJNMzIuNSA4NS43SDQwdjIwaC03LjVabTAgMEg0MGw2LTQuOGgtNy41WiIgZmlsbD0iIzc0YzBmYyIvPjxwYXRoIGQ9Ik0zMi41IDg1LjdINDBsNi00LjhoLTcuNVoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0iTTMyLjUgODUuN0g0MHYyMGgtNy41WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMDgiLz48cGF0aCBkPSJNMzIuNSA4NS43SDQwbDYtNC44aC03LjVaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yIi8+PHBhdGggZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMTYiIGQ9Ik00NC41IDEwNi4xaDEwdjJoLTEweiIvPjxwYXRoIGQ9Ik0zOS41IDgzLjZoNDB2MjIuNWgtNDBabTAgMGg0MGw3LTUuNmgtNDBabTQwIDAgNy01LjZ2MjIuNWwtNyA1LjZaIiBmaWxsPSIjNzRjMGZjIi8+PHBhdGggZD0iTTM5LjUgODMuNmg0MGw3LTUuNmgtNDBaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im03OS41IDgzLjYgNy01LjZ2MjIuNWwtNyA1LjZaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik0zOS41IDgzLjZoNDBsNy01LjZoLTQwWiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMiIvPjxwYXRoIGQ9Ik04MCAxMDUuN2gyLjV2Ny41SDgwWm0wIDBoMi41bDYtNC44SDg2Wm0yLjUgMCA2LTQuOHY3LjVsLTYgNC44WiIgZmlsbD0iIzI0M2I1MyIvPjxwYXRoIGQ9Ik04MCAxMDUuN2gyLjVsNi00LjhIODZaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im04Mi41IDEwNS43IDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik04NSAxMDUuN2gyLjV2Ny41SDg1Wm0wIDBoMi41bDYtNC44SDkxWm0yLjUgMCA2LTQuOHY3LjVsLTYgNC44WiIgZmlsbD0iIzI0M2I1MyIvPjxwYXRoIGQ9Ik04NSAxMDUuN2gyLjVsNi00LjhIOTFaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im04Ny41IDEwNS43IDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik04MCA4NS43aDcuNXYyMEg4MFptMCAwaDcuNWw2LTQuOEg4NlptNy41IDAgNi00Ljh2MjBsLTYgNC44WiIgZmlsbD0iIzc0YzBmYyIvPjxwYXRoIGQ9Ik04MCA4NS43aDcuNWw2LTQuOEg4NloiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTg3LjUgODUuNyA2LTQuOHYyMGwtNiA0LjhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik04MCA4NS43aDcuNXYyMEg4MFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjA4Ii8+PHBhdGggZD0iTTgwIDg1LjdoNy41bDYtNC44SDg2WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMiIvPjx1c2UgaHJlZj0iI2NoZXN0LWRpYWwtNzQyMzMwNzciLz48cGF0aCBkPSJNNTQuNSA3MS42aDE1djEwaC0xNVptMCAwaDE1bDQtMy4yaC0xNVptMTUgMCA0LTMuMnYxMGwtNCAzLjJaIiBmaWxsPSIjMjQzYjUzIi8+PHBhdGggZD0iTTU0LjUgNzEuNmgxNWw0LTMuMmgtMTVaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im02OS41IDcxLjYgNC0zLjJ2MTBsLTQgMy4yWiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48ZyBjbGFzcz0idmItaGVhZCI+PHBhdGggZD0iTTI4IDUwLjNoMi41djEwSDI4Wm0wIDBoMi41bDQtMy4ySDMyWiIgZmlsbD0iIzI0M2I1MyIvPjxwYXRoIGQ9Ik0yOCA1MC4zaDIuNWw0LTMuMkgzMloiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0iTTI5IDI5aDYwdjUwSDI5Wm0wIDBoNjBsMTAtOEgzOVptNjAgMCAxMC04djUwbC0xMCA4WiIgZmlsbD0iIzc0YzBmYyIvPjxwYXRoIGQ9Ik0yOSAyOWg2MGwxMC04SDM5WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtODkgMjkgMTAtOHY1MGwtMTAgOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTM2LjUgMzYuNWg0NVYzOUg4NHYzMi41aC0yLjVWNzRoLTQ1di0yLjVIMzRWMzloMi41WiIgZmlsbD0iIzEwMWMxNyIvPjxwYXRoIGQ9Ik05MC41IDUwLjNIOTN2MTBoLTIuNVptMCAwSDkzbDQtMy4yaC0yLjVabTIuNSAwIDQtMy4ydjEwbC00IDMuMloiIGZpbGw9IiMyNDNiNTMiLz48cGF0aCBkPSJNOTAuNSA1MC4zSDkzbDQtMy4yaC0yLjVaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im05MyA1MC4zIDQtMy4ydjEwbC00IDMuMloiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHVzZSB0cmFuc2Zvcm09InRyYW5zbGF0ZSgyOSA0NCkiIGhyZWY9IiNleWVzLXJvdW5kLTc0MjMzMDc3Ii8+PHVzZSB0cmFuc2Zvcm09InRyYW5zbGF0ZSgyOSA2NCkiIGhyZWY9IiNtb3V0aC1ncmlsbC03NDIzMzA3NyIvPjx1c2UgaHJlZj0iI2FuaW1hdGlvbi1ub25lLTc0MjMzMDc3Ii8+PHVzZSBocmVmPSIjdG9wLXNpcmVuLTc0MjMzMDc3Ii8+PC9nPjwvZz48L2c+PC9zdmc+',
+        'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4IiBmaWxsPSJub25lIiBzaGFwZS1yZW5kZXJpbmc9ImF1dG8iIGFyaWEtaGlkZGVuPSJ0cnVlIj48ZGVmcz48ZyBpZD0iY2hlc3QtaGVhcnQtZWI5MTFkYWEiPjxwYXRoIGQ9Ik01MiA4OC42aDV2NWgtNVptMTAgMGg1djVoLTVabS0xMi41IDVoMjB2NWgtMjBabTIuNSA1aDE1djIuNUg1MlptNSAyLjVoNXYyLjVoLTVaIiBmaWxsPSIjZmY2YjZiIiBmaWxsLW9wYWNpdHk9Ii45Ii8+PC9nPjxnIGlkPSJleWVzLXBsdXMtZWI5MTFkYWEiPjxwYXRoIGZpbGw9IiNmZjZiNmIiIGQ9Ik0xMi41IDIuNUgxNVYxMGgtMi41eiIvPjxwYXRoIGZpbGw9IiNmZjZiNmIiIGQ9Ik0xMCA1aDcuNXYyLjVIMTB6bTMyLjUtMi41SDQ1VjEwaC0yLjV6Ii8+PHBhdGggZmlsbD0iI2ZmNmI2YiIgZD0iTTQwIDVoNy41djIuNUg0MHoiLz48L2c+PGcgaWQ9Im1vdXRoLXNtaWxlLWViOTExZGFhIj48cGF0aCBmaWxsPSIjZmY2YjZiIiBkPSJNMjAgMGgyLjV2Mi41SDIwem0yLjUgMi41aDE1VjVoLTE1em0xNS0yLjVINDB2Mi41aC0yLjV6Ii8+PC9nPjxnIGlkPSJhbmltYXRpb24tbm9uZS1lYjkxMWRhYSI+PC9nPjxnIGlkPSJ0b3AtZmluLWViOTExZGFhIj48cGF0aCBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4xNiIgZD0iTTUzLjUgMjkuNGgxMHYyaC0xMHoiLz48cGF0aCBkPSJNNTMuNSAxNi45aDEwdjEyLjVoLTEwWm0wIDBoMTBMNzQgOC41SDY0Wm0xMCAwTDc0IDguNVYyMWwtMTAuNSA4LjRaIiBmaWxsPSIjNDk1MDU3Ii8+PHBhdGggZD0iTTUzLjUgMTYuOWgxMEw3NCA4LjVINjRaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Ik02My41IDE2LjkgNzQgOC41VjIxbC0xMC41IDguNFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PC9nPjxjbGlwUGF0aCBpZD0iY2xpcC1lYjkxMWRhYSI+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIwIiByeT0iMCIvPjwvY2xpcFBhdGg+PC9kZWZzPjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwLWViOTExZGFhKSI+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIGZpbGw9IiNjMGFlZGUiLz48cGF0aCBkPSJNMzMgMTI0LjhoNTBsMTAuNS04LjRoLTUwWiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMDgiLz48cGF0aCBkPSJNMzYgMTE5LjRoMjB2NUgzNlptMCAwaDIwbDguNS02LjhoLTIwWm0yMCAwIDguNS02Ljh2NWwtOC41IDYuOFoiIGZpbGw9IiM0OTUwNTciLz48cGF0aCBkPSJNMzYgMTE5LjRoMjBsOC41LTYuOGgtMjBaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im01NiAxMTkuNCA4LjUtNi44djVsLTguNSA2LjhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik02MSAxMTkuNGgyMHY1SDYxWm0wIDBoMjBsOC41LTYuOGgtMjBabTIwIDAgOC41LTYuOHY1bC04LjUgNi44WiIgZmlsbD0iIzQ5NTA1NyIvPjxwYXRoIGQ9Ik02MSAxMTkuNGgyMGw4LjUtNi44aC0yMFoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTgxIDExOS40IDguNS02Ljh2NWwtOC41IDYuOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTQ0LjUgMTAxLjFoMTB2MTcuNWgtMTBabTAgMGgxMGw3LTUuNmgtMTBabTEwIDAgNy01LjZWMTEzbC03IDUuNloiIGZpbGw9IiM0OTUwNTciLz48cGF0aCBkPSJNNDQuNSAxMDEuMWgxMGw3LTUuNmgtMTBaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im01NC41IDEwMS4xIDctNS42VjExM2wtNyA1LjZaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik02NC41IDEwMS4xaDEwdjE3LjVoLTEwWm0wIDBoMTBsNy01LjZoLTEwWm0xMCAwIDctNS42VjExM2wtNyA1LjZaIiBmaWxsPSIjNDk1MDU3Ii8+PHBhdGggZD0iTTY0LjUgMTAxLjFoMTBsNy01LjZoLTEwWiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtNzQuNSAxMDEuMSA3LTUuNlYxMTNsLTcgNS42WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48ZyBjbGFzcz0idmItdXBwZXIiPjxwYXRoIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjE2IiBkPSJNNjQuNSAxMDYuMWgxMHYyaC0xMHoiLz48cGF0aCBkPSJNMzIuNSAxMDUuN0gzNXY3LjVoLTIuNVptMCAwSDM1bDYtNC44aC0yLjVabTIuNSAwIDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjNDk1MDU3Ii8+PHBhdGggZD0iTTMyLjUgMTA1LjdIMzVsNi00LjhoLTIuNVoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTM1IDEwNS43IDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik0zNy41IDEwNS43SDQwdjcuNWgtMi41Wm0wIDBINDBsNi00LjhoLTIuNVptMi41IDAgNi00Ljh2Ny41bC02IDQuOFoiIGZpbGw9IiM0OTUwNTciLz48cGF0aCBkPSJNMzcuNSAxMDUuN0g0MGw2LTQuOGgtMi41WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtNDAgMTA1LjcgNi00Ljh2Ny41bC02IDQuOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMTYiIGQ9Ik0zOS41IDEwNi4xaC41djJoLS41eiIvPjxwYXRoIGQ9Ik0zMi41IDg1LjdINDB2MjBoLTcuNVptMCAwSDQwbDYtNC44aC03LjVaIiBmaWxsPSIjNjlkYjdjIi8+PHBhdGggZD0iTTMyLjUgODUuN0g0MGw2LTQuOGgtNy41WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJNMzIuNSA4NS43SDQwdjIwaC03LjVaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4wOCIvPjxwYXRoIGQ9Ik0zMi41IDg1LjdINDBsNi00LjhoLTcuNVoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjIiLz48cGF0aCBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4xNiIgZD0iTTQ0LjUgMTA2LjFoMTB2MmgtMTB6Ii8+PHBhdGggZD0iTTM5LjUgODMuNmg0MHYyMi41aC00MFptMCAwaDQwbDctNS42aC00MFptNDAgMCA3LTUuNnYyMi41bC03IDUuNloiIGZpbGw9IiM2OWRiN2MiLz48cGF0aCBkPSJNMzkuNSA4My42aDQwbDctNS42aC00MFoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTc5LjUgODMuNiA3LTUuNnYyMi41bC03IDUuNloiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTM5LjUgODMuNmg0MGw3LTUuNmgtNDBaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yIi8+PHBhdGggZD0iTTgwIDEwNS43aDIuNXY3LjVIODBabTAgMGgyLjVsNi00LjhIODZabTIuNSAwIDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjNDk1MDU3Ii8+PHBhdGggZD0iTTgwIDEwNS43aDIuNWw2LTQuOEg4NloiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTgyLjUgMTA1LjcgNi00Ljh2Ny41bC02IDQuOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTg1IDEwNS43aDIuNXY3LjVIODVabTAgMGgyLjVsNi00LjhIOTFabTIuNSAwIDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjNDk1MDU3Ii8+PHBhdGggZD0iTTg1IDEwNS43aDIuNWw2LTQuOEg5MVoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTg3LjUgMTA1LjcgNi00Ljh2Ny41bC02IDQuOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTgwIDg1LjdoNy41djIwSDgwWm0wIDBoNy41bDYtNC44SDg2Wm03LjUgMCA2LTQuOHYyMGwtNiA0LjhaIiBmaWxsPSIjNjlkYjdjIi8+PHBhdGggZD0iTTgwIDg1LjdoNy41bDYtNC44SDg2WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtODcuNSA4NS43IDYtNC44djIwbC02IDQuOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTgwIDg1LjdoNy41djIwSDgwWiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMDgiLz48cGF0aCBkPSJNODAgODUuN2g3LjVsNi00LjhIODZaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yIi8+PHVzZSBocmVmPSIjY2hlc3QtaGVhcnQtZWI5MTFkYWEiLz48cGF0aCBkPSJNNTQuNSA3MS42aDE1djEwaC0xNVptMCAwaDE1bDQtMy4yaC0xNVptMTUgMCA0LTMuMnYxMGwtNCAzLjJaIiBmaWxsPSIjNDk1MDU3Ii8+PHBhdGggZD0iTTU0LjUgNzEuNmgxNWw0LTMuMmgtMTVaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im02OS41IDcxLjYgNC0zLjJ2MTBsLTQgMy4yWiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48ZyBjbGFzcz0idmItaGVhZCI+PHBhdGggZD0iTTI4IDUwLjNoMi41djEwSDI4Wm0wIDBoMi41bDQtMy4ySDMyWiIgZmlsbD0iIzQ5NTA1NyIvPjxwYXRoIGQ9Ik0yOCA1MC4zaDIuNWw0LTMuMkgzMloiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0iTTI5IDI5aDYwdjUwSDI5Wm0wIDBoNjBsMTAtOEgzOVptNjAgMCAxMC04djUwbC0xMCA4WiIgZmlsbD0iIzY5ZGI3YyIvPjxwYXRoIGQ9Ik0yOSAyOWg2MGwxMC04SDM5WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtODkgMjkgMTAtOHY1MGwtMTAgOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTM2LjUgMzYuNWg0NVYzOUg4NHYzMi41aC0yLjVWNzRoLTQ1di0yLjVIMzRWMzloMi41WiIgZmlsbD0iIzFhMTQzMCIvPjxwYXRoIGQ9Ik05MC41IDUwLjNIOTN2MTBoLTIuNVptMCAwSDkzbDQtMy4yaC0yLjVabTIuNSAwIDQtMy4ydjEwbC00IDMuMloiIGZpbGw9IiM0OTUwNTciLz48cGF0aCBkPSJNOTAuNSA1MC4zSDkzbDQtMy4yaC0yLjVaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im05MyA1MC4zIDQtMy4ydjEwbC00IDMuMloiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHVzZSB0cmFuc2Zvcm09InRyYW5zbGF0ZSgyOSA0NCkiIGhyZWY9IiNleWVzLXBsdXMtZWI5MTFkYWEiLz48dXNlIHRyYW5zZm9ybT0idHJhbnNsYXRlKDI5IDY0KSIgaHJlZj0iI21vdXRoLXNtaWxlLWViOTExZGFhIi8+PHVzZSBocmVmPSIjYW5pbWF0aW9uLW5vbmUtZWI5MTFkYWEiLz48dXNlIGhyZWY9IiN0b3AtZmluLWViOTExZGFhIi8+PC9nPjwvZz48L2c+PC9zdmc+',
+        'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4IiBmaWxsPSJub25lIiBzaGFwZS1yZW5kZXJpbmc9ImF1dG8iIGFyaWEtaGlkZGVuPSJ0cnVlIj48ZGVmcz48ZyBpZD0iY2hlc3QtaGVhcnQtYTRmMDY3YjgiPjxwYXRoIGQ9Ik01MiA4OC42aDV2NWgtNVptMTAgMGg1djVoLTVabS0xMi41IDVoMjB2NWgtMjBabTIuNSA1aDE1djIuNUg1MlptNSAyLjVoNXYyLjVoLTVaIiBmaWxsPSIjZTU5OWY3IiBmaWxsLW9wYWNpdHk9Ii45Ii8+PC9nPjxnIGlkPSJleWVzLXZpc29yLWE0ZjA2N2I4Ij48cGF0aCBkPSJNMTAgMi41aDQwVjVoMi41djVINTB2Mi41SDEwVjEwSDcuNVY1SDEwWiIgZmlsbD0iI2U1OTlmNyIgZmlsbC1vcGFjaXR5PSIuMzUiLz48cGF0aCBmaWxsPSIjZTU5OWY3IiBkPSJNMTIuNSA1aDV2NWgtNXptMzAgMGg1djVoLTV6Ii8+PC9nPjxnIGlkPSJtb3V0aC1ncmlsbC1hNGYwNjdiOCI+PHBhdGggZmlsbD0iI2U1OTlmNyIgZD0iTTIyLjUgMi41SDI1djVoLTIuNXptNSAwSDMwdjVoLTIuNXptNSAwSDM1djVoLTIuNXptNSAwSDQwdjVoLTIuNXoiLz48L2c+PGcgaWQ9ImFuaW1hdGlvbi1ub25lLWE0ZjA2N2I4Ij48L2c+PGcgaWQ9InRvcC1kaXNoLWE0ZjA2N2I4Ij48cGF0aCBkPSJNNjEgMjAuNGg1djVoLTVabTAgMGg1bDEtLjhoLTVabTUgMCAxLS44djVsLTEgLjhaIiBmaWxsPSIjN2E0YTJkIi8+PHBhdGggZD0iTTYxIDIwLjRoNWwxLS44aC01WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtNjYgMjAuNCAxLS44djVsLTEgLjhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik00Ny41IDE2LjJoMzB2NWgtMzBabTAgMGgzMGwzLTIuNGgtMzBabTMwIDAgMy0yLjR2NWwtMyAyLjRaIiBmaWxsPSIjN2E0YTJkIi8+PHBhdGggZD0iTTQ3LjUgMTYuMmgzMGwzLTIuNGgtMzBaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im03Ny41IDE2LjIgMy0yLjR2NWwtMyAyLjRaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik02MC41IDEzLjNoNXYyLjVoLTVabTAgMGg1bDItMS42aC01Wm01IDAgMi0xLjZ2Mi41bC0yIDEuNloiIGZpbGw9IiNlNTk5ZjciLz48cGF0aCBkPSJNNjAuNSAxMy4zaDVsMi0xLjZoLTVaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im02NS41IDEzLjMgMi0xLjZ2Mi41bC0yIDEuNloiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PC9nPjxjbGlwUGF0aCBpZD0iY2xpcC1hNGYwNjdiOCI+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIwIiByeT0iMCIvPjwvY2xpcFBhdGg+PC9kZWZzPjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwLWE0ZjA2N2I4KSI+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIGZpbGw9IiNmZmQ1ZGMiLz48cGF0aCBkPSJNMzMgMTI0LjhoNTBsMTAuNS04LjRoLTUwWiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMDgiLz48cGF0aCBkPSJNMzYgMTE5LjRoMjB2NUgzNlptMCAwaDIwbDguNS02LjhoLTIwWm0yMCAwIDguNS02Ljh2NWwtOC41IDYuOFoiIGZpbGw9IiM3YTRhMmQiLz48cGF0aCBkPSJNMzYgMTE5LjRoMjBsOC41LTYuOGgtMjBaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im01NiAxMTkuNCA4LjUtNi44djVsLTguNSA2LjhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik02MSAxMTkuNGgyMHY1SDYxWm0wIDBoMjBsOC41LTYuOGgtMjBabTIwIDAgOC41LTYuOHY1bC04LjUgNi44WiIgZmlsbD0iIzdhNGEyZCIvPjxwYXRoIGQ9Ik02MSAxMTkuNGgyMGw4LjUtNi44aC0yMFoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTgxIDExOS40IDguNS02Ljh2NWwtOC41IDYuOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTQ0LjUgMTAxLjFoMTB2MTcuNWgtMTBabTAgMGgxMGw3LTUuNmgtMTBabTEwIDAgNy01LjZWMTEzbC03IDUuNloiIGZpbGw9IiM3YTRhMmQiLz48cGF0aCBkPSJNNDQuNSAxMDEuMWgxMGw3LTUuNmgtMTBaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im01NC41IDEwMS4xIDctNS42VjExM2wtNyA1LjZaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik02NC41IDEwMS4xaDEwdjE3LjVoLTEwWm0wIDBoMTBsNy01LjZoLTEwWm0xMCAwIDctNS42VjExM2wtNyA1LjZaIiBmaWxsPSIjN2E0YTJkIi8+PHBhdGggZD0iTTY0LjUgMTAxLjFoMTBsNy01LjZoLTEwWiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtNzQuNSAxMDEuMSA3LTUuNlYxMTNsLTcgNS42WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48ZyBjbGFzcz0idmItdXBwZXIiPjxwYXRoIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjE2IiBkPSJNNjQuNSAxMDYuMWgxMHYyaC0xMHoiLz48cGF0aCBkPSJNMzIuNSAxMDUuN0gzNXY3LjVoLTIuNVptMCAwSDM1bDYtNC44aC0yLjVabTIuNSAwIDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjN2E0YTJkIi8+PHBhdGggZD0iTTMyLjUgMTA1LjdIMzVsNi00LjhoLTIuNVoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTM1IDEwNS43IDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik0zNy41IDEwNS43SDQwdjcuNWgtMi41Wm0wIDBINDBsNi00LjhoLTIuNVptMi41IDAgNi00Ljh2Ny41bC02IDQuOFoiIGZpbGw9IiM3YTRhMmQiLz48cGF0aCBkPSJNMzcuNSAxMDUuN0g0MGw2LTQuOGgtMi41WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtNDAgMTA1LjcgNi00Ljh2Ny41bC02IDQuOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMTYiIGQ9Ik0zOS41IDEwNi4xaC41djJoLS41eiIvPjxwYXRoIGQ9Ik0zMi41IDg1LjdINDB2MjBoLTcuNVptMCAwSDQwbDYtNC44aC03LjVaIiBmaWxsPSIjZmZkNDNiIi8+PHBhdGggZD0iTTMyLjUgODUuN0g0MGw2LTQuOGgtNy41WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJNMzIuNSA4NS43SDQwdjIwaC03LjVaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4wOCIvPjxwYXRoIGQ9Ik0zMi41IDg1LjdINDBsNi00LjhoLTcuNVoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjIiLz48cGF0aCBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4xNiIgZD0iTTQ0LjUgMTA2LjFoMTB2MmgtMTB6Ii8+PHBhdGggZD0iTTM5LjUgODMuNmg0MHYyMi41aC00MFptMCAwaDQwbDctNS42aC00MFptNDAgMCA3LTUuNnYyMi41bC03IDUuNloiIGZpbGw9IiNmZmQ0M2IiLz48cGF0aCBkPSJNMzkuNSA4My42aDQwbDctNS42aC00MFoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTc5LjUgODMuNiA3LTUuNnYyMi41bC03IDUuNloiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTM5LjUgODMuNmg0MGw3LTUuNmgtNDBaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yIi8+PHBhdGggZD0iTTgwIDEwNS43aDIuNXY3LjVIODBabTAgMGgyLjVsNi00LjhIODZabTIuNSAwIDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjN2E0YTJkIi8+PHBhdGggZD0iTTgwIDEwNS43aDIuNWw2LTQuOEg4NloiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTgyLjUgMTA1LjcgNi00Ljh2Ny41bC02IDQuOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTg1IDEwNS43aDIuNXY3LjVIODVabTAgMGgyLjVsNi00LjhIOTFabTIuNSAwIDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjN2E0YTJkIi8+PHBhdGggZD0iTTg1IDEwNS43aDIuNWw2LTQuOEg5MVoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTg3LjUgMTA1LjcgNi00Ljh2Ny41bC02IDQuOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTgwIDg1LjdoNy41djIwSDgwWm0wIDBoNy41bDYtNC44SDg2Wm03LjUgMCA2LTQuOHYyMGwtNiA0LjhaIiBmaWxsPSIjZmZkNDNiIi8+PHBhdGggZD0iTTgwIDg1LjdoNy41bDYtNC44SDg2WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtODcuNSA4NS43IDYtNC44djIwbC02IDQuOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTgwIDg1LjdoNy41djIwSDgwWiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMDgiLz48cGF0aCBkPSJNODAgODUuN2g3LjVsNi00LjhIODZaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yIi8+PHVzZSBocmVmPSIjY2hlc3QtaGVhcnQtYTRmMDY3YjgiLz48cGF0aCBkPSJNNTQuNSA3MS42aDE1djEwaC0xNVptMCAwaDE1bDQtMy4yaC0xNVptMTUgMCA0LTMuMnYxMGwtNCAzLjJaIiBmaWxsPSIjN2E0YTJkIi8+PHBhdGggZD0iTTU0LjUgNzEuNmgxNWw0LTMuMmgtMTVaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im02OS41IDcxLjYgNC0zLjJ2MTBsLTQgMy4yWiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48ZyBjbGFzcz0idmItaGVhZCI+PHBhdGggZD0iTTI4IDUwLjNoMi41djEwSDI4Wm0wIDBoMi41bDQtMy4ySDMyWiIgZmlsbD0iIzdhNGEyZCIvPjxwYXRoIGQ9Ik0yOCA1MC4zaDIuNWw0LTMuMkgzMloiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0iTTI5IDI5aDYwdjUwSDI5Wm0wIDBoNjBsMTAtOEgzOVptNjAgMCAxMC04djUwbC0xMCA4WiIgZmlsbD0iI2ZmZDQzYiIvPjxwYXRoIGQ9Ik0yOSAyOWg2MGwxMC04SDM5WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtODkgMjkgMTAtOHY1MGwtMTAgOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTM2LjUgMzYuNWg0NVYzOUg4NHYzMi41aC0yLjVWNzRoLTQ1di0yLjVIMzRWMzloMi41WiIgZmlsbD0iIzIxMTAxNiIvPjxwYXRoIGQ9Ik05MC41IDUwLjNIOTN2MTBoLTIuNVptMCAwSDkzbDQtMy4yaC0yLjVabTIuNSAwIDQtMy4ydjEwbC00IDMuMloiIGZpbGw9IiM3YTRhMmQiLz48cGF0aCBkPSJNOTAuNSA1MC4zSDkzbDQtMy4yaC0yLjVaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im05MyA1MC4zIDQtMy4ydjEwbC00IDMuMloiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHVzZSB0cmFuc2Zvcm09InRyYW5zbGF0ZSgyOSA0NCkiIGhyZWY9IiNleWVzLXZpc29yLWE0ZjA2N2I4Ii8+PHVzZSB0cmFuc2Zvcm09InRyYW5zbGF0ZSgyOSA2NCkiIGhyZWY9IiNtb3V0aC1ncmlsbC1hNGYwNjdiOCIvPjx1c2UgaHJlZj0iI2FuaW1hdGlvbi1ub25lLWE0ZjA2N2I4Ii8+PHVzZSBocmVmPSIjdG9wLWRpc2gtYTRmMDY3YjgiLz48L2c+PC9nPjwvZz48L3N2Zz4=',
+        'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4IiBmaWxsPSJub25lIiBzaGFwZS1yZW5kZXJpbmc9ImF1dG8iIGFyaWEtaGlkZGVuPSJ0cnVlIj48ZGVmcz48ZyBpZD0iY2hlc3QtdmVudHMtOGE0N2Y5MDUiPjxwYXRoIGQ9Ik00NyA4OC42aDI1djIuNUg0N1ptMCA1aDI1djIuNUg0N1ptMCA1aDI1djIuNUg0N1oiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjMiLz48L2c+PGcgaWQ9ImV5ZXMtc2xlZXB5LThhNDdmOTA1Ij48cGF0aCBmaWxsPSIjZmY2YjZiIiBkPSJNMTAgNy41aDEwdjVIMTB6bTMwIDBoMTB2NUg0MHoiLz48L2c+PGcgaWQ9Im1vdXRoLWdyaWxsLThhNDdmOTA1Ij48cGF0aCBmaWxsPSIjZmY2YjZiIiBkPSJNMjIuNSAyLjVIMjV2NWgtMi41em01IDBIMzB2NWgtMi41em01IDBIMzV2NWgtMi41em01IDBINDB2NWgtMi41eiIvPjwvZz48ZyBpZD0iYW5pbWF0aW9uLW5vbmUtOGE0N2Y5MDUiPjwvZz48ZyBpZD0idG9wLXN0dWRzLThhNDdmOTA1Ij48cGF0aCBkPSJNMzUuNSAxOC4zSDQzdjcuNWgtNy41Wm0wIDBINDNsMi0xLjZoLTcuNVptNy41IDAgMi0xLjZ2Ny41bC0yIDEuNloiIGZpbGw9IiMyNDNiNTMiLz48cGF0aCBkPSJNMzUuNSAxOC4zSDQzbDItMS42aC03LjVaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im00MyAxOC4zIDItMS42djcuNWwtMiAxLjZaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik04MyAxOC4zaDcuNXY3LjVIODNabTAgMGg3LjVsMi0xLjZIODVabTcuNSAwIDItMS42djcuNWwtMiAxLjZaIiBmaWxsPSIjMjQzYjUzIi8+PHBhdGggZD0iTTgzIDE4LjNoNy41bDItMS42SDg1WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtOTAuNSAxOC4zIDItMS42djcuNWwtMiAxLjZaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjwvZz48Y2xpcFBhdGggaWQ9ImNsaXAtOGE0N2Y5MDUiPjxyZWN0IHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiByeD0iMCIgcnk9IjAiLz48L2NsaXBQYXRoPjwvZGVmcz48ZyBjbGlwLXBhdGg9InVybCgjY2xpcC04YTQ3ZjkwNSkiPjxyZWN0IHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiBmaWxsPSIjZmZkZmJmIi8+PHBhdGggZD0iTTMzIDEyNC44aDUwbDEwLjUtOC40aC01MFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjA4Ii8+PHBhdGggZD0iTTM2IDExOS40aDIwdjVIMzZabTAgMGgyMGw4LjUtNi44aC0yMFptMjAgMCA4LjUtNi44djVsLTguNSA2LjhaIiBmaWxsPSIjMjQzYjUzIi8+PHBhdGggZD0iTTM2IDExOS40aDIwbDguNS02LjhoLTIwWiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtNTYgMTE5LjQgOC41LTYuOHY1bC04LjUgNi44WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNNjEgMTE5LjRoMjB2NUg2MVptMCAwaDIwbDguNS02LjhoLTIwWm0yMCAwIDguNS02Ljh2NWwtOC41IDYuOFoiIGZpbGw9IiMyNDNiNTMiLz48cGF0aCBkPSJNNjEgMTE5LjRoMjBsOC41LTYuOGgtMjBaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im04MSAxMTkuNCA4LjUtNi44djVsLTguNSA2LjhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik00NC41IDEwMS4xaDEwdjE3LjVoLTEwWm0wIDBoMTBsNy01LjZoLTEwWm0xMCAwIDctNS42VjExM2wtNyA1LjZaIiBmaWxsPSIjMjQzYjUzIi8+PHBhdGggZD0iTTQ0LjUgMTAxLjFoMTBsNy01LjZoLTEwWiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtNTQuNSAxMDEuMSA3LTUuNlYxMTNsLTcgNS42WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNNjQuNSAxMDEuMWgxMHYxNy41aC0xMFptMCAwaDEwbDctNS42aC0xMFptMTAgMCA3LTUuNlYxMTNsLTcgNS42WiIgZmlsbD0iIzI0M2I1MyIvPjxwYXRoIGQ9Ik02NC41IDEwMS4xaDEwbDctNS42aC0xMFoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTc0LjUgMTAxLjEgNy01LjZWMTEzbC03IDUuNloiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PGcgY2xhc3M9InZiLXVwcGVyIj48cGF0aCBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4xNiIgZD0iTTY0LjUgMTA2LjFoMTB2MmgtMTB6Ii8+PHBhdGggZD0iTTMyLjUgMTA1LjdIMzV2Ny41aC0yLjVabTAgMEgzNWw2LTQuOGgtMi41Wm0yLjUgMCA2LTQuOHY3LjVsLTYgNC44WiIgZmlsbD0iIzI0M2I1MyIvPjxwYXRoIGQ9Ik0zMi41IDEwNS43SDM1bDYtNC44aC0yLjVaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im0zNSAxMDUuNyA2LTQuOHY3LjVsLTYgNC44WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNMzcuNSAxMDUuN0g0MHY3LjVoLTIuNVptMCAwSDQwbDYtNC44aC0yLjVabTIuNSAwIDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjMjQzYjUzIi8+PHBhdGggZD0iTTM3LjUgMTA1LjdINDBsNi00LjhoLTIuNVoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTQwIDEwNS43IDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjE2IiBkPSJNMzkuNSAxMDYuMWguNXYyaC0uNXoiLz48cGF0aCBkPSJNMzIuNSA4NS43SDQwdjIwaC03LjVabTAgMEg0MGw2LTQuOGgtNy41WiIgZmlsbD0iI2ZmZDQzYiIvPjxwYXRoIGQ9Ik0zMi41IDg1LjdINDBsNi00LjhoLTcuNVoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0iTTMyLjUgODUuN0g0MHYyMGgtNy41WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMDgiLz48cGF0aCBkPSJNMzIuNSA4NS43SDQwbDYtNC44aC03LjVaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yIi8+PHBhdGggZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMTYiIGQ9Ik00NC41IDEwNi4xaDEwdjJoLTEweiIvPjxwYXRoIGQ9Ik0zOS41IDgzLjZoNDB2MjIuNWgtNDBabTAgMGg0MGw3LTUuNmgtNDBabTQwIDAgNy01LjZ2MjIuNWwtNyA1LjZaIiBmaWxsPSIjZmZkNDNiIi8+PHBhdGggZD0iTTM5LjUgODMuNmg0MGw3LTUuNmgtNDBaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im03OS41IDgzLjYgNy01LjZ2MjIuNWwtNyA1LjZaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik0zOS41IDgzLjZoNDBsNy01LjZoLTQwWiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMiIvPjxwYXRoIGQ9Ik04MCAxMDUuN2gyLjV2Ny41SDgwWm0wIDBoMi41bDYtNC44SDg2Wm0yLjUgMCA2LTQuOHY3LjVsLTYgNC44WiIgZmlsbD0iIzI0M2I1MyIvPjxwYXRoIGQ9Ik04MCAxMDUuN2gyLjVsNi00LjhIODZaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im04Mi41IDEwNS43IDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik04NSAxMDUuN2gyLjV2Ny41SDg1Wm0wIDBoMi41bDYtNC44SDkxWm0yLjUgMCA2LTQuOHY3LjVsLTYgNC44WiIgZmlsbD0iIzI0M2I1MyIvPjxwYXRoIGQ9Ik04NSAxMDUuN2gyLjVsNi00LjhIOTFaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im04Ny41IDEwNS43IDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik04MCA4NS43aDcuNXYyMEg4MFptMCAwaDcuNWw2LTQuOEg4NlptNy41IDAgNi00Ljh2MjBsLTYgNC44WiIgZmlsbD0iI2ZmZDQzYiIvPjxwYXRoIGQ9Ik04MCA4NS43aDcuNWw2LTQuOEg4NloiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTg3LjUgODUuNyA2LTQuOHYyMGwtNiA0LjhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik04MCA4NS43aDcuNXYyMEg4MFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjA4Ii8+PHBhdGggZD0iTTgwIDg1LjdoNy41bDYtNC44SDg2WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMiIvPjx1c2UgaHJlZj0iI2NoZXN0LXZlbnRzLThhNDdmOTA1Ii8+PHBhdGggZD0iTTU0LjUgNzEuNmgxNXYxMGgtMTVabTAgMGgxNWw0LTMuMmgtMTVabTE1IDAgNC0zLjJ2MTBsLTQgMy4yWiIgZmlsbD0iIzI0M2I1MyIvPjxwYXRoIGQ9Ik01NC41IDcxLjZoMTVsNC0zLjJoLTE1WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtNjkuNSA3MS42IDQtMy4ydjEwbC00IDMuMloiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PGcgY2xhc3M9InZiLWhlYWQiPjxwYXRoIGQ9Ik0yOCA1MC4zaDIuNXYxMEgyOFptMCAwaDIuNWw0LTMuMkgzMloiIGZpbGw9IiMyNDNiNTMiLz48cGF0aCBkPSJNMjggNTAuM2gyLjVsNC0zLjJIMzJaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Ik0yOSAyOWg2MHY1MEgyOVptMCAwaDYwbDEwLThIMzlabTYwIDAgMTAtOHY1MGwtMTAgOFoiIGZpbGw9IiNmZmQ0M2IiLz48cGF0aCBkPSJNMjkgMjloNjBsMTAtOEgzOVoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTg5IDI5IDEwLTh2NTBsLTEwIDhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik0zNi41IDM2LjVoNDVWMzlIODR2MzIuNWgtMi41Vjc0aC00NXYtMi41SDM0VjM5aDIuNVoiIGZpbGw9IiMxMDFjMTciLz48cGF0aCBkPSJNOTAuNSA1MC4zSDkzdjEwaC0yLjVabTAgMEg5M2w0LTMuMmgtMi41Wm0yLjUgMCA0LTMuMnYxMGwtNCAzLjJaIiBmaWxsPSIjMjQzYjUzIi8+PHBhdGggZD0iTTkwLjUgNTAuM0g5M2w0LTMuMmgtMi41WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtOTMgNTAuMyA0LTMuMnYxMGwtNCAzLjJaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjx1c2UgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMjkgNDQpIiBocmVmPSIjZXllcy1zbGVlcHktOGE0N2Y5MDUiLz48dXNlIHRyYW5zZm9ybT0idHJhbnNsYXRlKDI5IDY0KSIgaHJlZj0iI21vdXRoLWdyaWxsLThhNDdmOTA1Ii8+PHVzZSBocmVmPSIjYW5pbWF0aW9uLW5vbmUtOGE0N2Y5MDUiLz48dXNlIGhyZWY9IiN0b3Atc3R1ZHMtOGE0N2Y5MDUiLz48L2c+PC9nPjwvZz48L3N2Zz4=',
+        'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4IiBmaWxsPSJub25lIiBzaGFwZS1yZW5kZXJpbmc9ImF1dG8iIGFyaWEtaGlkZGVuPSJ0cnVlIj48ZGVmcz48ZyBpZD0iY2hlc3Qtc2xvdC1mNjMyNThhMSI+PHBhdGggZD0iTTQ3IDg4LjZoMjV2NUg0N1oiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjM1Ii8+PHBhdGggZD0iTTQ5LjUgOTYuMWg1djVoLTVabTE1IDBoNXY1aC01WiIgZmlsbD0iI2ZmZjNiZiIgZmlsbC1vcGFjaXR5PSIuOCIvPjwvZz48ZyBpZD0iZXllcy12aXNvci1mNjMyNThhMSI+PHBhdGggZD0iTTEwIDIuNWg0MFY1aDIuNXY1SDUwdjIuNUgxMFYxMEg3LjVWNUgxMFoiIGZpbGw9IiNmZmYzYmYiIGZpbGwtb3BhY2l0eT0iLjM1Ii8+PHBhdGggZmlsbD0iI2ZmZjNiZiIgZD0iTTEyLjUgNWg1djVoLTV6bTMwIDBoNXY1aC01eiIvPjwvZz48ZyBpZD0ibW91dGgtc21pbGUtZjYzMjU4YTEiPjxwYXRoIGZpbGw9IiNmZmYzYmYiIGQ9Ik0yMCAwaDIuNXYyLjVIMjB6bTIuNSAyLjVoMTVWNWgtMTV6bTE1LTIuNUg0MHYyLjVoLTIuNXoiLz48L2c+PGcgaWQ9ImFuaW1hdGlvbi1ub25lLWY2MzI1OGExIj48L2c+PGcgaWQ9InRvcC10d2luLWY2MzI1OGExIj48cGF0aCBkPSJNNDYgMTUuNGg1djEwaC01Wm0wIDBoNWwxLS44aC01Wm01IDAgMS0uOHYxMGwtMSAuOFoiIGZpbGw9IiM1ZjZiN2EiLz48cGF0aCBkPSJNNDYgMTUuNGg1bDEtLjhoLTVaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im01MSAxNS40IDEtLjh2MTBsLTEgLjhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik00MyAxMC44aDEwdjVINDNabTAgMGgxMGwyLTEuNkg0NVptMTAgMCAyLTEuNnY1bC0yIDEuNloiIGZpbGw9IiNmZmYzYmYiLz48cGF0aCBkPSJNNDMgMTAuOGgxMGwyLTEuNkg0NVoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTUzIDEwLjggMi0xLjZ2NWwtMiAxLjZaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik03NiAxNS40aDV2MTBoLTVabTAgMGg1bDEtLjhoLTVabTUgMCAxLS44djEwbC0xIC44WiIgZmlsbD0iIzVmNmI3YSIvPjxwYXRoIGQ9Ik03NiAxNS40aDVsMS0uOGgtNVoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTgxIDE1LjQgMS0uOHYxMGwtMSAuOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTczIDEwLjhoMTB2NUg3M1ptMCAwaDEwbDItMS42SDc1Wm0xMCAwIDItMS42djVsLTIgMS42WiIgZmlsbD0iI2ZmZjNiZiIvPjxwYXRoIGQ9Ik03MyAxMC44aDEwbDItMS42SDc1WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtODMgMTAuOCAyLTEuNnY1bC0yIDEuNloiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PC9nPjxjbGlwUGF0aCBpZD0iY2xpcC1mNjMyNThhMSI+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIwIiByeT0iMCIvPjwvY2xpcFBhdGg+PC9kZWZzPjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwLWY2MzI1OGExKSI+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIGZpbGw9IiNmZmRmYmYiLz48cGF0aCBkPSJNMzMgMTI0LjhoNTBsMTAuNS04LjRoLTUwWiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMDgiLz48cGF0aCBkPSJNMzYgMTE5LjRoMjB2NUgzNlptMCAwaDIwbDguNS02LjhoLTIwWm0yMCAwIDguNS02Ljh2NWwtOC41IDYuOFoiIGZpbGw9IiM1ZjZiN2EiLz48cGF0aCBkPSJNMzYgMTE5LjRoMjBsOC41LTYuOGgtMjBaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im01NiAxMTkuNCA4LjUtNi44djVsLTguNSA2LjhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik02MSAxMTkuNGgyMHY1SDYxWm0wIDBoMjBsOC41LTYuOGgtMjBabTIwIDAgOC41LTYuOHY1bC04LjUgNi44WiIgZmlsbD0iIzVmNmI3YSIvPjxwYXRoIGQ9Ik02MSAxMTkuNGgyMGw4LjUtNi44aC0yMFoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTgxIDExOS40IDguNS02Ljh2NWwtOC41IDYuOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTQ0LjUgMTAxLjFoMTB2MTcuNWgtMTBabTAgMGgxMGw3LTUuNmgtMTBabTEwIDAgNy01LjZWMTEzbC03IDUuNloiIGZpbGw9IiM1ZjZiN2EiLz48cGF0aCBkPSJNNDQuNSAxMDEuMWgxMGw3LTUuNmgtMTBaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im01NC41IDEwMS4xIDctNS42VjExM2wtNyA1LjZaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik02NC41IDEwMS4xaDEwdjE3LjVoLTEwWm0wIDBoMTBsNy01LjZoLTEwWm0xMCAwIDctNS42VjExM2wtNyA1LjZaIiBmaWxsPSIjNWY2YjdhIi8+PHBhdGggZD0iTTY0LjUgMTAxLjFoMTBsNy01LjZoLTEwWiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtNzQuNSAxMDEuMSA3LTUuNlYxMTNsLTcgNS42WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48ZyBjbGFzcz0idmItdXBwZXIiPjxwYXRoIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjE2IiBkPSJNNjQuNSAxMDYuMWgxMHYyaC0xMHoiLz48cGF0aCBkPSJNMzIuNSAxMDUuN0gzNXY3LjVoLTIuNVptMCAwSDM1bDYtNC44aC0yLjVabTIuNSAwIDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjNWY2YjdhIi8+PHBhdGggZD0iTTMyLjUgMTA1LjdIMzVsNi00LjhoLTIuNVoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTM1IDEwNS43IDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik0zNy41IDEwNS43SDQwdjcuNWgtMi41Wm0wIDBINDBsNi00LjhoLTIuNVptMi41IDAgNi00Ljh2Ny41bC02IDQuOFoiIGZpbGw9IiM1ZjZiN2EiLz48cGF0aCBkPSJNMzcuNSAxMDUuN0g0MGw2LTQuOGgtMi41WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtNDAgMTA1LjcgNi00Ljh2Ny41bC02IDQuOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMTYiIGQ9Ik0zOS41IDEwNi4xaC41djJoLS41eiIvPjxwYXRoIGQ9Ik0zMi41IDg1LjdINDB2MjBoLTcuNVptMCAwSDQwbDYtNC44aC03LjVaIiBmaWxsPSIjNjlkYjdjIi8+PHBhdGggZD0iTTMyLjUgODUuN0g0MGw2LTQuOGgtNy41WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJNMzIuNSA4NS43SDQwdjIwaC03LjVaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4wOCIvPjxwYXRoIGQ9Ik0zMi41IDg1LjdINDBsNi00LjhoLTcuNVoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjIiLz48cGF0aCBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4xNiIgZD0iTTQ0LjUgMTA2LjFoMTB2MmgtMTB6Ii8+PHBhdGggZD0iTTM5LjUgODMuNmg0MHYyMi41aC00MFptMCAwaDQwbDctNS42aC00MFptNDAgMCA3LTUuNnYyMi41bC03IDUuNloiIGZpbGw9IiM2OWRiN2MiLz48cGF0aCBkPSJNMzkuNSA4My42aDQwbDctNS42aC00MFoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTc5LjUgODMuNiA3LTUuNnYyMi41bC03IDUuNloiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTM5LjUgODMuNmg0MGw3LTUuNmgtNDBaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yIi8+PHBhdGggZD0iTTgwIDEwNS43aDIuNXY3LjVIODBabTAgMGgyLjVsNi00LjhIODZabTIuNSAwIDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjNWY2YjdhIi8+PHBhdGggZD0iTTgwIDEwNS43aDIuNWw2LTQuOEg4NloiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTgyLjUgMTA1LjcgNi00Ljh2Ny41bC02IDQuOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTg1IDEwNS43aDIuNXY3LjVIODVabTAgMGgyLjVsNi00LjhIOTFabTIuNSAwIDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjNWY2YjdhIi8+PHBhdGggZD0iTTg1IDEwNS43aDIuNWw2LTQuOEg5MVoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTg3LjUgMTA1LjcgNi00Ljh2Ny41bC02IDQuOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTgwIDg1LjdoNy41djIwSDgwWm0wIDBoNy41bDYtNC44SDg2Wm03LjUgMCA2LTQuOHYyMGwtNiA0LjhaIiBmaWxsPSIjNjlkYjdjIi8+PHBhdGggZD0iTTgwIDg1LjdoNy41bDYtNC44SDg2WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtODcuNSA4NS43IDYtNC44djIwbC02IDQuOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTgwIDg1LjdoNy41djIwSDgwWiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMDgiLz48cGF0aCBkPSJNODAgODUuN2g3LjVsNi00LjhIODZaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yIi8+PHVzZSBocmVmPSIjY2hlc3Qtc2xvdC1mNjMyNThhMSIvPjxwYXRoIGQ9Ik01NC41IDcxLjZoMTV2MTBoLTE1Wm0wIDBoMTVsNC0zLjJoLTE1Wm0xNSAwIDQtMy4ydjEwbC00IDMuMloiIGZpbGw9IiM1ZjZiN2EiLz48cGF0aCBkPSJNNTQuNSA3MS42aDE1bDQtMy4yaC0xNVoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTY5LjUgNzEuNiA0LTMuMnYxMGwtNCAzLjJaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxnIGNsYXNzPSJ2Yi1oZWFkIj48cGF0aCBkPSJNMjggNTAuM2gyLjV2MTBIMjhabTAgMGgyLjVsNC0zLjJIMzJaIiBmaWxsPSIjNWY2YjdhIi8+PHBhdGggZD0iTTI4IDUwLjNoMi41bDQtMy4ySDMyWiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJNMjkgMjloNjB2NTBIMjlabTAgMGg2MGwxMC04SDM5Wm02MCAwIDEwLTh2NTBsLTEwIDhaIiBmaWxsPSIjNjlkYjdjIi8+PHBhdGggZD0iTTI5IDI5aDYwbDEwLThIMzlaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im04OSAyOSAxMC04djUwbC0xMCA4WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNMzYuNSAzNi41aDQ1VjM5SDg0djMyLjVoLTIuNVY3NGgtNDV2LTIuNUgzNFYzOWgyLjVaIiBmaWxsPSIjMjExMDE2Ii8+PHBhdGggZD0iTTkwLjUgNTAuM0g5M3YxMGgtMi41Wm0wIDBIOTNsNC0zLjJoLTIuNVptMi41IDAgNC0zLjJ2MTBsLTQgMy4yWiIgZmlsbD0iIzVmNmI3YSIvPjxwYXRoIGQ9Ik05MC41IDUwLjNIOTNsNC0zLjJoLTIuNVoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTkzIDUwLjMgNC0zLjJ2MTBsLTQgMy4yWiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48dXNlIHRyYW5zZm9ybT0idHJhbnNsYXRlKDI5IDQ0KSIgaHJlZj0iI2V5ZXMtdmlzb3ItZjYzMjU4YTEiLz48dXNlIHRyYW5zZm9ybT0idHJhbnNsYXRlKDI5IDY0KSIgaHJlZj0iI21vdXRoLXNtaWxlLWY2MzI1OGExIi8+PHVzZSBocmVmPSIjYW5pbWF0aW9uLW5vbmUtZjYzMjU4YTEiLz48dXNlIGhyZWY9IiN0b3AtdHdpbi1mNjMyNThhMSIvPjwvZz48L2c+PC9nPjwvc3ZnPg==',
+        'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4IiBmaWxsPSJub25lIiBzaGFwZS1yZW5kZXJpbmc9ImF1dG8iIGFyaWEtaGlkZGVuPSJ0cnVlIj48ZGVmcz48ZyBpZD0iY2hlc3QtYnV0dG9ucy02YjRkODU1NSI+PHBhdGggZD0iTTQ0LjUgODguNkg2MnYxMEg0NC41WiIgZmlsbD0iIzE2MWEyMSIgZmlsbC1vcGFjaXR5PSIxIi8+PHBhdGggZD0iTTY3IDg4LjZoNXY1aC01WiIgZmlsbD0iI2ZmZjNiZiIgZmlsbC1vcGFjaXR5PSIxIi8+PHBhdGggZD0iTTY3IDk2LjFoNXY1aC01WiIgZmlsbD0iI2ZmNmI2YiIgZmlsbC1vcGFjaXR5PSIxIi8+PC9nPjxnIGlkPSJleWVzLXBsdXMtNmI0ZDg1NTUiPjxwYXRoIGZpbGw9IiNmZmYzYmYiIGQ9Ik0xMi41IDIuNUgxNVYxMGgtMi41eiIvPjxwYXRoIGZpbGw9IiNmZmYzYmYiIGQ9Ik0xMCA1aDcuNXYyLjVIMTB6bTMyLjUtMi41SDQ1VjEwaC0yLjV6Ii8+PHBhdGggZmlsbD0iI2ZmZjNiZiIgZD0iTTQwIDVoNy41djIuNUg0MHoiLz48L2c+PGcgaWQ9Im1vdXRoLXNtaWxlLTZiNGQ4NTU1Ij48cGF0aCBmaWxsPSIjZmZmM2JmIiBkPSJNMjAgMGgyLjV2Mi41SDIwem0yLjUgMi41aDE1VjVoLTE1em0xNS0yLjVINDB2Mi41aC0yLjV6Ii8+PC9nPjxnIGlkPSJhbmltYXRpb24tbm9uZS02YjRkODU1NSI+PC9nPjxnIGlkPSJ0b3AtZGlzaC02YjRkODU1NSI+PHBhdGggZD0iTTYxIDIwLjRoNXY1aC01Wm0wIDBoNWwxLS44aC01Wm01IDAgMS0uOHY1bC0xIC44WiIgZmlsbD0iIzM0M2E0MCIvPjxwYXRoIGQ9Ik02MSAyMC40aDVsMS0uOGgtNVoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTY2IDIwLjQgMS0uOHY1bC0xIC44WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNNDcuNSAxNi4yaDMwdjVoLTMwWm0wIDBoMzBsMy0yLjRoLTMwWm0zMCAwIDMtMi40djVsLTMgMi40WiIgZmlsbD0iIzM0M2E0MCIvPjxwYXRoIGQ9Ik00Ny41IDE2LjJoMzBsMy0yLjRoLTMwWiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtNzcuNSAxNi4yIDMtMi40djVsLTMgMi40WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNNjAuNSAxMy4zaDV2Mi41aC01Wm0wIDBoNWwyLTEuNmgtNVptNSAwIDItMS42djIuNWwtMiAxLjZaIiBmaWxsPSIjZmZmM2JmIi8+PHBhdGggZD0iTTYwLjUgMTMuM2g1bDItMS42aC01WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtNjUuNSAxMy4zIDItMS42djIuNWwtMiAxLjZaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjwvZz48Y2xpcFBhdGggaWQ9ImNsaXAtNmI0ZDg1NTUiPjxyZWN0IHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiByeD0iMCIgcnk9IjAiLz48L2NsaXBQYXRoPjwvZGVmcz48ZyBjbGlwLXBhdGg9InVybCgjY2xpcC02YjRkODU1NSkiPjxyZWN0IHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiBmaWxsPSIjZDFkNGY5Ii8+PHBhdGggZD0iTTMzIDEyNC44aDUwbDEwLjUtOC40aC01MFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjA4Ii8+PHBhdGggZD0iTTM2IDExOS40aDIwdjVIMzZabTAgMGgyMGw4LjUtNi44aC0yMFptMjAgMCA4LjUtNi44djVsLTguNSA2LjhaIiBmaWxsPSIjMzQzYTQwIi8+PHBhdGggZD0iTTM2IDExOS40aDIwbDguNS02LjhoLTIwWiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtNTYgMTE5LjQgOC41LTYuOHY1bC04LjUgNi44WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNNjEgMTE5LjRoMjB2NUg2MVptMCAwaDIwbDguNS02LjhoLTIwWm0yMCAwIDguNS02Ljh2NWwtOC41IDYuOFoiIGZpbGw9IiMzNDNhNDAiLz48cGF0aCBkPSJNNjEgMTE5LjRoMjBsOC41LTYuOGgtMjBaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im04MSAxMTkuNCA4LjUtNi44djVsLTguNSA2LjhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik00NC41IDEwMS4xaDEwdjE3LjVoLTEwWm0wIDBoMTBsNy01LjZoLTEwWm0xMCAwIDctNS42VjExM2wtNyA1LjZaIiBmaWxsPSIjMzQzYTQwIi8+PHBhdGggZD0iTTQ0LjUgMTAxLjFoMTBsNy01LjZoLTEwWiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtNTQuNSAxMDEuMSA3LTUuNlYxMTNsLTcgNS42WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNNjQuNSAxMDEuMWgxMHYxNy41aC0xMFptMCAwaDEwbDctNS42aC0xMFptMTAgMCA3LTUuNlYxMTNsLTcgNS42WiIgZmlsbD0iIzM0M2E0MCIvPjxwYXRoIGQ9Ik02NC41IDEwMS4xaDEwbDctNS42aC0xMFoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTc0LjUgMTAxLjEgNy01LjZWMTEzbC03IDUuNloiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PGcgY2xhc3M9InZiLXVwcGVyIj48cGF0aCBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4xNiIgZD0iTTY0LjUgMTA2LjFoMTB2MmgtMTB6Ii8+PHBhdGggZD0iTTMyLjUgMTA1LjdIMzV2Ny41aC0yLjVabTAgMEgzNWw2LTQuOGgtMi41Wm0yLjUgMCA2LTQuOHY3LjVsLTYgNC44WiIgZmlsbD0iIzM0M2E0MCIvPjxwYXRoIGQ9Ik0zMi41IDEwNS43SDM1bDYtNC44aC0yLjVaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im0zNSAxMDUuNyA2LTQuOHY3LjVsLTYgNC44WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48cGF0aCBkPSJNMzcuNSAxMDUuN0g0MHY3LjVoLTIuNVptMCAwSDQwbDYtNC44aC0yLjVabTIuNSAwIDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjMzQzYTQwIi8+PHBhdGggZD0iTTM3LjUgMTA1LjdINDBsNi00LjhoLTIuNVoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTQwIDEwNS43IDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjE2IiBkPSJNMzkuNSAxMDYuMWguNXYyaC0uNXoiLz48cGF0aCBkPSJNMzIuNSA4NS43SDQwdjIwaC03LjVabTAgMEg0MGw2LTQuOGgtNy41WiIgZmlsbD0iIzY5ZGI3YyIvPjxwYXRoIGQ9Ik0zMi41IDg1LjdINDBsNi00LjhoLTcuNVoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0iTTMyLjUgODUuN0g0MHYyMGgtNy41WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMDgiLz48cGF0aCBkPSJNMzIuNSA4NS43SDQwbDYtNC44aC03LjVaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yIi8+PHBhdGggZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMTYiIGQ9Ik00NC41IDEwNi4xaDEwdjJoLTEweiIvPjxwYXRoIGQ9Ik0zOS41IDgzLjZoNDB2MjIuNWgtNDBabTAgMGg0MGw3LTUuNmgtNDBabTQwIDAgNy01LjZ2MjIuNWwtNyA1LjZaIiBmaWxsPSIjNjlkYjdjIi8+PHBhdGggZD0iTTM5LjUgODMuNmg0MGw3LTUuNmgtNDBaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im03OS41IDgzLjYgNy01LjZ2MjIuNWwtNyA1LjZaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik0zOS41IDgzLjZoNDBsNy01LjZoLTQwWiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMiIvPjxwYXRoIGQ9Ik04MCAxMDUuN2gyLjV2Ny41SDgwWm0wIDBoMi41bDYtNC44SDg2Wm0yLjUgMCA2LTQuOHY3LjVsLTYgNC44WiIgZmlsbD0iIzM0M2E0MCIvPjxwYXRoIGQ9Ik04MCAxMDUuN2gyLjVsNi00LjhIODZaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im04Mi41IDEwNS43IDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik04NSAxMDUuN2gyLjV2Ny41SDg1Wm0wIDBoMi41bDYtNC44SDkxWm0yLjUgMCA2LTQuOHY3LjVsLTYgNC44WiIgZmlsbD0iIzM0M2E0MCIvPjxwYXRoIGQ9Ik04NSAxMDUuN2gyLjVsNi00LjhIOTFaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im04Ny41IDEwNS43IDYtNC44djcuNWwtNiA0LjhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik04MCA4NS43aDcuNXYyMEg4MFptMCAwaDcuNWw2LTQuOEg4NlptNy41IDAgNi00Ljh2MjBsLTYgNC44WiIgZmlsbD0iIzY5ZGI3YyIvPjxwYXRoIGQ9Ik04MCA4NS43aDcuNWw2LTQuOEg4NloiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0ibTg3LjUgODUuNyA2LTQuOHYyMGwtNiA0LjhaIiBmaWxsPSIjMDAwMDAwIiBmaWxsLW9wYWNpdHk9Ii4yNCIvPjxwYXRoIGQ9Ik04MCA4NS43aDcuNXYyMEg4MFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjA4Ii8+PHBhdGggZD0iTTgwIDg1LjdoNy41bDYtNC44SDg2WiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMiIvPjx1c2UgaHJlZj0iI2NoZXN0LWJ1dHRvbnMtNmI0ZDg1NTUiLz48cGF0aCBkPSJNNTQuNSA3MS42aDE1djEwaC0xNVptMCAwaDE1bDQtMy4yaC0xNVptMTUgMCA0LTMuMnYxMGwtNCAzLjJaIiBmaWxsPSIjMzQzYTQwIi8+PHBhdGggZD0iTTU0LjUgNzEuNmgxNWw0LTMuMmgtMTVaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im02OS41IDcxLjYgNC0zLjJ2MTBsLTQgMy4yWiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIuMjQiLz48ZyBjbGFzcz0idmItaGVhZCI+PHBhdGggZD0iTTI4IDUwLjNoMi41djEwSDI4Wm0wIDBoMi41bDQtMy4ySDMyWiIgZmlsbD0iIzM0M2E0MCIvPjxwYXRoIGQ9Ik0yOCA1MC4zaDIuNWw0LTMuMkgzMloiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iLjM4Ii8+PHBhdGggZD0iTTI5IDI5aDYwdjUwSDI5Wm0wIDBoNjBsMTAtOEgzOVptNjAgMCAxMC04djUwbC0xMCA4WiIgZmlsbD0iIzY5ZGI3YyIvPjxwYXRoIGQ9Ik0yOSAyOWg2MGwxMC04SDM5WiIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIuMzgiLz48cGF0aCBkPSJtODkgMjkgMTAtOHY1MGwtMTAgOFoiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHBhdGggZD0iTTM2LjUgMzYuNWg0NVYzOUg4NHYzMi41aC0yLjVWNzRoLTQ1di0yLjVIMzRWMzloMi41WiIgZmlsbD0iIzE2MWEyMSIvPjxwYXRoIGQ9Ik05MC41IDUwLjNIOTN2MTBoLTIuNVptMCAwSDkzbDQtMy4yaC0yLjVabTIuNSAwIDQtMy4ydjEwbC00IDMuMloiIGZpbGw9IiMzNDNhNDAiLz48cGF0aCBkPSJNOTAuNSA1MC4zSDkzbDQtMy4yaC0yLjVaIiBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9Ii4zOCIvPjxwYXRoIGQ9Im05MyA1MC4zIDQtMy4ydjEwbC00IDMuMloiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iLjI0Ii8+PHVzZSB0cmFuc2Zvcm09InRyYW5zbGF0ZSgyOSA0NCkiIGhyZWY9IiNleWVzLXBsdXMtNmI0ZDg1NTUiLz48dXNlIHRyYW5zZm9ybT0idHJhbnNsYXRlKDI5IDY0KSIgaHJlZj0iI21vdXRoLXNtaWxlLTZiNGQ4NTU1Ii8+PHVzZSBocmVmPSIjYW5pbWF0aW9uLW5vbmUtNmI0ZDg1NTUiLz48dXNlIGhyZWY9IiN0b3AtZGlzaC02YjRkODU1NSIvPjwvZz48L2c+PC9nPjwvc3ZnPg=='
+      ]
+
       /** Stable hue from an id, so an avatar keeps its colour across reloads. */
       function hueOf(id: string): number {
         let h = 0
@@ -1316,9 +1469,12 @@
         // Conversation avatars are round (native chat look); the sidebar keeps
         // the native squircle via the base class.
         const shape = p.round === true || a.isGroup === true ? ' dbs-avatarRound' : (a.isGroup ? ' dbs-group' : '')
-        if (typeof a.avatarDataUrl === 'string' && a.avatarDataUrl !== '') {
+        const avatarSrc = typeof a.avatarDataUrl === 'string' && a.avatarDataUrl !== ''
+          ? a.avatarDataUrl
+          : a.isGroup === true ? null : BOT_AVATARS[hueOf(String(a.id ?? a.name ?? 'bot')) % BOT_AVATARS.length]
+        if (avatarSrc !== null) {
           return e('span', { className: 'dbs-avatar' + shape, style },
-            e('img', { src: a.avatarDataUrl, alt: '' }))
+            e('img', { src: avatarSrc, alt: '' }))
         }
         style.background = typeof a.avatarColor === 'string' && a.avatarColor !== ''
           ? a.avatarColor
@@ -1333,7 +1489,7 @@
       /** Chevron matching the shipped project row (fills in if the icon moves). */
       function Chevron(p: { open: boolean }) {
         const cls = 'dbs-arrow' + (p.open ? ' dbs-arrowOpen' : '')
-        const native = NATIVE.IconTriangleRightFill14
+        const native = NATIVE.IconTriangleRightFillRegular ?? NATIVE.IconTriangleRightFill14
         return e('span', { className: 'dbs-chevron ' + cls },
           native !== undefined
             ? e(native, {})
@@ -1620,12 +1776,9 @@
 
         return e('div', { className: 'dbs-nav' },
           group('workspaces', t('nav.workspaces'), 'IconFolderClose16',
-            // Clicking into the native browser (a session row, "new chat"…)
-            // is a navigation intent: dismiss the bot chat overlay so the
-            // main window the user asked for is actually visible.
+            // Native workspace navigation selects its own main panel.
             e('div', {
               className: 'dbs-navBody',
-              onClickCapture: () => { if (s.chatAgentId !== null) patch({ chatAgentId: null }) },
             }, e(DelegatedBrowser, { ...p, wide }))),
           group('bots', t('nav.bots'), 'IconAgentPresetOutline16', e(BotsGroup, null),
             StateDot !== null
@@ -1639,77 +1792,6 @@
       // =========================================================
       // Chat surface.
       // =========================================================
-
-      /**
-       * Pixel offsets of the frame's centre column.
-       *
-       * `shell.overlay` covers the whole AppFrame, so an `inset: 0` panel sits
-       * on top of the sidebar too — which is how the chat used to hide the very
-       * nav it is launched from. The frame is a CSS grid and
-       * `grid-template-columns` resolves to pixels, so the sidebar and details
-       * widths can be read straight off it. `[data-shell-overlay]` is a stable
-       * attribute (not a hashed class), and its parent is the frame.
-       */
-      function useCentreInset(): { left: number; right: number } {
-        const [inset, setInset] = React.useState({ left: 0, right: 0 })
-        React.useEffect(() => {
-          const layer = document.querySelector('[data-shell-overlay]')
-          const frame: any = layer === null ? null : layer.parentElement
-          if (frame === null || frame === undefined) return undefined
-          let stopped = false
-          let raf = 0
-          let lastCols = ''
-          const apply = (): string => {
-            const cols = window.getComputedStyle(frame).gridTemplateColumns.split(/\s+/).filter((c: string) => c !== '')
-            const left = Number.parseFloat(cols[0]) || 0
-            const right = cols.length >= 3 ? (Number.parseFloat(cols[cols.length - 1]) || 0) : 0
-            setInset((prev: any) => (prev.left === left && prev.right === right ? prev : { left, right }))
-            return cols.join(' ')
-          }
-          // The frame transitions `grid-template-columns`
-          // (`transition: grid-template-columns var(--ds-transition-duration-slow)`),
-          // so folding the sidebar animates the computed value while the inline
-          // style — and therefore the mutation observer — fires exactly once, at
-          // the START of the animation. Reading only there pinned the panel to
-          // the pre-fold width and it never followed the sidebar. Sample frame by
-          // frame until the value stops moving.
-          const sample = (): void => {
-            const cols = apply()
-            if (stopped) return
-            if (cols !== lastCols) { lastCols = cols; raf = requestAnimationFrame(sample) }
-            else raf = 0
-          }
-          const kick = (): void => {
-            if (stopped || raf !== 0) return
-            lastCols = ''
-            raf = requestAnimationFrame(sample)
-          }
-          kick()
-          // The frame's own box never resizes (it is the whole viewport), so the
-          // ResizeObserver alone would never fire; it stays for the cases where
-          // the layout swaps the frame element wholesale.
-          const ro = new ResizeObserver(kick)
-          ro.observe(frame)
-          const mo = new MutationObserver(kick)
-          mo.observe(frame, {
-            attributes: true,
-            // The real fold attributes (layout sets data-sidebar-collapsed /
-            // data-rightbar-*; there is no `data-details-collapsed`).
-            attributeFilter: ['style', 'data-sidebar-collapsed', 'data-rightbar-collapsed', 'data-rightbar-fullscreen', 'data-dragging'],
-          })
-          frame.addEventListener('transitionend', kick)
-          window.addEventListener('resize', kick)
-          return () => {
-            stopped = true
-            if (raf !== 0) cancelAnimationFrame(raf)
-            ro.disconnect()
-            mo.disconnect()
-            frame.removeEventListener('transitionend', kick)
-            window.removeEventListener('resize', kick)
-          }
-        }, [])
-        return inset
-      }
 
       // =========================================================
       // Message clocks.
@@ -1926,6 +2008,18 @@
         return (ms / 1e3).toFixed(ms < 1e4 ? 2 : 1) + 's'
       }
 
+      /** Native turn-clock labels (formatRunDuration): whole seconds, or
+       * minutes with the seconds zero-padded — "35秒" / "1分35秒". */
+      function formatRunDuration(ms: number | null | undefined): string {
+        if (ms == null || !Number.isFinite(ms) || ms < 0) return ''
+        const total = Math.max(0, Math.floor(ms / 1e3))
+        const minutes = Math.floor(total / 60)
+        const seconds = total % 60
+        return minutes > 0
+          ? t('duration.minutes', { minutes, seconds: String(seconds).padStart(2, '0') })
+          : t('duration.seconds', { seconds })
+      }
+
       /** Unified-diff detection + stat over a tool's output text. Write/Edit
        * results carry real diffs; when one is present the row shows the native
        * `+N -M` suffix and the body renders with native diff tinting. */
@@ -2082,13 +2176,14 @@
         const text = String(en.content ?? '')
         const running = en.isStreaming === true
         const lines = text.split('\n').filter((l: string) => l.trim() !== '')
-        const summary = running ? (lines[lines.length - 1] ?? '') : (lines[0] ?? '')
+        // The native summary strips markdown bold so `**` noise never shows
+        // in the one-line preview.
+        const summary = (running ? (lines[lines.length - 1] ?? '') : (lines[0] ?? '')).replaceAll('**', '')
         const duration = formatDurationMs(en.durationMs)
         return e('div', { className: 'dbs-thinkRow', 'data-state': running ? 'running' : 'ok' },
-          e('div', {
-            className: 'dbs-toolRowLine', role: 'button', tabIndex: 0,
+          e('button', {
+            type: 'button', className: 'dbs-toolRowLine', 'aria-expanded': open,
             onClick: () => setOpen(!open),
-            onKeyDown: (ev: any) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setOpen(!open) } },
           },
             e('span', { className: 'dbs-toolLead' }, Ico('IconThinkOutline14', { size: 14 })),
             e('span', { className: 'dbs-toolTitle' }, t('chat.thinking')),
@@ -2150,6 +2245,18 @@
           if (en.content === '') return null
           return e('div', { className: 'dbs-meta', style: { textAlign: 'center' } }, en.content)
         }
+        // Single-bot chats: the native transcript renders no author header at
+        // all — the assistant voice IS the room. Only group rooms carry the
+        // avatar + name attribution (below), where multiple authors make it
+        // load-bearing.
+        if (p.isGroup !== true) {
+          return e('div', { className: 'dbs-botRow' },
+            e('div', { className: 'dbs-mdRow' },
+              e(MarkdownText, { text: en.content, streaming: en.isStreaming === true }),
+              en.isStreaming === true ? e('span', { className: 'dbs-caret' }) : null,
+              en.isStreaming === true ? null : e(MediaRefs, { text: en.content })),
+            e(MessageActions, { entry: en }))
+        }
         // Compact continuation of the same author's run: the header already
         // stands above; only the reply clock rides along, right-aligned and
         // quiet — the way native IMs chain quick follow-ups under one name.
@@ -2189,9 +2296,130 @@
           e(MessageActions, { entry: en }))
       }
 
+
+      const goalDrafts = new Map<string, { requestId: string; objective: string; criteria: string; interval: number }>()
+      function goalStatusLabel(status: string): string {
+        const labels: Record<string, string> = {
+          scheduled: t('goal.scheduled'), running: t('goal.running'), paused: t('goal.paused'),
+          blocked: t('goal.blocked'), review: t('goal.review'), completed: t('goal.completed'),
+          cancelled: t('goal.cancelled'), attention: t('goal.attention'),
+        }
+        return labels[status] ?? status
+      }
+      function GoalPanel(p: { agentId: string }) {
+        const initial = goalDrafts.get(p.agentId) ?? { requestId: crypto.randomUUID(), objective: '', criteria: '', interval: 1 }
+        const [draft, setDraft] = React.useState(initial)
+        const [goals, setGoals] = React.useState(null as any[] | null)
+        const [error, setError] = React.useState(null as string | null)
+        const [busy, setBusy] = React.useState(false)
+        const [revising, setRevising] = React.useState(null as string | null)
+        const [feedback, setFeedback] = React.useState('')
+        const [ending, setEnding] = React.useState(null as string | null)
+        const alive = React.useRef(true)
+        const generation = React.useRef(0)
+        const reading = React.useRef(false)
+        const mutating = React.useRef(false)
+        function updateDraft(next: any) {
+          const value = { ...draft, ...next }
+          setDraft(value); goalDrafts.set(p.agentId, value)
+        }
+        async function refresh() {
+          if (reading.current || mutating.current) return
+          reading.current = true
+          const version = generation.current
+          try {
+            const rows = await botsCall<any[]>('goals', { agentId: p.agentId })
+            if (alive.current && version === generation.current) setGoals(rows)
+          } catch (err: any) {
+            if (alive.current && version === generation.current) setError(errText(err))
+          } finally { reading.current = false }
+        }
+        React.useEffect(() => {
+          alive.current = true
+          void refresh()
+          // Goal ledgers are files, not transcript events. Poll only while
+          // this view is open; scheduling lives entirely in the engine.
+          const timer = setInterval(() => { if (!document.hidden) void refresh() }, 10000)
+          const onFocus = () => { void refresh() }
+          window.addEventListener('focus', onFocus)
+          return () => { alive.current = false; clearInterval(timer); window.removeEventListener('focus', onFocus) }
+        }, [])
+        async function mutate(method: string, request: any) {
+          if (mutating.current) return
+          mutating.current = true; generation.current += 1
+          setBusy(true); setError(null)
+          try {
+            const rows = await botsCall<any[]>(method, { agentId: p.agentId, ...request })
+            if (!alive.current) return
+            setGoals(rows); setRevising(null); setEnding(null); setFeedback('')
+            if (method === 'createGoal') {
+              goalDrafts.delete(p.agentId)
+              setDraft({ requestId: crypto.randomUUID(), objective: '', criteria: '', interval: 1 })
+            }
+          } catch (err: any) { if (alive.current) setError(errText(err)) }
+          finally { mutating.current = false; if (alive.current) { setBusy(false); void refresh() } }
+        }
+        const action = (goal: any, command: string) => void mutate('goalAction', { goalId: goal.id, action: command, feedback })
+        const open = goals?.some((g: any) => !['completed', 'cancelled'].includes(g.status))
+        return e('section', { className: 'dbs-goalPanel', 'aria-label': t('goal.title'), 'aria-busy': busy },
+          e('div', { className: 'dbs-goalContent' },
+            e('div', { className: 'dbs-goalHeader' }, e('h2', null, t('goal.title')),
+              e(Button, { variant: 'ghost', size: 'sm', disabled: busy, onClick: () => { setError(null); void refresh() } }, t('goal.refresh'))),
+            e('div', { className: 'dbs-meta' }, t('goal.intro')),
+            error !== null ? e('div', { className: 'dbs-error', role: 'alert' }, error) : null,
+            goals === null ? e('div', { role: 'status' }, t('goal.loading')) : null,
+            ...(goals ?? []).map((goal: any) => e('article', { key: goal.id, className: 'dbs-goalCard' },
+              e('div', { className: 'dbs-goalStatus', role: 'status' }, goalStatusLabel(goal.status)),
+              e('h3', null, goal.objective),
+              e('div', { className: 'dbs-meta' }, t('goal.progress', {
+                done: goal.acceptance.filter((c: any) => c.done).length, total: goal.acceptance.length, cycle: goal.cycle,
+              })),
+              e('ul', { className: 'dbs-goalCriteria' }, ...goal.acceptance.map((c: any) => e('li', { key: c.id },
+                e('span', { 'aria-hidden': true }, c.done ? '✓' : '○'), e('span', null, c.text)))),
+              goal.nextRunAt ? e('div', { className: 'dbs-meta' }, t('goal.next', { time: new Date(goal.nextRunAt).toLocaleString() })) : null,
+              goal.note ? e('div', { className: 'dbs-meta', style: { whiteSpace: 'pre-wrap' } }, goal.note) : null,
+              e('details', { open: goal.status === 'review' || undefined },
+                e('summary', null, t('goal.checkpoint')), e('pre', null, goal.checkpoint ?? t('goal.noEvidence'))),
+              goal.status === 'review' ? e('div', { className: 'dbs-meta' }, t('goal.reviewHint')) : null,
+              e('div', { className: 'dbs-goalActions' },
+                goal.setupPending ? e(Button, { variant: 'primary', size: 'sm', disabled: busy, onClick: () => void mutate('createGoal', { requestId: goal.id, objective: goal.objective, acceptance: goal.acceptance.map((c: any) => c.text), intervalMinutes: goal.intervalMinutes }) }, t('goal.retrySetup')) : null,
+                ['scheduled', 'running', 'attention', 'blocked', 'review'].includes(goal.status)
+                  ? e(Button, { variant: 'ghost', size: 'sm', disabled: busy, onClick: () => action(goal, 'pause') }, t('goal.pause')) : null,
+                ['paused', 'blocked'].includes(goal.status)
+                  ? e(Button, { variant: 'primary', size: 'sm', disabled: busy, onClick: () => action(goal, 'resume') }, t('goal.resume')) : null,
+                goal.status === 'review' && goal.acceptance.every((c: any) => c.done)
+                  ? e(Button, { variant: 'primary', size: 'sm', disabled: busy, onClick: () => action(goal, 'complete') }, t('goal.complete')) : null,
+                ['review', 'blocked', 'paused'].includes(goal.status)
+                  ? e(Button, { variant: 'ghost', size: 'sm', disabled: busy, onClick: () => setRevising(revising === goal.id ? null : goal.id) }, t('goal.revise')) : null,
+                !['completed', 'cancelled'].includes(goal.status)
+                  ? e(Button, { variant: 'ghost', size: 'sm', disabled: busy, onClick: () => setEnding(goal.id) }, t('goal.cancel')) : null),
+              revising === goal.id ? e('form', { className: 'dbs-goalForm', onSubmit: (ev: any) => { ev.preventDefault(); action(goal, 'revise') } },
+                e('label', null, t('goal.feedback'), e('textarea', { autoFocus: true, required: true, maxLength: 8000, value: feedback, disabled: busy, onChange: (ev: any) => setFeedback(ev.target.value) })),
+                e('div', null, e(Button, { type: 'submit', variant: 'primary', size: 'sm', disabled: busy || !feedback.trim() }, t('goal.sendFeedback')))) : null,
+              ending === goal.id ? e('div', { className: 'dbs-goalActions' },
+                e('span', null, t('goal.cancelConfirm')),
+                e(Button, { variant: 'ghost', size: 'sm', disabled: busy, onClick: () => setEnding(null) }, t('goal.keep')),
+                e(Button, { variant: 'primary', size: 'sm', disabled: busy, onClick: () => action(goal, 'cancel') }, t('goal.cancel'))) : null,
+              goal.runs.length ? e('details', null, e('summary', null, t('goal.history')),
+                ...goal.runs.map((run: any) => e('div', { key: run.id, className: 'dbs-goalRun' },
+                  new Date(run.startedAt).toLocaleString(), ' · ', run.status === 'ok' ? t('goal.runOk') : run.status === 'error' ? t('goal.runError') : t('goal.running'),
+                  run.detail ? e('div', null, run.detail) : null))) : null)),
+            goals !== null && !open ? e('form', { className: 'dbs-goalCard dbs-goalForm', onSubmit: (ev: any) => {
+              ev.preventDefault(); goalDrafts.set(p.agentId, draft)
+              void mutate('createGoal', { requestId: draft.requestId, objective: draft.objective, acceptance: draft.criteria.split('\n').map((v: string) => v.trim()).filter(Boolean), intervalMinutes: draft.interval })
+            } },
+              e('h3', null, t('goal.new')),
+              e('label', null, t('goal.objective'), e('textarea', { value: draft.objective, required: true, maxLength: 8000, disabled: busy, onChange: (ev: any) => updateDraft({ objective: ev.target.value }) })),
+              e('label', null, t('goal.criteria'), e('textarea', { value: draft.criteria, required: true, maxLength: 40000, disabled: busy, onChange: (ev: any) => updateDraft({ criteria: ev.target.value }) })),
+              e('label', null, t('goal.interval'), e('select', { className: 'dbs-select', value: draft.interval, disabled: busy, onChange: (ev: any) => updateDraft({ interval: Number(ev.target.value) }) },
+                ...[1, 5, 15, 30].map(n => e('option', { key: n, value: n }, t('goal.minutes', { n }))))),
+              e('div', null, e(Button, { type: 'submit', variant: 'primary', size: 'sm', disabled: busy || !draft.objective.trim() || !draft.criteria.trim() }, busy ? t('goal.working') : t('goal.start')))) : null))
+      }
+
       function ChatView(p: { agentId: string }) {
         const s = useStore()
         const [entries, setEntries] = React.useState(null)
+        const [goalTab, setGoalTab] = React.useState(false)
         const [input, setInput] = React.useState('')
         const [sending, setSending] = React.useState(false)
         const [stopping, setStopping] = React.useState(false)
@@ -2301,6 +2529,20 @@
         const stickRef = React.useRef(true)
         const railQueuedRef = React.useRef(false)
         const [showJump, setShowJump] = React.useState(false)
+        // The native conversation root publishes its measured width as
+        // --dsh-conversation-column-width so the content column resolves
+        // clamp(680px, column*.64, 920px); this panel is a layout-panel
+        // sibling of that root, so it mirrors the same publication here.
+        const viewRef = React.useRef(null)
+        React.useEffect(() => {
+          const el: any = viewRef.current
+          if (el === null || el === undefined || typeof ResizeObserver === 'undefined') return
+          const publish = (): void => { el.style.setProperty('--dsh-conversation-column-width', `${el.offsetWidth}px`) }
+          publish()
+          const ro = new ResizeObserver(publish)
+          ro.observe(el)
+          return () => ro.disconnect()
+        }, [])
         // A fresh conversation starts pinned at its tail: without this reset,
         // leaving chat A scrolled up (stick=false) opened chat B parked at top.
         React.useEffect(() => {
@@ -2538,7 +2780,6 @@
         // One row per tool call (call+result merged, duration attached) —
         // the native stream model — instead of two loose cards per call.
         const list = mergeToolRuns((entries ?? []) as any[])
-        const inset = useCentreInset()
 
         // Turn rail state: measured anchors (ratio of the stream height) and
         // the turn the reader is currently inside. Measured after layout, so a
@@ -2604,17 +2845,20 @@
           }, e(Entry, { entry: en, isGroup, agent, compact })))
         })
 
-        return e('div', { className: 'dbs-chatview', style: { left: inset.left, right: inset.right } },
+        return e('div', { className: 'dbs-chatview', ref: viewRef },
           e('div', { className: 'dbs-chatbar' },
             e(Button, {
               variant: 'ghost', size: 'sm', title: t('action.close'), 'aria-label': t('action.close'),
               icon: Ico('IconCloseOutline16', { size: 16 }),
-              onClick: () => patch({ chatAgentId: null }),
+              onClick: () => layoutSvc.selectPanel(null),
             }),
             agent !== null ? e(Avatar, { agent, size: 24, round: true }) : null,
             e('span', { className: 'dbs-chatbarName' }, agent?.name ?? t('chat.loading')),
             e('span', { className: 'dbs-meta' }, isGroup ? t('chat.group', { n: memberNames.length }) : t('chat.single')),
             e('span', { style: { flex: 1 } }),
+            !isGroup ? e('div', { className: 'dbs-goalTabs', role: 'group', 'aria-label': t('goal.views') },
+              e('button', { type: 'button', 'aria-pressed': !goalTab, onClick: () => setGoalTab(false) }, t('goal.chat')),
+              e('button', { type: 'button', 'aria-pressed': goalTab, onClick: () => setGoalTab(true) }, t('goal.title'))) : null,
             isGroup
               ? e(Button, {
                   variant: 'ghost', size: 'sm', title: t('chat.members.manage'), 'aria-label': t('chat.members.manage'),
@@ -2631,7 +2875,8 @@
             ? e('div', { className: 'dbs-error', onClick: () => setError(null) }, error)
             : null,
 
-          e('div', { className: 'dbs-scrollArea' },
+          goalTab && !isGroup ? e(GoalPanel, { agentId: p.agentId, key: p.agentId }) : null,
+          e('div', { className: 'dbs-scrollArea', style: goalTab ? { display: 'none' } : undefined },
             turnMarks.length > 1
               ? e(TurnRail, { marks: turnMarks, activeId: activeTurn, busy: composing, onGo: goToTurn })
               : null,
@@ -2653,19 +2898,13 @@
                             isGroup ? t('chat.empty.group') : t('chat.empty.single', { name: agent?.name ?? '' })))
                       : thread,
                   composing
-                    ? e('div', { className: 'dbs-typing', 'aria-label': t('chat.composing'), title: t('chat.composing') },
-                        // Native turn status: a shimmering label over the
-                        // DeepSeek gradient, the turn's elapsed clock beside
-                        // it, and stop one click away.
-                        e('span', { className: 'dbs-turnStatus' }, t('chat.composing')),
-                        elapsedMs !== null
-                          ? e('span', { className: 'dbs-turnStatusClock' }, formatDurationMs(elapsedMs))
-                          : null,
-                        e('button', {
-                          type: 'button', className: 'dbs-typingStop', disabled: stopping,
-                          title: t('action.stop'), 'aria-label': t('action.stop'),
-                          onClick: () => void doStop(),
-                        }, e(StopSquareIcon, null), t('action.stop')))
+                    ? e('div', { className: 'dbs-typing', role: 'status', 'aria-live': 'polite', 'aria-label': t('chat.composing') },
+                        NATIVE.TextShimmer !== undefined
+                          ? e(NATIVE.TextShimmer, { active: true, className: 'dbs-turnStatus' }, t('chat.composing'))
+                          : e('span', { className: 'dbs-turnStatus' }, t('chat.composing')),
+                        elapsedMs !== null && elapsedMs >= 15000
+                          ? e('span', { className: 'dbs-turnStatusClock', 'aria-hidden': true }, formatRunDuration(elapsedMs))
+                          : null)
                     : null))),
             e('button', {
               type: 'button', className: 'dbs-jump', 'data-show': showJump ? 'true' : 'false',
@@ -2673,7 +2912,7 @@
               onClick: jumpToLatest,
             }, Ico('IconChevronDownOutline14', { size: 16 }))),
 
-          e('div', { className: 'dbs-composerSeat' },
+          e('div', { className: 'dbs-composerSeat', style: goalTab ? { display: 'none' } : undefined },
             e('div', { className: 'dbs-composer' },
               e('div', {
                 className: 'dbs-composerCard',
@@ -2807,19 +3046,15 @@
                     // paperclip vanished.
                     }, Ico('IconPaperclipOutline16', { size: 14 }) ?? e(PaperclipGlyph, null))),
                   e('div', { className: 'dbs-composerTrailing' },
-                    e('span', { className: 'dbs-meta' },
-                      pendingImages.length > 0
-                        ? t('chat.attach.count', { n: pendingImages.length })
-                        : input.trim() !== '' ? t('chat.charCount', { n: input.trim().length }) : ''),
-                    // ONE morphing circle, always (native contract §12-29).
-                    // With text in hand the corner is the action for that
-                    // text: send when idle, a queued send while a run is
+                    // ONE morphing circle, always — the native InputBar
+                    // contract. With text in hand the corner is the action for
+                    // that text: send when idle, a queued send while a run is
                     // active (the daemon persists it and the run scheduler
                     // delivers the follow-up turn after this one settles —
                     // Enter queues the same way). Stop owns the corner only
-                    // when there is nothing to send; while a run is active
-                    // with text typed, stop stays one click away in the
-                    // typing indicator instead of crowding beside the send.
+                    // when there is nothing to send, exactly as the native
+                    // primaryStops gate does; no separate stop button and no
+                    // character counter live in the native trailing group.
                     // Pending images count as "something to send": the corner
                     // stays a send even with an empty caption.
                     composing && input.trim() === '' && pendingImages.length === 0
@@ -3208,6 +3443,12 @@
         const [info, setInfo] = React.useState(undefined)
         const [sse, setSse] = React.useState(null)
         const [err, setErr] = React.useState(null)
+        const [tab, setTab] = React.useState('overview')
+        const tabs = ['overview', 'models', 'workspace', 'mcp']
+        const tabLabels: Record<string, string> = {
+          overview: t('settings.tab.overview'), models: t('settings.tab.models'),
+          workspace: t('settings.tab.workspace'), mcp: t('settings.tab.mcp'),
+        }
         async function refresh() {
           setInfo(undefined); setErr(null)
           try {
@@ -3218,7 +3459,26 @@
         React.useEffect(() => { void refresh() }, [])
         const ok = info?.ok === true
         return e('div', { className: 'dbs-settings' },
-          e('div', { className: 'dbs-setrow' }, t('settings.summary')),
+          e('div', { className: 'dbs-settingsTitle' }, t('nav.bots')),
+          e('div', { className: 'dbs-settingsIntro' }, t('settings.summary')),
+          e('div', { className: 'dbs-settingsTabs', role: 'tablist', 'aria-label': t('settings.tabs') },
+            tabs.map((id: string, index: number) => e('button', {
+              key: id, type: 'button', role: 'tab', id: 'dbs-settings-tab-' + id,
+              className: 'dbs-settingsTab', 'aria-selected': tab === id,
+              'aria-controls': 'dbs-settings-panel-' + id, tabIndex: tab === id ? 0 : -1,
+              onClick: () => setTab(id),
+              onKeyDown: (ev: any) => {
+                const next = ev.key === 'ArrowRight' ? (index + 1) % tabs.length
+                  : ev.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length
+                    : ev.key === 'Home' ? 0 : ev.key === 'End' ? tabs.length - 1 : -1
+                if (next < 0) return
+                ev.preventDefault()
+                setTab(tabs[next])
+                document.getElementById('dbs-settings-tab-' + tabs[next])?.focus()
+              },
+            }, tabLabels[id]))),
+          e('div', { id: 'dbs-settings-panel-overview', className: 'dbs-settingsPanel', role: 'tabpanel',
+            'aria-labelledby': 'dbs-settings-tab-overview', hidden: tab !== 'overview' },
           e('div', { className: 'dbs-setcard' },
             e('div', { className: 'dbs-sethead' },
               StateDot !== null ? e(StateDot, { state: ok ? 'done' : 'failed', size: 10 }) : null,
@@ -3240,10 +3500,16 @@
               e('b', null, sse?.running === true ? t('settings.events.on', { n: sse.buffered ?? 0 }) : t('settings.events.off')),
               sse?.lastError ? ' · ' + String(sse.lastError) : ''),
             e('div', { className: 'dbs-setrow' }, t('settings.entry'), e('b', null, t('settings.entry.value')))),
-          info?.ok === true ? e(GroupCard) : null,
-          info?.ok === true ? e(ModelCard) : null,
-          info?.ok === true ? e(WorkspaceCard) : null,
-          info?.ok === true ? e(McpCard) : null)
+          info?.ok === true ? e(GroupCard) : null),
+          e('div', { id: 'dbs-settings-panel-models', className: 'dbs-settingsPanel', role: 'tabpanel',
+            'aria-labelledby': 'dbs-settings-tab-models', hidden: tab !== 'models' },
+            info?.ok === true ? e(ModelCard) : null),
+          e('div', { id: 'dbs-settings-panel-workspace', className: 'dbs-settingsPanel', role: 'tabpanel',
+            'aria-labelledby': 'dbs-settings-tab-workspace', hidden: tab !== 'workspace' },
+            info?.ok === true ? e(WorkspaceCard) : null),
+          e('div', { id: 'dbs-settings-panel-mcp', className: 'dbs-settingsPanel', role: 'tabpanel',
+            'aria-labelledby': 'dbs-settings-tab-mcp', hidden: tab !== 'mcp' },
+            info?.ok === true ? e(McpCard) : null))
       }
 
       // =========================================================
@@ -3612,22 +3878,29 @@
               }, working ? t('delete.working') : t('action.delete')))))
       }
 
+      function BotsMain() {
+        const s = useStore()
+        return s.chatAgentId === null
+          ? e('div', { className: 'dbs-welcome' }, t('goal.chooseBot'))
+          : e(ChatView, { agentId: s.chatAgentId, key: s.chatAgentId })
+      }
+
       function BotsLayer() {
         const s = useStore()
         React.useEffect(() => {
           function onKey(ev: KeyboardEvent) {
             if (ev.key !== 'Escape') return
-            // Topmost dialog first: delete confirm, then create, then chat.
+            // Escape dismisses transient UI; native panel navigation stays intact.
             if (state.rowMenu !== null) { patch({ rowMenu: null }); return }
             if (state.confirmDelete !== null) { patch({ confirmDelete: null }); return }
             if (state.create !== null) { patch({ create: null }); return }
-            if (state.chatAgentId !== null) patch({ chatAgentId: null })
+            if (state.manageMembers !== null) { patch({ manageMembers: null }); return }
+            if (state.settingsAgentId !== null) patch({ settingsAgentId: null })
           }
           window.addEventListener('keydown', onKey)
           return () => { window.removeEventListener('keydown', onKey) }
         }, [])
         const layers: any[] = []
-        if (s.chatAgentId !== null) layers.push(e(ChatView, { agentId: s.chatAgentId, key: s.chatAgentId }))
         if (s.create !== null) layers.push(e(CreateModal, { key: 'create' }))
         if (s.manageMembers !== null) layers.push(e(ManageMembersModal, { key: 'manage-members' }))
         if (s.settingsAgentId !== null) layers.push(e(AgentSettingsModal, { key: 'agent-settings' }))
@@ -3638,12 +3911,13 @@
       // =========================================================
       // Slot registration (formal runtime contract).
       // =========================================================
-      const inject = ['connection', 'slots', 'locale']
+      const inject = ['connection', 'slots', 'locale', 'layout']
 
       function apply(c: any): void {
         ctx = c
         connectionSvc = c.get('connection')
         slotsSvc = c.get('slots')
+        layoutSvc = c.get('layout')
         const slots = slotsSvc
         if (slots === undefined || slots === null) return
 
@@ -3667,10 +3941,15 @@
           c.effect(() => locale.subscribe(() => { patch({ localeRev: state.localeRev + 1 }) }), 'dsh-bots: locale refresh')
         }
 
+        c.effect(() => slots.inject('main', () => slots.register(
+          { name: 'main', key: 'dsh-bots', registrant: 'dsh-bots', locale: NS },
+          () => e(BotsMain),
+        )), 'dsh-bots: main panel')
+
         c.effect(() => slots.inject('shell.overlay', () => slots.register(
           { name: 'shell.overlay', id: 'dsh-bots.chat', order: 20, registrant: 'dsh-bots', locale: NS },
           () => e(BotsLayer),
-        )), 'dsh-bots: chat overlay')
+        )), 'dsh-bots: dialogs')
 
         // Shadow the single workspace slot at a lower priority (lowest renders);
         // the shipped entry stays registered and is delegated to by name.
@@ -3687,7 +3966,7 @@
           () => e(BotsSettings),
         )), 'dsh-bots: settings section')
 
-        reportDiag('apply', { slots: ['shell.overlay', 'sidebar.workspaces', 'settings.section'] })
+        reportDiag('apply', { slots: ['main', 'shell.overlay', 'sidebar.workspaces', 'settings.section'] })
       }
 
       exports.apply = apply

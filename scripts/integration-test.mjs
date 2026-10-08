@@ -8,7 +8,7 @@ const plugin = await import('../lib/index.js')
 const typert = await import('@deepseek-ai/dsh-typert-protocol')
 
 const EXPECTED = [
-  'gatewayInfo', 'list', 'workspaces', 'sessions',
+  'gatewayInfo', 'list', 'workspaces', 'sessions', 'goals', 'createGoal', 'goalAction',
   'create', 'createGroup', 'setGroupMembers', 'groupCap', 'pin', 'setHidden', 'update', 'remove', 'send', 'interrupt', 'readImage', 'openFile', 'transcriptTail',
   'markRead', 'diag', 'eventsSince', 'sseState',
   'mcpServers', 'mcpTools', 'mcpAdd', 'mcpRemove', 'mcpRefresh', 'mcpExecute',
