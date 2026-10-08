@@ -792,6 +792,11 @@
         'settings.skills.lockedHint': '由插件/托管提供，不能单独停用',
         'settings.skills.agent': '作用 Bot：',
         'settings.skills.failed': '技能操作失败：',
+        'settings.skills.bridge': 'DSH 技能桥',
+        'settings.skills.bridge.summary': '把本机 DSH 技能（~/.dsh/skills、~/.agents/skills）以「活指针」供给所有 Bot：DSH 侧修改即时生效，无需复制。勾选后保存即桥接。',
+        'settings.skills.bridge.empty': '本机未发现 DSH 技能',
+        'settings.skills.bridge.apply': '保存桥接',
+        'settings.skills.bridge.applying': '保存中…',
         'errors.gatewayDown': 'Bots 引擎未运行——watchdog 会自动拉起；若持续报错请检查 com.sdk-bots.host launchd 任务',
         'errors.gatewayAuth': '网关需要鉴权——请在引擎侧配置 token 或改回 loopback 绑定',
         'settings.model.deepseek': 'DeepSeek',
@@ -1016,6 +1021,11 @@
         'settings.skills.lockedHint': 'Provided by a plugin/managed feed — cannot be disabled per-bot',
         'settings.skills.agent': 'For bot:',
         'settings.skills.failed': 'Skill operation failed: ',
+        'settings.skills.bridge': 'DSH skill bridge',
+        'settings.skills.bridge.summary': 'Publish this machine\u2019s DSH skills (~/.dsh/skills, ~/.agents/skills) to every bot as LIVE pointers: harness edits propagate, nothing is copied. Check rows and save to bridge them.',
+        'settings.skills.bridge.empty': 'No DSH skills found on this machine',
+        'settings.skills.bridge.apply': 'Save bridge',
+        'settings.skills.bridge.applying': 'Saving…',
         'errors.gatewayDown': 'The bots engine is not running — the watchdog will restart it; if this persists, check the com.sdk-bots.host launchd job',
         'errors.gatewayAuth': 'The gateway requires auth — configure a token on the engine or switch back to loopback binding',
         'settings.model.deepseek': 'DeepSeek',
@@ -6223,6 +6233,32 @@ class BotEngine {
         const [busy, setBusy] = React.useState(false)
         const [confirmId, setConfirmId] = React.useState(null as string | null)
         const [err, setErr] = React.useState(null as string | null)
+        // dsh skill bridge: discovery + current bridged set (live pointers —
+        // see skill-bridge.ts). Hidden entirely when nothing is discovered.
+        const [bridgeRows, setBridgeRows] = React.useState(null as any[] | null)
+        const [bridgePicked, setBridgePicked] = React.useState(null as string[] | null)
+        const [bridgeBusy, setBridgeBusy] = React.useState(false)
+        React.useEffect(() => {
+          void (async () => {
+            try {
+              const res = await botsCall<{ skills?: any[] }>('skillsBridgeList', {})
+              const discovered = (res?.skills ?? []) as any[]
+              setBridgeRows(discovered)
+              setBridgePicked(discovered.filter((r: any) => r.bridged === true).map((r: any) => r.id))
+            } catch { setBridgeRows([]) }
+          })()
+        }, [])
+        async function applyBridge() {
+          setBridgeBusy(true); setErr(null)
+          try {
+            await botsCall('skillsBridgeSet', { ids: bridgePicked ?? [] })
+            const res = await botsCall<{ skills?: any[] }>('skillsBridgeList', {})
+            const discovered = (res?.skills ?? []) as any[]
+            setBridgeRows(discovered)
+            setBridgePicked(discovered.filter((r: any) => r.bridged === true).map((r: any) => r.id))
+            await reload()
+          } catch (e2: any) { setErr(errText(e2)) } finally { setBridgeBusy(false) }
+        }
         async function reload(pid?: string) {
           setErr(null)
           try {
@@ -6378,6 +6414,28 @@ class BotEngine {
                         }, confirmId === row.id ? t('settings.skills.deleteConfirm') : t('settings.skills.delete'))
                       : null)
                 }),
+          bridgeRows !== null && bridgeRows.length > 0 ? e('div', { className: 'dbs-setcard', style: { margin: '6px 0' } },
+            e('div', { className: 'dbs-sethead' },
+              e('span', { className: 'dbs-title' }, t('settings.skills.bridge')),
+              e('span', { style: { flex: 1 } }),
+              e(Button, {
+                variant: 'primary', size: 'sm', disabled: bridgeBusy || bridgePicked === null,
+                onClick: () => void applyBridge(),
+              }, bridgeBusy ? t('settings.skills.bridge.applying') : t('settings.skills.bridge.apply'))),
+            e('div', { className: 'dbs-setrow' }, t('settings.skills.bridge.summary')),
+            bridgeRows.map((row: any) => e('label', {
+              key: row.id, className: 'dbs-setrow', style: { alignItems: 'center', cursor: 'pointer' },
+            },
+              e('input', {
+                type: 'checkbox', checked: (bridgePicked ?? []).includes(row.id), disabled: bridgeBusy,
+                onChange: (ev: any) => {
+                  const picked = new Set(bridgePicked ?? [])
+                  if (ev.target.checked === true) picked.add(row.id); else picked.delete(row.id)
+                  setBridgePicked([...picked])
+                },
+              }),
+              e('b', null, row.name),
+              e('span', { className: 'dbs-meta' }, row.description ? ' · ' + String(row.description).split('\n')[0].slice(0, 100) : '')))) : null,
           err !== null ? e('div', { className: 'dbs-setrow' }, t('settings.skills.failed'), err) : null)
       }
 

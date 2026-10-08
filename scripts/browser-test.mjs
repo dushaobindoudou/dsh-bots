@@ -16,6 +16,10 @@ const skills = [
   { id: 'dsh-bridged', name: 'DSH 桥接技能', description: '来自 ~/.dsh/skills', body: 'bridged', source: 'plugin', isEnabledForAgent: true, trigger: null },
   { id: 'routine', name: '每日站会提醒', description: 'cron 例行', body: 'remind', source: 'workflow', isEnabledForAgent: true, trigger: { schedule: '0 9 * * *', isEnabled: true }, scheduleDescription: '每天 09:00' },
 ]
+const dshSkills = [
+  { id: 'dsh-finance', name: '金融助手', description: '金融场景总入口', bridged: false, path: '/mock/.dsh/skills/finance/SKILL.md' },
+  { id: 'dsh-note', name: '笔记整理', description: '整理零散笔记', bridged: true, path: '/mock/.agents/skills/note.md' },
+]
 const workflow = new GoalWorkflow(dir, async (method, args) => {
   if (method === 'listAgents') return [agent]
   if (method === 'getAgentAutomations') return autos
@@ -57,6 +61,12 @@ const server = createServer(async (req, res) => {
         value = { skills }
       }
       else if (method === 'skillsRunNow' || method === 'skillsImportText') value = { skills }
+      else if (method === 'skillsBridgeList') value = { skills: dshSkills }
+      else if (method === 'skillsBridgeSet') {
+        const on = new Set((request.ids ?? []).filter((x) => typeof x === 'string'))
+        for (const s of dshSkills) s.bridged = on.has(s.id)
+        value = { bridged: on.size }
+      }
       else if (method === 'goals') value = await workflow.list(request.agentId)
       else if (method === 'createGoal') value = await workflow.create(request)
       else if (method === 'goalAction') value = await workflow.act(request)
@@ -148,6 +158,14 @@ try {
   await page.getByRole('button', { name: '保存技能' }).click()
   await page.getByText('冒烟技能', { exact: true }).waitFor()
   assert.equal(skills.some((s) => s.name === '冒烟技能'), true)
+  // Bridge block: check the unbridged row, save, and the mock set updates.
+  await page.getByText('DSH 技能桥', { exact: true }).waitFor()
+  const financeRow = page.getByRole('checkbox').first()
+  await financeRow.check()
+  await page.getByRole('button', { name: '保存桥接' }).click()
+  await page.waitForTimeout(150)
+  assert.equal(dshSkills[0].bridged, true)
+  assert.equal(dshSkills[1].bridged, true)
   await page.screenshot({ path: process.env.BROWSER_SKILLS_SCREENSHOT ?? '/tmp/dsh-bots-skills.png', fullPage: true })
   assert.deepEqual(errors, [])
   console.log('browser: goal create/pause/resume/review/revise, native navigation, Escape, fold geometry, narrow layout and skills card passed')

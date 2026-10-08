@@ -35,6 +35,10 @@ import { realDelay, realLaunchctl, reloadLaunchdJob } from './launchd.js'
 import { GatewaySseClient, SseRingBuffer } from './sse.js'
 import { UnreadStore } from './unread.js'
 import { listAgentWorkspaces, readAgentWorkspace, setAgentWorkspace } from './workspace.js'
+import {
+  PLUGIN_SKILLS_CACHE_FILENAME, PLUGIN_SKILLS_DIRNAME,
+  discoverDshSkills, readBridgeCache, syncSkillsBridge,
+} from './skill-bridge.js'
 import { satisfiesCaret } from './version.js'
 import { GoalWorkflow, type GoalCreate, type GoalAction } from './goals.js'
 
@@ -900,6 +904,47 @@ export class BotsRemote extends TypertRemoteService {
     return { skills: Array.isArray(workflows) ? workflows : [] }
   }
 
+  /* --- dsh skill bridge ----------------------------------------------------
+   * The bridge (skill-bridge.ts) publishes the harness's own skill roots to
+   * the engine's plugin-skills channel as LIVE file pointers; the engine's
+   * stat-keyed re-read makes harness edits propagate without copying. */
+
+  /** Discovery + current bridge state for the card's checkbox list. */
+  async skillsBridgeList(request: unknown): Promise<{ skills: Array<{ id: string; name: string; description: string; bridged: boolean; path: string }> }> {
+    const refs = discoverDshSkills(homedir())
+    const cachePath = join(effectiveDataDir(this.cfg.dataDir), PLUGIN_SKILLS_DIRNAME, PLUGIN_SKILLS_CACHE_FILENAME)
+    const ids = new Set(readBridgeCache(cachePath)?.ids ?? [])
+    return {
+      skills: refs.map((ref) => ({
+        id: ref.id, name: ref.name, description: ref.description,
+        bridged: ids.has(ref.id), path: ref.filePath,
+      })),
+    }
+  }
+
+  /** Rewrite the bridge index to exactly `ids` (empty array = bridge none). */
+  async skillsBridgeSet(request: { ids?: string[] } | null): Promise<{ bridged: number }> {
+    const ids = Array.isArray(request?.ids) ? request.ids.filter((id): id is string => typeof id === 'string') : []
+    return syncSkillsBridge(homedir(), effectiveDataDir(this.cfg.dataDir), PLUGIN_VERSION, { enabled: ids })
+  }
+
+  /** Mount-time sync: first run bridges everything; later runs reconcile
+   * (prune vanished, keep the user's trimmed set). Best-effort by policy —
+   * a failed bridge must never block activation or the RPC surface. */
+  scheduleSkillsBridgeSync(): void {
+    const t = setTimeout(() => {
+      try {
+        const result = syncSkillsBridge(homedir(), effectiveDataDir(this.cfg.dataDir), PLUGIN_VERSION)
+        if (result.firstRun || result.bridged !== result.discovered) {
+          void this.diag({ stage: 'skillsBridgeSync', detail: result })
+        }
+      } catch (error: any) {
+        void this.diag({ stage: 'skillsBridgeSync', detail: { error: String(error?.message ?? error) } })
+      }
+    }, 6000)
+    if (typeof t === 'object' && t !== null && 'unref' in t) (t as { unref(): void }).unref()
+  }
+
   /**
    * Engine self-check, scheduled a few seconds after activation: if the
    * gateway is unreachable AND the launchd job is not loaded, bootstrap it
@@ -1087,6 +1132,8 @@ for (const m of [
   'create', 'createGroup', 'setGroupMembers', 'groupCap', 'pin', 'setHidden', 'update', 'remove', 'send', 'interrupt', 'readImage', 'openFile', 'transcriptTail', 'markRead', 'diag',
   'mcpServers', 'mcpTools', 'mcpAdd', 'mcpRemove', 'mcpRefresh', 'mcpExecute',
   'workspaceList', 'workspaceGet', 'workspaceSet', 'modelConfig', 'setModelConfig', 'applyModel',
+  'skillsList', 'skillsSave', 'skillsEnable', 'skillsDelete', 'skillsRunNow', 'skillsImportText',
+  'skillsBridgeList', 'skillsBridgeSet',
   'eventsSince', 'sseState',
   'goals', 'createGoal', 'goalAction',
 ]) {
@@ -1102,4 +1149,5 @@ export function apply(ctx: Context, config: Config): void {
   // "comes alive with dsh web" — self-check after activation and bootstrap an
   // unloaded engine back. Fire-and-forget, never blocks activation.
   remote.scheduleEngineSelfCheck()
+  remote.scheduleSkillsBridgeSync()
 }

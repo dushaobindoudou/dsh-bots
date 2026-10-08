@@ -14,6 +14,7 @@ const EXPECTED = [
   'mcpServers', 'mcpTools', 'mcpAdd', 'mcpRemove', 'mcpRefresh', 'mcpExecute',
   'workspaceList', 'workspaceGet', 'workspaceSet', 'modelConfig', 'setModelConfig',
   'skillsList', 'skillsSave', 'skillsEnable', 'skillsDelete', 'skillsRunNow', 'skillsImportText',
+  'skillsBridgeList', 'skillsBridgeSet',
 ]
 
 let failed = 0
