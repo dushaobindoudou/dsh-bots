@@ -80,7 +80,7 @@ const UNREAD_FILE = 'dsh-bots-unread.json'
 const BOTS_SETTINGS_FILE = 'dsh-bots-settings.json'
 
 /** Stamped into every diagnostic line so records survive version skew. */
-const PLUGIN_VERSION = resolvedModuleVersion('dsh-bots')
+const PLUGIN_VERSION = ownModuleVersion()
 
 const require = createRequire(import.meta.url)
 
@@ -94,6 +94,34 @@ function resolvedModuleVersion(id: string): string {
   } catch {
     return 'unresolved'
   }
+}
+
+/**
+ * This plugin's own version for diagnostics (F12, 2026-10-08).
+ *
+ * `require.resolve('dsh-bots')` fails inside the installed plugin layout —
+ * the plugin loads by absolute path, so its own name sits in no node_modules
+ * index and every diag line that day was stamped "unresolved". The manifest
+ * physically lives at the package root above this module file
+ * (lib/index.js → ../package.json), so climb from here and take the version
+ * only from a manifest that actually names the plugin. Kept separate from
+ * `resolvedModuleVersion`, whose sentinel must never be fed a foreign
+ * package's version (assertPeerCompatible consumes it).
+ */
+function ownModuleVersion(): string {
+  try {
+    let dir = dirname(pathToFileURL(import.meta.url).pathname)
+    for (let depth = 0; depth < 4; depth += 1) {
+      try {
+        const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { name?: string; version?: string }
+        if (pkg.name === 'dsh-bots' && typeof pkg.version === 'string' && pkg.version.length > 0) return pkg.version
+      } catch { /* keep climbing */ }
+      const parent = dirname(dir)
+      if (parent === dir) break
+      dir = parent
+    }
+  } catch { /* fall through to the sentinel */ }
+  return 'unresolved'
 }
 
 /**

@@ -51,7 +51,7 @@ leaving the shell.
 **Management**
 
 - **Session settings** (gear in the chat bar): rename, description, and the workspace jail editor
-- **Manage members** for groups (checkbox roster editor, honest 6-member cap feedback)
+- **Manage members** for groups (checkbox roster editor, 8 default / 16 engine hard cap)
 - Create bots and groups from the section headers; delete with confirm dialogs
 - Settings page section: gateway health, data dir, SSE state, workspace list, MCP servers & tools
 

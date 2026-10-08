@@ -218,6 +218,10 @@ export class GoalWorkflow {
         await this.rpc('createAgentAutomation', { id: input.agentId, spec: {
           name, isEnabled: false, trigger: { type: 'cron', schedule: `@every ${interval}m` },
           prompt,
+          // Declared goal routine: the engine fails CLOSED on ledger trouble
+          // (missing/corrupt/unwritable) instead of degrading to a plain
+          // unlimited cron. Older engines drop the unknown field harmlessly.
+          kind: 'goal',
         } })
         autos = await this.automations(input.agentId)
         automation = autos.find(a => a.name === name)

@@ -4,6 +4,28 @@ All notable changes to this project are documented in this file. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.66] - 2026-10-08
+
+M0 reliability baseline for multi-bot goal collaboration, paired with the
+sdk-bots 0.5.1 engine release (see
+`docs/multi-bot-goal-collaboration-improvement.md`).
+
+### Fixed
+
+- **Diag version observability (F12)**: every `dsh-bots-diag.jsonl` line that
+  day read `version: "unresolved"` — `require.resolve('dsh-bots')` cannot see
+  the plugin's own name inside the installed layout. The version now comes
+  from `ownModuleVersion()`, which climbs from the module file to the
+  manifest that actually names the plugin; the peer probe keeps its own
+  resolution path and honest sentinels.
+- **Declared goal routines (F10)**: the workbench creates goal automations
+  with `kind: "goal"` so the engine's fail-closed ledger guard keys off the
+  structural declaration; the `DSH-GOAL-` name prefix stays as a
+  migration-compat marker only. Older engines drop the unknown field
+  harmlessly.
+- **Docs sync (F12)**: README member-cap copy now states the real limits
+  (8 default / 16 engine hard cap) instead of the stale "6-member cap".
+
 ## [0.2.65] - 2026-10-08
 
 Native-parity pass against the running dsh 0.2.0-rc.2 web UI: every value

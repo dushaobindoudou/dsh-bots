@@ -47,6 +47,9 @@ describe('persistent goal workflow', () => {
     const f = fixture()
     expect((await f.workflow.create(f.input))[0].status).toBe('scheduled')
     expect(f.calls.find(c => c.method === 'createAgentAutomation')?.args.spec.isEnabled).toBe(false)
+    // The routine must be DECLARED as a goal (F10): the engine fails closed
+    // on ledger trouble instead of degrading to a plain unlimited cron.
+    expect(f.calls.find(c => c.method === 'createAgentAutomation')?.args.spec.kind).toBe('goal')
     const recovered = new GoalWorkflow(f.root, f.rpc)
     expect((await recovered.list('bot'))[0]).toMatchObject({ objective: f.input.objective, intervalMinutes: 1, nextRunAt: 123456 })
   })
