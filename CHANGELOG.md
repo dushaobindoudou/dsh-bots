@@ -4,6 +4,30 @@ All notable changes to this project are documented in this file. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.68] - 2026-10-08
+
+### Changed
+
+- **Live bloub avatars**: the fallback bot avatars no longer sit still. The
+  merged bloub engine now runs inside the client (one shared ~30 fps rAF
+  clock, self-stopping when the last avatar unregisters, parked by the
+  browser when the tab hides): bots morph through their state's poses,
+  blink and drift on their own, and gaze at the pointer via the engine's own
+  look-mixing (yaw ±16°, pitch 10−13·ny°; pointer gone → pose gaze + drift
+  restored). Honours `prefers-reduced-motion` with a settled still frame.
+  Per-bot phase and ink/state are seeded from the bot id, so a full sidebar
+  never blinks in unison.
+- **Volume**: the measured flat pose gains two soft-light layers — a radial
+  gloss on the body (highlight top-left → ink core → darker rim) plus a
+  specular sheen and a top-lit tile background — clipped by the same eye-hole
+  mask, so the silhouette and the punched eyes stay exactly the measured
+  ones.
+- **Architecture**: the 0.2.67 baked stills are gone; the engine itself is
+  merged verbatim into `src/client.ts` by
+  `scripts/merge-bloub-engine.mjs` (value-initialisation ordered, two
+  private-name collisions renamed), because the client entry must stay one
+  self-contained file. `tools/bloub` remains the vendored source of truth.
+
 ## [0.2.67] - 2026-10-08
 
 ### Added
