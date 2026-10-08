@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.67] - 2026-10-08
+
+### Added
+
+- **bloub bot avatars**: the built-in fallback avatars (bots without a custom
+  `avatarDataUrl`) are now stills of
+  [bloub](https://github.com/jeremy-prt/bloub) — Jérémy Perret's MIT-licensed
+  SVG recreation of the x.ai bot avatar: one filled shape, two white eyes,
+  every number measured off the reference video. Eight variants cover eight of
+  the fourteen measured states (idle, thinking, wink, play, notify, wide,
+  orbit, egg) over the bloub colour palette, picked per bot id so a bot keeps
+  its avatar across reloads. The stills are baked at build time by
+  `scripts/generate-bot-avatars.mjs` from the vendored engine in `tools/bloub`
+  (eyes punched through the body via mask, orbit halves layered behind/front,
+  notification badge on `notify`); the shipped client carries only data URLs —
+  the engine never ships.
+
 ## [0.2.66] - 2026-10-08
 
 M0 reliability baseline for multi-bot goal collaboration, paired with the
