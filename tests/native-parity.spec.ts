@@ -444,3 +444,42 @@ describe('native main panel', () => {
     expect(CLIENT).toMatch(/e\(DelegatedBrowser, \{ \.\.\.p, wide \}\)/)
   })
 })
+
+describe('native content area: flow rhythm, dividers, turn process', () => {
+  it('spaces flow items with the native 6/12/16 rhythm, not one uniform gap', () => {
+    // ChatView.module.css: default 6px, +12px above a response, +16px after a
+    // turn-process block — a uniform 16px gap reads as loose slides.
+    expect(CLIENT).toContain('.dbs-column>.dbs-flowItem+.dbs-flowItem{margin-top:var(--dbs-flow-gap,6px)}')
+    expect(CLIENT).toContain('.dbs-flowItem[data-part=response]{--dbs-flow-gap:12px}')
+    expect(CLIENT).toContain('.dbs-flowItem[data-part=process]+.dbs-flowItem{--dbs-flow-gap:16px}')
+    expect(CLIENT).toContain("'data-part': part")
+  })
+
+  it('separates settled content from the live run with the native .5px divider', () => {
+    expect(CLIENT).toContain("e('span', { className: 'dbs-runningDivider', 'aria-hidden': true })")
+    expect(CLIENT).toMatch(/\.dbs-runningDivider\{[^}]*height:\.5px/)
+    expect(CLIENT).toMatch(/\.dbs-runningDivider\{[^}]*color-mix\(in srgb,var\(--dsw-alias-border-l1\) 75%,var\(--dsw-alias-border-l2\)\)/)
+  })
+
+  it('keeps the markdown fallback on the shipped MarkdownText rhythm', () => {
+    // deepsuite markdown.css: 16px paragraph flow, 32/16 heading margins.
+    expect(CLIENT).toContain('.dbs-md p{margin:16px 0}')
+    expect(CLIENT).toContain('.dbs-md h1,.dbs-md h2,.dbs-md h3{margin:32px 0 16px;font-weight:600}')
+    expect(CLIENT).toContain('.dbs-md>:first-child,.dbs-md p:first-child{margin-top:0!important}')
+    expect(CLIENT).toMatch(/\.dbs-md hr\{[^}]*height:\.5px/)
+  })
+
+  it('draws live tool calls from the engine outline channel', () => {
+    // The gateway transcript intentionally omits tool internals; the outline
+    // is the only live source of tool-call rows (the native UI renders these
+    // too). Outline tool rows reuse the transcript row anatomy.
+    expect(CLIENT).toContain('function OutlineRows(p: { items: any[] })')
+    expect(CLIENT).toContain("botsCall<{ items?: any[] }>('getAgentOutline', { id: p.agentId })")
+    expect(CLIENT).toContain("channels.has('outline')")
+    expect(CLIENT).toMatch(/function OutlineRows[\s\S]{0,2600}e\(ThinkingRow, /)
+    expect(CLIENT).toMatch(/function OutlineRows[\s\S]{0,2600}e\(ToolCard, /)
+    // Disclosure chevrons rotate one glyph (native motion), not swap icons.
+    expect(CLIENT).toMatch(/\.dbs-toolChevron svg\{transition:transform \.1s\}/)
+    expect(CLIENT).toContain('.dbs-toolRow[data-open] .dbs-toolChevron svg,.dbs-thinkRow[data-open] .dbs-toolChevron svg{transform:rotate(180deg)}')
+  })
+})

@@ -6,7 +6,6 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import assert from 'node:assert/strict'
-import { GoalWorkflow } from '../lib/goals.js'
 
 const dir = mkdtempSync(join(tmpdir(), 'dsh-bots-browser-'))
 const agent = { id: 'bot', name: '测试 Bot', isGroup: false, memberIds: [], isRunning: true, isActive: true,
@@ -35,7 +34,7 @@ const modelCfg = () => ({
   deepseek: ['deepseek-v4'], engine: { modelId: engineModelId, plist: '/mock/com.sdk-bots.host.plist', present: true }, native: null,
 })
 const group = { id: 'room1', name: '项目群', isGroup: true, memberIds: ['bot'], description: '协作群' }
-const workflow = new GoalWorkflow(dir, async (method, args) => {
+const gateway = async (method, args) => {
   if (method === 'listAgents') return [agent, group]
   if (method === 'getAgentAutomations') return autos
   if (method === 'createAgentAutomation') {
@@ -45,7 +44,7 @@ const workflow = new GoalWorkflow(dir, async (method, args) => {
   if (method === 'setAgentAutomationEnabled') { autos[0].isEnabled = args.isEnabled; return autos }
   if (method === 'interruptAgent') return { hadActiveRun: false }
   throw new Error('Unexpected gateway method: ' + method)
-})
+}
 const fixture = await build({ entryPoints: ['scripts/fixtures/workbench.tsx'], bundle: true, write: false, format: 'iife' })
 const theme = `:root{--dsw-alias-bg-base:#fff;--dsw-specific-sidebar-fill:#f7f7f8;--dsw-alias-label-primary:#202124;--dsw-alias-label-secondary:#65676b;--dsw-alias-label-tertiary:#888;--dsw-alias-border-l1:#eee;--dsw-alias-border-l2:#ddd;--dsw-alias-interactive-bg-hover:#f2f3f5;--dsw-specific-input-major:#fff;--dsw-alias-state-business-primary:#4568de;--dsw-font-family:system-ui}body{margin:0;font:14px system-ui}button{font:inherit;cursor:pointer;padding:6px 10px}button:disabled{opacity:.5}*{box-sizing:border-box}`
 const server = createServer(async (req, res) => {
@@ -88,6 +87,7 @@ const server = createServer(async (req, res) => {
         value = { bridged: on.size }
       }
       else if (method === 'modelConfig') value = modelCfg()
+      else if (method === 'getAgentOutline') value = { items: [] }
       else if (method === 'automationsList') {
         value = request.agentId === 'bot'
           ? [{ id: 'r1', name: '晨报汇总', prompt: '汇总昨日进展', isEnabled: true, schedule: '0 9 * * *', triggerDescription: '每天 09:00', nextRunAt: Date.now() + 3600000, lastStatus: 'ok' }]
@@ -97,9 +97,11 @@ const server = createServer(async (req, res) => {
         agentModelId = typeof request.modelId === 'string' && request.modelId !== '' ? request.modelId : null
         value = { modelId: agentModelId }
       }
-      else if (method === 'goals') value = await workflow.list(request.agentId)
-      else if (method === 'createGoal') value = await workflow.create(request)
-      else if (method === 'goalAction') value = await workflow.act(request)
+      // Goals engine teardown (parallel session): the room panel still reads
+      // member goals, which now answer empty until the engine re-adds them.
+      else if (method === 'goals') value = []
+      else if (method === 'createGoal') value = null
+      else if (method === 'goalAction') value = null
       else if (method === 'transcriptTail') value = { entries: [] }
       else if (method === 'eventsSince') value = { events: [], nextSeq: 0, unread: {} }
       else if (method === 'pin') value = { ids: [] }
@@ -182,6 +184,8 @@ try {
   await page.getByText('项目群', { exact: true }).click()
   await page.getByRole('button', { name: '任务规划', exact: true }).click()
   await page.locator('.dbs-taskPanel').waitFor()
+  // The member rows arrive from the panel's own RPCs — wait, don't race them.
+  await page.locator('.dbs-taskRow', { hasText: '晨报汇总' }).waitFor()
   assert.ok(await page.locator('.dbs-taskPanel').innerText().then(t => t.includes('晨报汇总')),
     'member routines must be visible in the room panel')
   assert.ok(await page.locator('.dbs-taskPanel').innerText().then(t => t.includes('测试 Bot')),

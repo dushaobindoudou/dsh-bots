@@ -23,7 +23,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { dirname, extname, join, resolve, sep } from 'node:path'
-import { appendFileSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import type {
@@ -34,14 +34,13 @@ import { callGateway, discover, effectiveDataDir, expandHome, nextNonce, normali
 import { realDelay, realLaunchctl, reloadLaunchdJob } from './launchd.js'
 import { GatewaySseClient, SseRingBuffer } from './sse.js'
 import { UnreadStore } from './unread.js'
-import { listAgentWorkspaces, readAgentWorkspace, setAgentWorkspace } from './workspace.js'
+import { WORKSPACE_VIRTUAL_PREFIX, listAgentWorkspaces, readAgentWorkspace, setAgentWorkspace } from './workspace.js'
 import { readAgentModelId, writeAgentModelId } from './agent-settings.js'
 import {
   PLUGIN_SKILLS_CACHE_FILENAME, PLUGIN_SKILLS_DIRNAME,
   discoverDshSkills, readBridgeCache, syncSkillsBridge,
 } from './skill-bridge.js'
 import { satisfiesCaret } from './version.js'
-import { GoalWorkflow, type GoalCreate, type GoalAction } from './goals.js'
 
 export const name = 'dsh-bots'
 
@@ -210,15 +209,6 @@ export class BotsRemote extends TypertRemoteService {
   private skillSyncTimer: ReturnType<typeof setInterval> | null = null
   private readonly bundledSkillRoots = [resolve(dirname(fileURLToPath(import.meta.url)), '..', 'skills')]
 
-  private goalWorkflow(): GoalWorkflow {
-    return new GoalWorkflow(effectiveDataDir(this.cfg.dataDir),
-      (method, args) => callGateway(this.cfg.dataDir, method, args))
-  }
-
-  async goals(request: { agentId: string }): Promise<import('./goals.js').GoalView[]> {
-    return this.goalWorkflow().list(request?.agentId)
-  }
-
   /** Read-only view of an agent's routines (standing orders) — the group
    * task-planning panel lists each member's own plans. The engine's
    * sand-state tools are how members create these in conversation. */
@@ -242,14 +232,30 @@ export class BotsRemote extends TypertRemoteService {
     }))
   }
 
-  async createGoal(request: GoalCreate): Promise<import('./goals.js').GoalView[]> {
-    if (!request) throw new Error('Goal is required')
-    return this.goalWorkflow().create(request)
-  }
-
-  async goalAction(request: GoalAction): Promise<import('./goals.js').GoalView[]> {
-    if (!request) throw new Error('Goal action is required')
-    return this.goalWorkflow().act(request)
+  /**
+   * The live turn-process outline (thinking deltas + tool calls with
+   * status/summary) for one agent. The sdk-bots gateway deliberately keeps
+   * tool internals OUT of the persisted transcript — this outline is the only
+   * channel that can render tool-call effects in the conversation, and it is
+   * how the native UI draws its process rows.
+   */
+  async getAgentOutline(request: { id?: string } | null): Promise<{ items: Array<{
+    id: string; kind: string; text: string | null; name: string | null; status: string | null; summary: string | null
+  }> }> {
+    const agentId = typeof request?.id === 'string' ? request.id.trim() : ''
+    if (agentId === '') throw new Error('getAgentOutline requires id')
+    const res = await callGateway<any>(this.cfg.dataDir, 'getConversationOutline', { id: agentId })
+    const items = Array.isArray(res) ? res : Array.isArray(res?.items) ? res.items : []
+    return {
+      items: items.map((o: any) => ({
+        id: String(o?.id ?? ''),
+        kind: String(o?.kind ?? ''),
+        text: typeof o?.text === 'string' ? o.text : null,
+        name: typeof o?.name === 'string' ? o.name : null,
+        status: typeof o?.status === 'string' ? o.status : null,
+        summary: typeof o?.summary === 'string' && o.summary.trim() !== '' ? o.summary : null,
+      })),
+    }
   }
 
   constructor(ctx: Context, config: Config) {
@@ -530,21 +536,101 @@ export class BotsRemote extends TypertRemoteService {
   }
 
   /**
-   * Resolve a bot-written path against the media allowlist: only files inside
-   * the gateway data dir (agent dirs, box-workspace, swarm blackboard…) may
-   * be served or opened — the workbench must never become a disk-wide file
-   * reader. Symlinks resolve before the check so escapes fail closed.
+   * Roots a bot-written path may be previewed from: the gateway data dir
+   * (agent dirs, box-workspace, swarm blackboard…) plus every extra writable
+   * path the user granted a jailed bot (`workspaceAllowPaths`) — the places a
+   * bot's deliverables can actually land. The workbench must never become a
+   * disk-wide file reader, so anything else fails closed.
+   */
+  private previewRoots(): string[] {
+    const dataDir = effectiveDataDir(this.cfg.dataDir)
+    const roots = new Set<string>()
+    try { roots.add(realpathSync(dataDir)) } catch { roots.add(resolve(dataDir)) }
+    try {
+      for (const row of listAgentWorkspaces(dataDir)) {
+        for (const extra of row.allowPaths) {
+          try { roots.add(realpathSync(resolve(expandHome(extra)))) } catch { /* vanished grant */ }
+        }
+      }
+    } catch { /* no agents dir yet */ }
+    return [...roots]
+  }
+
+  /**
+   * Resolve a bot-written path against the preview allowlist. Bots see their
+   * jail as `/workspace/<slug>/…` (the exec daemon maps it under the box
+   * root), so that virtual prefix is translated first. Symlinks resolve
+   * before the check so escapes fail closed.
    */
   private resolveMediaPath(raw: unknown): { resolved: string; ext: string } {
-    const p = String(raw ?? '').trim()
+    let p = String(raw ?? '').trim()
     if (p === '') throw new Error('path is required')
-    const root = realpathSync(effectiveDataDir(this.cfg.dataDir))
+    if (p.startsWith(WORKSPACE_VIRTUAL_PREFIX) && !p.includes('/../')) {
+      p = join(effectiveDataDir(this.cfg.dataDir), 'box-workspace', p.slice(WORKSPACE_VIRTUAL_PREFIX.length))
+    }
     let resolved = resolve(expandHome(p))
     try { resolved = realpathSync(resolved) } catch { /* missing → prefix-check the literal path */ }
-    if (resolved !== root && !resolved.startsWith(root + sep)) {
-      throw new Error('path is outside the gateway data dir: ' + resolved)
-    }
+    const inside = this.previewRoots().some((root) => resolved === root || resolved.startsWith(root + sep))
+    if (!inside) throw new Error('path is outside the bots data dir: ' + resolved)
     return { resolved, ext: extname(resolved).toLowerCase() }
+  }
+
+  /** Text page size for `readText`: big enough for most files in one read,
+   * small enough that one RPC frame stays well under the transport limits. */
+  static readonly TEXT_PAGE_BYTES = 256 * 1024
+  /** Whole-file cap for `readBytes` (PDF / images in the preview panel). */
+  static readonly PREVIEW_BYTES_MAX = 16 * 1024 * 1024
+  static readonly PREVIEW_MIME: Record<string, string> = {
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+    '.webp': 'image/webp', '.bmp': 'image/bmp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+    '.pdf': 'application/pdf',
+  }
+
+  /**
+   * Paged UTF-8 read for the file preview panel (markdown, code, plain text,
+   * HTML source). Pages end on a character boundary so a multi-byte glyph is
+   * never split; a NUL byte in the first page marks the file binary
+   * (`not-text`), the same sniff the native preview uses.
+   */
+  async readText(request: { path?: string; offset?: number } | null): Promise<{
+    path: string; text: string; offset: number; nextOffset: number; eof: boolean; bytes: number; mtimeMs: number
+  }> {
+    const { resolved } = this.resolveMediaPath(request?.path)
+    const stat = statSync(resolved)
+    if (!stat.isFile()) throw new Error('not-regular-file: ' + resolved)
+    const offset = Math.max(0, Math.floor(Number(request?.offset) || 0))
+    const length = Math.max(0, Math.min(BotsRemote.TEXT_PAGE_BYTES, stat.size - offset))
+    const buf = Buffer.alloc(length)
+    if (length > 0) {
+      const fd = openSync(resolved, 'r')
+      try { readSync(fd, buf, 0, length, offset) } finally { closeSync(fd) }
+    }
+    if (offset === 0 && buf.subarray(0, Math.min(buf.length, 8192)).includes(0)) throw new Error('not-text: ' + resolved)
+    // Trim a trailing partial UTF-8 sequence back into the next page.
+    let end = buf.length
+    if (offset + end < stat.size) {
+      let back = 0
+      while (back < 4 && end - back - 1 >= 0 && (buf[end - back - 1] & 0xc0) === 0x80) back += 1
+      const lead = end - back - 1 >= 0 ? buf[end - back - 1] : 0
+      const need = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : lead >= 0xc0 ? 2 : 1
+      if (need > back + 1) end = end - back - 1
+    }
+    const nextOffset = offset + end
+    return {
+      path: resolved, text: buf.subarray(0, end).toString('utf8'), offset, nextOffset,
+      eof: nextOffset >= stat.size, bytes: stat.size, mtimeMs: stat.mtimeMs,
+    }
+  }
+
+  /** Whole-file bytes for renderers that need them (images, PDF). */
+  async readBytes(request: { path?: string } | null): Promise<{ path: string; mime: string; dataBase64: string; sizeBytes: number; mtimeMs: number }> {
+    const { resolved, ext } = this.resolveMediaPath(request?.path)
+    const mime = BotsRemote.PREVIEW_MIME[ext]
+    if (mime === undefined) throw new Error('unsupported-preview: ' + ext)
+    const stat = statSync(resolved)
+    if (!stat.isFile()) throw new Error('not-regular-file: ' + resolved)
+    if (stat.size > BotsRemote.PREVIEW_BYTES_MAX) throw new Error('too-large: ' + stat.size)
+    return { path: resolved, mime, dataBase64: readFileSync(resolved).toString('base64'), sizeBytes: stat.size, mtimeMs: stat.mtimeMs }
   }
 
   /** Inline-preview support: read a bot-written image as base64 for a data URL. */
@@ -561,13 +647,18 @@ export class BotsRemote extends TypertRemoteService {
     return { mime, dataBase64: readFileSync(resolved).toString('base64'), sizeBytes: stat.size }
   }
 
-  /** Open a bot-written file with the desktop default app (macOS `open`). */
-  async openFile(request: { path?: string } | null): Promise<{ opened: boolean }> {
+  /**
+   * Show a bot-written file in the desktop file manager. Deliberately never
+   * hands the file itself to the OS opener: `open report.command` (or .app,
+   * .terminal, .webloc…) would EXECUTE model output on a single click.
+   * Previews render in the workbench; this only reveals the location.
+   */
+  async revealFile(request: { path?: string } | null): Promise<{ revealed: boolean }> {
     const { resolved } = this.resolveMediaPath(request?.path)
     statSync(resolved) // missing → honest error instead of a silent no-op
-    const cmd = process.platform === 'darwin' ? 'open' : 'xdg-open'
-    spawn(cmd, [resolved], { detached: true, stdio: 'ignore' }).unref()
-    return { opened: true }
+    if (process.platform === 'darwin') spawn('open', ['-R', resolved], { detached: true, stdio: 'ignore' }).unref()
+    else spawn('xdg-open', [dirname(resolved)], { detached: true, stdio: 'ignore' }).unref()
+    return { revealed: true }
   }
 
   async update(request: { id?: string; profile?: Record<string, unknown> } | null): Promise<AgentInfo | null> {
@@ -947,7 +1038,7 @@ export class BotsRemote extends TypertRemoteService {
   }
 
   /** Create (no id) or edit (id) a skill in the global library. Trigger-less
-   * only — scheduled routines are automations, edited on the goals surface. */
+   * only — scheduled routines are automations the bots manage in chat. */
   async skillsSave(request: {
     agentId?: string; id?: string; name?: string; description?: string; body?: string
   } | null): Promise<{ skills: any[] }> {
@@ -1250,13 +1341,14 @@ export class BotsRemote extends TypertRemoteService {
 
 for (const m of [
   'gatewayInfo', 'reconnect', 'list', 'workspaces', 'sessions',
-  'create', 'createGroup', 'setGroupMembers', 'groupCap', 'pin', 'setHidden', 'update', 'remove', 'send', 'interrupt', 'readImage', 'openFile', 'transcriptTail', 'markRead', 'diag',
+  'create', 'createGroup', 'setGroupMembers', 'groupCap', 'pin', 'setHidden', 'update', 'remove', 'send', 'interrupt', 'readImage', 'readText', 'readBytes', 'revealFile', 'transcriptTail', 'markRead', 'diag',
   'mcpServers', 'mcpTools', 'mcpAdd', 'mcpRemove', 'mcpRefresh', 'mcpExecute',
   'workspaceList', 'workspaceGet', 'workspaceSet', 'modelConfig', 'setModelConfig', 'applyModel',
   'skillsList', 'skillsSave', 'skillsEnable', 'skillsDelete', 'skillsRunNow', 'skillsImportText',
   'skillsBridgeList', 'skillsBridgeSet', 'skillsInstall', 'setAgentModel',
   'eventsSince', 'sseState',
-  'goals', 'createGoal', 'goalAction', 'automationsList',
+  'automationsList',
+  'getAgentOutline',
 ]) {
   markRemoteMethod(BotsRemote.prototype, m)
 }

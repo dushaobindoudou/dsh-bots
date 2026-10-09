@@ -394,7 +394,14 @@
    ref it carries is the element scrollTo/stick-to-bottom actually move. */
 .dbs-scroll{min-height:0;padding:16px calc(var(--dsh-composer-side-clearance) + 16px);flex:0 0 auto;container-type:inline-size}
 .dbs-flowItem{min-width:0}
-.dbs-column{max-width:var(--dsh-chat-content-width);flex-direction:column;gap:16px;width:100%;margin:0 auto;display:flex}
+.dbs-column{max-width:var(--dsh-chat-content-width);flex-direction:column;width:100%;margin:0 auto;display:flex}
+/* Native ChatView flow rhythm (ChatView.module.css): 6px between adjacent
+ * items by default, 12px above a response block, 16px after a turn-process
+ * (tool/thinking) block — never one uniform gap, which is what made the
+ * transcript read as loosely spaced slides instead of one conversation. */
+.dbs-column>.dbs-flowItem+.dbs-flowItem{margin-top:var(--dbs-flow-gap,6px)}
+.dbs-flowItem[data-part=response]{--dbs-flow-gap:12px}
+.dbs-flowItem[data-part=process]+.dbs-flowItem{--dbs-flow-gap:16px}
 .dbs-userRow{flex-direction:column;align-items:flex-end;gap:6px;display:flex}
 /* Native user bubble geometry: 70.2% of the content column (or 82%, whichever
  * is narrower), 14px/22px content type, wrapping instead of overflowing. */
@@ -451,20 +458,30 @@
 .dbs-author{font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(18px + var(--dsh-content-font-delta-secondary,0px));color:var(--dsw-alias-label-secondary);display:flex;align-items:center;gap:6px;font-weight:500;margin-bottom:2px;flex-wrap:wrap}
 .dbs-authorName{font-weight:500}
 .dbs-md{min-width:0}
-.dbs-md p{margin:0 0 8px}
-.dbs-md p:last-child{margin-bottom:0}
-.dbs-md h1,.dbs-md h2,.dbs-md h3,.dbs-md h4{margin:12px 0 6px;line-height:1.35;font-weight:600}
-.dbs-md h1{font-size:20px}.dbs-md h2{font-size:18px}.dbs-md h3{font-size:16px}.dbs-md h4{font-size:15px}
-.dbs-md ul,.dbs-md ol{margin:0 0 8px;padding-left:22px}
-.dbs-md li{margin:2px 0}
-.dbs-md code{font-family:var(--ds-font-family-code,ui-monospace,monospace);font-size:.9em;background:var(--dsw-alias-markdown-code-block,var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06)));border-radius:6px;padding:1px 5px}
-.dbs-md pre{margin:0 0 10px;background:var(--dsw-alias-markdown-code-block,var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06)));border:0;border-radius:12px;padding:12px 14px;overflow-x:auto;font-family:var(--ds-font-family-code,ui-monospace,monospace);font-size:var(--dsw-font-markdown-code-block-small-font-size,11px);line-height:var(--dsw-font-markdown-code-block-small-line-height,16px)}
+/* Markdown rhythm mirrors the shipped MarkdownText sheet (deepsuite
+ * markdown.css): 16px paragraph flow, 32/16 heading margins with the theme's
+ * markdown type scale, .5px hr — the fallback renderer must be visually
+ * indistinguishable from NATIVE.MarkdownText. */
+.dbs-md p{margin:16px 0}
+.dbs-md h1,.dbs-md h2,.dbs-md h3{margin:32px 0 16px;font-weight:600}
+.dbs-md h1{font:var(--dsw-font-markdown-h1,var(--dsw-font-markdown-base,inherit))}
+.dbs-md h2{font:var(--dsw-font-markdown-h2,var(--dsw-font-markdown-base,inherit))}
+.dbs-md h3{font:var(--dsw-font-markdown-h3,var(--dsw-font-markdown-base,inherit))}
+.dbs-md h4,.dbs-md h5,.dbs-md h6{font:var(--dsw-font-markdown-base-strong,var(--dsw-font-markdown-base,inherit));margin:16px 0}
+.dbs-md>:first-child,.dbs-md p:first-child{margin-top:0!important}
+.dbs-md>:last-child,.dbs-md p:last-child{margin-bottom:0!important}
+.dbs-md ul,.dbs-md ol{margin:16px 0;padding-left:18px}
+.dbs-md li:not(:first-child){margin-top:6px}
+.dbs-md li>p{margin:8px 0}
+.dbs-md li::marker{line-height:24px;color:var(--dsw-alias-label-secondary)}
+.dbs-md code{font-family:var(--ds-font-family-code,ui-monospace,monospace);font-size:.875em;background:var(--dsw-alias-markdown-code-block,var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06)));border-radius:6px;padding:1px 5px}
+.dbs-md pre{margin:16px 0;background:var(--dsw-alias-markdown-code-block,var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06)));border:0;border-radius:12px;padding:12px 14px;overflow-x:auto;font-family:var(--ds-font-family-code,ui-monospace,monospace);font-size:var(--dsw-font-markdown-code-block-small-font-size,11px);line-height:var(--dsw-font-markdown-code-block-small-line-height,16px)}
 .dbs-md .dbs-imglink{display:inline-block;max-width:min(320px,100%);border-radius:10px;overflow:hidden;margin:4px 0;box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:zoom-in}
 .dbs-md .dbs-imglink img{display:block;width:100%;height:auto}
 .dbs-md pre code{background:transparent;padding:0;font-size:1em}
-.dbs-md blockquote{margin:0 0 8px;padding:2px 0 2px 10px;border-left:3px solid var(--dsw-alias-border-l2,rgba(0,0,0,.2));color:var(--dsw-alias-label-secondary)}
-.dbs-md a{color:var(--dsw-alias-state-business-primary,#1a6dff)}
-.dbs-md hr{border:none;border-top:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.15));margin:10px 0}
+.dbs-md blockquote{border-left:2px solid var(--dsw-alias-label-caption,var(--dsw-alias-border-l2));margin:16px 0 0;padding-left:14px;color:var(--dsw-alias-label-secondary)}
+.dbs-md a{color:var(--dsw-alias-link,var(--dsw-alias-state-business-primary,#1a6dff));font-weight:500}
+.dbs-md hr{border:none;height:.5px;margin:32px 0;background:var(--dsw-alias-border-l2,var(--dsw-alias-border-l2,rgba(0,0,0,.15)))}
 .dbs-plain{white-space:pre-wrap;word-break:break-word}
 /* Tool + thinking rows rebuilt on the native ToolRow/ReasoningRow anatomy:
  * one 24px line — 16px leading glyph, tool name, 2×2 dot separator,
@@ -485,6 +502,10 @@
 .dbs-toolSummary[data-follow-end]{justify-content:flex-end;display:flex;text-overflow:clip;flex:none;width:max-content;min-width:100%;overflow:visible;text-align:start}
 .dbs-toolDuration{font-family:var(--ds-font-family-code,monospace);font-size:calc(var(--dsh-content-font-size-secondary,13px) - 2px);color:var(--dsw-alias-label-caption);flex:none;margin-left:10px;transform:translateY(.5px);font-variant-numeric:tabular-nums}
 .dbs-toolChevron{flex:none;display:flex;align-items:center;color:var(--dsw-alias-label-secondary);margin-left:4px}
+/* Native disclosure chevron: one glyph that rotates (transition .1s), not two
+ * swapped icons — matches the shipped disclosure rows' motion. */
+.dbs-toolChevron svg{transition:transform .1s}
+.dbs-toolRow[data-open] .dbs-toolChevron svg,.dbs-thinkRow[data-open] .dbs-toolChevron svg{transform:rotate(180deg)}
 .dbs-toolBody{margin:4px 0 4px 4px;border:.5px solid var(--dsw-alias-border-l1,rgba(0,0,0,.08));background:var(--dsw-alias-markdown-code-block,var(--dsw-specific-bubble,var(--dsw-alias-bg-layer-2,rgba(0,0,0,.05))));border-radius:12px;padding:12px 16px;font:var(--dsw-font-markdown-code-block-small);max-height:260px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;color:var(--dsw-alias-label-primary)}
 .dbs-thinkBody{padding:4px 0 4px calc(22px + var(--dsh-content-font-delta,0px));color:var(--dsw-alias-label-tertiary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(20px + var(--dsh-content-font-delta-secondary,0px));white-space:pre-wrap;word-break:break-word}
 .dbs-thinkRow .dbs-toolRowLine{border:0;background:none;color:var(--dsw-alias-label-tertiary);font:inherit;padding:0;cursor:pointer;text-align:left;width:100%}
@@ -600,6 +621,10 @@
  * 用时 12秒 ···") exactly like the native row, and a still whale SVG
  * takes over under reduced motion / no mask-mode support. */
 .dbs-running{--dsw-alias-label-shimmer:var(--dsw-alias-label-deep-diving-shimmer);color:var(--dsw-alias-label-deep-diving);font-size:calc(var(--dsh-content-font-size,14px) - 2px);line-height:calc(22px + var(--dsh-content-font-delta,0px));flex-direction:column;align-items:flex-start;display:flex}
+/* The native running divider: a .5px hairline between the last settled flow
+ * item and the live run block (user feedback: the transcript had no divider
+ * at all). */
+.dbs-runningDivider{width:100%;height:.5px;margin:8px 0 10px;background:color-mix(in srgb,var(--dsw-alias-border-l1) 75%,var(--dsw-alias-border-l2));pointer-events:none;flex:none}
 .dbs-runningContent{align-items:center;gap:6px;min-width:0;display:inline-flex}
 .dbs-runningText{font-variant-numeric:tabular-nums;min-width:0}
 .dbs-srOnly{clip:rect(0 0 0 0);white-space:nowrap;width:1px;height:1px;position:absolute;overflow:hidden}
@@ -5262,7 +5287,7 @@ class BotEngine {
           ? e(StateDot, { state: running ? 'ongoing' : 'error', size: 8 })
           : Ico(icon, { size: 14 })
         const stamp = (() => { const ms = en.timestampMs; return ms == null ? undefined : stampOf(ms) })()
-        return e('div', { className: 'dbs-toolRow', 'data-variant': variant, 'data-state': running ? 'running' : failed ? 'error' : 'ok' },
+        return e('div', { className: 'dbs-toolRow', 'data-variant': variant, 'data-open': open && expandable ? 'true' : undefined, 'data-state': running ? 'running' : failed ? 'error' : 'ok' },
           e('div', {
             className: 'dbs-toolRowLine', title: stamp,
             ...(expandable ? {
@@ -5277,7 +5302,7 @@ class BotEngine {
             summary !== '' ? e('span', { className: 'dbs-toolSummary', title: summary }, summary) : null,
             duration !== '' ? e('span', { className: 'dbs-toolDuration' }, duration) : null,
             stat !== null ? e('span', { className: 'dbs-diffStat' }, `+${stat.added} -${stat.removed}`) : null,
-            expandable ? e('span', { className: 'dbs-toolChevron' }, Ico(open ? 'IconChevronDownOutline14' : 'IconChevronRightOutline14', { size: 14 })) : null),
+            expandable ? e('span', { className: 'dbs-toolChevron' }, Ico('IconChevronDownOutline14', { size: 14 })) : null),
           open && expandable
             ? e('div', { className: 'dbs-toolBody' },
                 dl !== null
@@ -5340,7 +5365,7 @@ class BotEngine {
         // in the one-line preview.
         const summary = (running ? (lines[lines.length - 1] ?? '') : (lines[0] ?? '')).replaceAll('**', '')
         const duration = formatDurationMs(en.durationMs)
-        return e('div', { className: 'dbs-thinkRow', 'data-state': running ? 'running' : 'ok' },
+        return e('div', { className: 'dbs-thinkRow', 'data-open': open ? 'true' : undefined, 'data-state': running ? 'running' : 'ok' },
           e('button', {
             type: 'button', className: 'dbs-toolRowLine', 'aria-expanded': open,
             onClick: () => setOpen(!open),
@@ -5350,8 +5375,35 @@ class BotEngine {
             summary !== '' ? e('span', { className: 'dbs-toolSep', 'aria-hidden': true }) : null,
             summary !== '' ? e('span', { className: 'dbs-toolSummary', 'data-follow-end': running || undefined }, summary) : null,
             duration !== '' ? e('span', { className: 'dbs-toolDuration' }, duration) : null,
-            e('span', { className: 'dbs-toolChevron' }, Ico(open ? 'IconChevronDownOutline14' : 'IconChevronRightOutline14', { size: 14 }))),
+            e('span', { className: 'dbs-toolChevron' }, Ico('IconChevronDownOutline14', { size: 14 }))),
           open ? e('div', { className: 'dbs-thinkBody' }, text) : null)
+      }
+
+      /** Live turn-process rows from the engine's outline — the per-turn
+       * process stream (thinking deltas, tool calls with status + summary)
+       * that the native chat renders as its tool/thinking rows. The sdk-bots
+       * gateway keeps tool internals OUT of the persisted transcript, so this
+       * live stream is the only channel that can show tool-call effects; the
+       * rows map onto the same ToolCard/ThinkingRow anatomy as the transcript.
+       * Outline `assistant-text` items are skipped: they surface as real
+       * transcript entries and would render twice. */
+      function OutlineRows(p: { items: any[] }) {
+        const rows: any[] = []
+        for (const item of p.items) {
+          if (item === null || typeof item !== 'object') continue
+          if (item.kind === 'thinking') {
+            const text = String(item.text ?? '')
+            if (text.trim() === '') continue
+            rows.push(e(ThinkingRow, { key: String(item.id ?? `t${rows.length}`), entry: { id: String(item.id ?? ''), content: text, isStreaming: true } }))
+          } else if (item.kind === 'tool-call') {
+            const status = item.status === 'failed' ? 'error' : item.status === 'done' ? 'ok' : 'running'
+            rows.push(e(ToolCard, {
+              key: String(item.id ?? `c${rows.length}`),
+              entry: { id: String(item.id ?? ''), display: 'tool', toolName: item.name, toolSummary: item.summary ?? null, toolStatus: status, content: '' },
+            }))
+          }
+        }
+        return rows.length > 0 ? e('div', { className: 'dbs-flowItem', 'data-part': 'process' }, rows) : null
       }
 
       /** Native turn rail (TurnNavigatorRail): right-edge ticks, one per user
@@ -5677,6 +5729,9 @@ class BotEngine {
       function ChatView(p: { agentId: string }) {
         const s = useStore()
         const [entries, setEntries] = React.useState(null)
+        // Live turn-process outline (thinking/tool rows for the running turn),
+        // from the engine's outline channel — see OutlineRows.
+        const [outline, setOutline] = React.useState([] as any[])
         const [taskPanel, setTaskPanel] = React.useState(false)
         const [input, setInput] = React.useState('')
         const [sending, setSending] = React.useState(false)
@@ -5733,6 +5788,12 @@ class BotEngine {
           void botsCall<{ skills?: any[] }>('skillsList', { agentId: p.agentId }).then(result => {
             if (!cancelled) setChatSkills((result?.skills ?? []).filter((skill: any) => skill.trigger == null && skill.isEnabledForAgent !== false))
           }).catch(() => {})
+          // Snapshot the current outline so a run that started before this
+          // view opened still shows its process rows; live updates arrive on
+          // the ring below.
+          void botsCall<{ items?: any[] }>('getAgentOutline', { id: p.agentId }).then(result => {
+            if (!cancelled) setOutline(Array.isArray(result?.items) ? result.items : [])
+          }).catch(() => {})
           return () => { cancelled = true }
         }, [p.agentId])
 
@@ -5760,6 +5821,25 @@ class BotEngine {
           }
           const unsub = ring.subscribe((channels, events) => {
             if (channels.has('transcript') || channels.has('client-side-tool-v2')) void loadTranscript()
+            if (channels.has('outline') && Array.isArray(events)) {
+              for (const ev of events) {
+                const payload = ev?.data
+                if (payload === null || typeof payload !== 'object') continue
+                if (String(payload.agentId ?? '') !== p.agentId) continue
+                if (payload.type === 'snapshot') {
+                  setOutline(Array.isArray(payload.items) ? payload.items : [])
+                } else if (payload.type === 'updated' && payload.item !== null && typeof payload.item === 'object') {
+                  const item = payload.item
+                  setOutline((prev: any[]) => {
+                    const idx = prev.findIndex((x: any) => x?.id === item.id)
+                    if (idx < 0) return [...prev, item]
+                    const next = prev.slice()
+                    next[idx] = item
+                    return next
+                  })
+                }
+              }
+            }
             if (channels.has('transcript') && Array.isArray(events)) {
               for (const ev of events) {
                 const payload = ev?.data
@@ -6120,12 +6200,17 @@ class BotEngine {
           else run = null
           // Native flow item: one stable anchor per entry, so the turn rail can
           // measure positions and scroll a chosen turn into view by id. A turn
-          // starts at a user message (or an image the user attached).
+          // starts at a user message (or an image the user attached). The
+          // data-part drives the native flow rhythm (6/12/16px) in CSS.
           const turnStart = en.display === 'user' || en.display === 'attachment'
+          const part = en.display === 'user' || en.display === 'attachment' ? 'user'
+            : en.display === 'tool' || en.display === 'thinking' ? 'process'
+              : en.display === 'assistant' ? 'response' : 'event'
           thread.push(e('div', {
             key: en.id !== '' ? en.id : String(i),
             className: 'dbs-flowItem',
             'data-eid': en.id !== '' ? en.id : String(i),
+            'data-part': part,
             'data-turn-start': turnStart ? 'true' : undefined,
           }, e(Entry, { entry: en, isGroup, agent, compact })))
         })
@@ -6189,8 +6274,13 @@ class BotEngine {
                           e('div', { className: 'dbs-welcomeHint' },
                             isGroup ? t('chat.empty.group') : t('chat.empty.single', { name: agent?.name ?? '' })))
                       : thread,
+                  // Live turn process: the engine's outline rendered as native
+                  // tool/thinking rows, with the .5px divider that separates
+                  // settled content from the live run block.
+                  composing ? e(OutlineRows, { items: outline }) : null,
                   composing
                     ? e('div', { className: 'dbs-running', 'data-chat-running': true },
+                        e('span', { className: 'dbs-runningDivider', 'aria-hidden': true }),
                         e('span', { className: 'dbs-srOnly', role: 'status', 'aria-live': 'polite', 'aria-atomic': true }, t('chat.composing')),
                         e('span', { className: 'dbs-runningContent' },
                           e('span', { className: 'dbs-runningIcon', 'aria-hidden': true },
