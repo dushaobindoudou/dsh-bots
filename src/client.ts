@@ -374,6 +374,30 @@
 .dbs-bubbleImg .dbs-mediaImg{max-width:min(280px,62vw);max-height:260px;margin-left:auto}
 /* Composer attach affordance + pending strip. */
 .dbs-attachBtn{corner-shape:round;background:var(--dsw-specific-selector,var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06)));width:28px;height:28px;color:var(--dsw-alias-label-primary);cursor:pointer;border:none;border-radius:999px;flex:none;place-items:center;display:grid;padding:0}
+/* Engine model chip (native InputBar control-row seat): compact pill naming
+ * the launchd model; opens a grouped popover above the composer. */
+.dbs-modelChip{align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:999px;background:transparent;border:none;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;cursor:pointer;max-width:180px;min-width:0}
+.dbs-modelChip:hover,.dbs-modelChipActive{background:var(--dsw-alias-interactive-bg-hover)}
+.dbs-modelChipLabel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dbs-modelSeat{position:relative;display:inline-flex;min-width:0}
+.dbs-modelMenu{position:absolute;bottom:calc(100% + 8px);left:0;z-index:60;min-width:280px;max-width:360px;max-height:340px;overflow-y:auto;background:var(--dsw-specific-menu,var(--dsw-alias-bg-layer-2,rgba(0,0,0,.06)));--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);border-radius:16px;padding:4px;box-shadow:var(--dsw-elevation-prominent,var(--dsw-shadow-lv2));animation:dbs-modal-in .14s ease-out}
+.dbs-modelGroup{padding:8px 10px 4px;font-size:11px;line-height:16px;font-weight:600;color:var(--dsw-alias-label-tertiary)}
+.dbs-modelRow{display:flex;align-items:center;gap:8px;width:100%;padding:6px 10px;border-radius:10px;border:none;background:transparent;font-size:12.5px;line-height:18px;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left}
+.dbs-modelRow:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dbs-modelRow:disabled{opacity:.5;cursor:default}
+.dbs-modelRow[data-current='true']{color:var(--dsw-alias-state-business-primary);font-weight:600}
+.dbs-modelCheck{width:14px;flex:none;color:inherit}
+.dbs-modelName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dbs-modelErr{padding:6px 10px;font-size:12px;line-height:18px;color:var(--dsw-alias-state-error-primary)}
+.dbs-modelHint{padding:8px 10px 6px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);border-top:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.08));margin-top:4px}
+.dbs-modelSearch{margin:2px 2px 4px;padding:6px 8px;font-size:12.5px;border-radius:8px;border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.12));outline:none;background:transparent;color:var(--dsw-alias-label-primary)}
+.dbs-modelCaption{display:block;font-size:10.5px;line-height:14px;color:var(--dsw-alias-label-tertiary);font-weight:400}
+/* Gateway-offline card: actionable, not a dead hint — reconnect boots an
+ * unloaded engine and waits for health. */
+.dbs-offlineCard{margin:48px auto 0;max-width:340px;display:flex;flex-direction:column;align-items:center;gap:8px;padding:24px 20px;text-align:center}
+.dbs-offlineCompact{margin:8px 12px;padding:12px;align-items:flex-start;text-align:left;gap:6px}
+.dbs-offlineTitle{font-size:14px;line-height:20px;font-weight:600;color:var(--dsw-alias-label-primary)}
+.dbs-offlineBody{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
 .dbs-attachBtn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover-solid)}
 .dbs-attachBtn:disabled{opacity:.5;cursor:default}
 /* Composer attachment rail, matching the shipped ComposerAttachments:
@@ -763,6 +787,10 @@
         'settings.model.engine': '引擎实际模型',
         'settings.model.engineUnset': '未设置（环境变量缺省）',
         'settings.model.engineApply': '应用并重启引擎',
+        'composer.model.title': '选择模型',
+        'composer.model.hint': '对这台 Bot 生效（下条消息起，无需重启）；引擎全局模型在 设置 → 模型 里修改',
+        'composer.model.defaultPrefix': '默认 · ',
+        'composer.model.auto': 'auto · freeroute',
         'settings.model.engineApplying': '重启中…',
         'settings.model.engineRestarted': '已重启并生效',
         'settings.model.applyFailed': '应用失败——引擎没有重启成功，模型选择未生效：',
@@ -793,10 +821,13 @@
         'settings.skills.agent': '作用 Bot：',
         'settings.skills.failed': '技能操作失败：',
         'settings.skills.bridge': 'DSH 技能桥',
-        'settings.skills.bridge.summary': '把本机 DSH 技能（~/.dsh/skills、~/.agents/skills）以「活指针」供给所有 Bot：DSH 侧修改即时生效，无需复制。勾选后保存即桥接。',
+        'settings.skills.bridge.summary': '把本机技能（~/.dsh/skills、~/.agents/skills、~/.codex/skills）与内置技能以「活指针」供给所有 Bot：DSH 侧修改即时生效，无需复制。新安装技能自动共享；取消勾选并保存可排除技能。',
         'settings.skills.bridge.empty': '本机未发现 DSH 技能',
         'settings.skills.bridge.apply': '保存桥接',
         'settings.skills.bridge.applying': '保存中…',
+        'model.followEngine': '跟随引擎默认',
+        'model.engineUnset': '引擎默认（未设置）',
+        'model.searchPlaceholder': '搜索模型…',
         'errors.gatewayDown': 'Bots 引擎未运行——watchdog 会自动拉起；若持续报错请检查 com.sdk-bots.host launchd 任务',
         'errors.gatewayAuth': '网关需要鉴权——请在引擎侧配置 token 或改回 loopback 绑定',
         'settings.model.deepseek': 'DeepSeek',
@@ -992,6 +1023,10 @@
         'settings.model.engine': 'Engine model',
         'settings.model.engineUnset': 'unset (env default)',
         'settings.model.engineApply': 'Apply and restart engine',
+        'composer.model.title': 'Select model',
+        'composer.model.hint': 'Applies to this bot from its next turn — no restart. The engine-wide model lives in Settings → Models',
+        'composer.model.defaultPrefix': 'Default · ',
+        'composer.model.auto': 'auto · freeroute',
         'settings.model.engineApplying': 'Restarting…',
         'settings.model.engineRestarted': 'Restarted and live',
         'settings.model.applyFailed': 'Apply failed — the engine did not restart, the pick is NOT live:',
@@ -1022,10 +1057,13 @@
         'settings.skills.agent': 'For bot:',
         'settings.skills.failed': 'Skill operation failed: ',
         'settings.skills.bridge': 'DSH skill bridge',
-        'settings.skills.bridge.summary': 'Publish this machine\u2019s DSH skills (~/.dsh/skills, ~/.agents/skills) to every bot as LIVE pointers: harness edits propagate, nothing is copied. Check rows and save to bridge them.',
+        'settings.skills.bridge.summary': 'Publish this machine\u2019s skills (~/.dsh/skills, ~/.agents/skills, ~/.codex/skills) and bundled skills to every bot as LIVE pointers: harness edits propagate, nothing is copied. New installations are shared automatically; uncheck and save to exclude a skill.',
         'settings.skills.bridge.empty': 'No DSH skills found on this machine',
         'settings.skills.bridge.apply': 'Save bridge',
         'settings.skills.bridge.applying': 'Saving…',
+        'model.followEngine': 'Follow engine default',
+        'model.engineUnset': 'Engine default (unset)',
+        'model.searchPlaceholder': 'Search models…',
         'errors.gatewayDown': 'The bots engine is not running — the watchdog will restart it; if this persists, check the com.sdk-bots.host launchd job',
         'errors.gatewayAuth': 'The gateway requires auth — configure a token on the engine or switch back to loopback binding',
         'settings.model.deepseek': 'DeepSeek',
@@ -5444,6 +5482,131 @@ class BotEngine {
               e('div', null, e(Button, { type: 'submit', variant: 'primary', size: 'sm', disabled: busy || !draft.objective.trim() || !draft.criteria.trim() }, busy ? t('goal.working') : t('goal.start')))) : null))
       }
 
+      /** Model catalog cache shared by the composer picker: modelConfig probes
+       * freeroute (seconds); a 60s TTL keeps the chip snappy while staying
+       * fresh enough for a change made on the settings page. */
+      const modelCatalog = { at: 0, agentId: null as string | null, cfg: null as any }
+      async function fetchModelCatalog(force = false, agentId: string | null = null): Promise<any> {
+        const now = Date.now()
+        if (force !== true && modelCatalog.cfg !== null && modelCatalog.agentId === agentId && now - modelCatalog.at < 60_000) return modelCatalog.cfg
+        const cfg = await botsCall('modelConfig', { agentId: agentId ?? undefined })
+        modelCatalog.at = now
+        modelCatalog.agentId = agentId
+        modelCatalog.cfg = cfg
+        return cfg
+      }
+
+      /** Composer model seat on the native InputBar pattern: a compact chip
+       * in the control row naming THIS bot's model, opening a provider-
+       * grouped popover above the composer. Picking writes the per-agent
+       * settings.json modelId — effective on the bot's next turn, no
+       * restart — and the "follow engine default" row clears the override.
+       * The account-wide engine model stays in the settings card (that path
+       * needs a launchd restart); the chip's default row captions it. */
+      function ComposerModelPicker(p: { agentId?: string }) {
+        const [open, setOpen] = React.useState(false)
+        const [cfg, setCfg] = React.useState(null)
+        const [busy, setBusy] = React.useState(false)
+        const [err, setErr] = React.useState(null)
+        const [search, setSearch] = React.useState('')
+        const agentId = typeof p.agentId === 'string' && p.agentId !== '' ? p.agentId : null
+        async function load(force = false) {
+          try { setCfg(await fetchModelCatalog(force, agentId)) } catch (e2: any) { setErr(errText(e2)) }
+        }
+        React.useEffect(() => { void load() }, [agentId])
+        async function pick(modelId: string | null) {
+          if (busy === true || agentId === null) return
+          setBusy(true); setErr(null)
+          try {
+            await botsCall('setAgentModel', { agentId, modelId })
+            await load(true)
+            setOpen(false)
+          } catch (e2: any) { setErr(errText(e2)) }
+          setBusy(false)
+        }
+        const current = typeof cfg?.agentModelId === 'string' && cfg.agentModelId !== '' ? cfg.agentModelId : null
+        const engineModel = typeof cfg?.engine?.modelId === 'string' && cfg.engine.modelId !== ''
+          ? cfg.engine.modelId : null
+        const engineDefault = typeof cfg?.agentDefaultModel === 'string' && cfg.agentDefaultModel !== ''
+          ? cfg.agentDefaultModel : engineModel
+        const chipLabel = current !== null
+          ? current
+          : `${t('composer.model.defaultPrefix')}${engineDefault ?? t('composer.model.auto')}`
+        if (open !== true) {
+          return e('button', {
+            type: 'button', className: 'dbs-modelChip', disabled: busy === true,
+            title: `${t('composer.model.title')}: ${chipLabel}`, 'aria-label': `${t('composer.model.title')}: ${chipLabel}`,
+            'aria-haspopup': 'menu', 'aria-expanded': 'false',
+            onClick: () => { setOpen(true); void load() },
+          }, e('span', { className: 'dbs-modelChipLabel' }, chipLabel))
+        }
+        // Same bucketing as the settings card (DeepSeek lifted out of
+        // freeroute's aggregator, DSH providers appended) so the two
+        // surfaces read alike.
+        const groups: any[] = Array.isArray(cfg?.groups) ? cfg.groups : []
+        const deepseekModels: string[] = Array.isArray(cfg?.deepseek) ? cfg.deepseek : []
+        const nativeProviders: any[] = Array.isArray(cfg?.native?.providers) ? cfg.native.providers : []
+        const providers: any[] = [
+          ...(deepseekModels.length > 0
+            ? [{ key: '__deepseek', label: t('settings.model.deepseek'), models: deepseekModels }]
+            : []),
+          ...groups.map((g: any) => ({ key: g.provider, label: String(g.provider ?? ''), models: Array.isArray(g.models) ? g.models : [] })),
+          ...nativeProviders.map((pv: any) => ({
+            key: 'dsh:' + pv.id, label: `DSH · ${pv.name}`,
+            models: (Array.isArray(pv.models) ? pv.models : []).map((m: any) => pv.id + '/' + m.id),
+          })),
+        ].filter((g: any) => g.models.length > 0)
+        // Lead with the override-clearing row, then the catalog; a needle
+        // filters (subsequence match, like the native picker's search).
+        const rows: Array<{ modelId: string | null; label: string; caption: string | null; group: string }> = [
+          { modelId: null, label: t('model.followEngine'), caption: engineDefault ?? t('model.engineUnset'), group: '' },
+          ...providers.flatMap((g: any) => (g.models as string[]).map((m: string) => ({
+            modelId: m, label: m, caption: null, group: g.label as string,
+          }))),
+        ]
+        const needle = search.trim().toLowerCase()
+        const visible = needle === ''
+          ? rows
+          : rows.filter((r) => {
+              let i = 0
+              for (const ch of `${r.label} ${r.group}`.toLowerCase()) if (ch === needle[i]) i++
+              return i >= needle.length
+            })
+        return e('span', { className: 'dbs-modelSeat' },
+          e('button', {
+            type: 'button', className: 'dbs-modelChip dbs-modelChipActive', disabled: busy === true,
+            'aria-haspopup': 'menu', 'aria-expanded': 'true',
+            onClick: () => setOpen(false),
+          }, e('span', { className: 'dbs-modelChipLabel' }, chipLabel)),
+          e('div', { style: { position: 'fixed', inset: 0, zIndex: 59 }, onClick: () => setOpen(false) }),
+          e('div', { className: 'dbs-modelMenu', role: 'menu' },
+            visible.length > 6 ? e('input', {
+              className: 'dbs-modelSearch', value: search, autoFocus: true, spellCheck: false,
+              placeholder: t('model.searchPlaceholder'),
+              onChange: (ev: any) => setSearch(ev.target.value),
+              onKeyDown: (ev: any) => { if (ev.key === 'Escape') { ev.stopPropagation(); setOpen(false) } },
+            }) : null,
+            visible.map((r, index) => {
+              const active = r.modelId === null ? current === null : current === r.modelId
+              const header = r.group !== '' && (index === 0 || visible[index - 1].group !== r.group)
+                ? e('div', { className: 'dbs-modelGroup' }, r.group) : null
+              const row = e('button', {
+                key: (r.modelId ?? '__default') + index, type: 'button', className: 'dbs-modelRow',
+                role: 'menuitemradio', 'aria-checked': active ? 'true' : 'false',
+                'data-current': active ? 'true' : 'false',
+                disabled: busy === true,
+                onClick: () => { void pick(r.modelId) },
+              },
+                e('span', { className: 'dbs-modelCheck' }, active ? '✓' : ''),
+                e('span', { className: 'dbs-modelName' },
+                  r.label,
+                  r.caption !== null ? e('span', { className: 'dbs-modelCaption' }, r.caption) : null))
+              return header === null ? row : e(React.Fragment, { key: 'h' + index }, header, row)
+            }),
+            err !== null ? e('div', { className: 'dbs-modelErr' }, err) : null,
+            e('div', { className: 'dbs-modelHint' }, t('composer.model.hint'))))
+      }
+
       function ChatView(p: { agentId: string }) {
         const s = useStore()
         const [entries, setEntries] = React.useState(null)
@@ -6074,6 +6237,10 @@ class BotEngine {
                     // paperclip vanished.
                     }, Ico('IconPaperclipOutline16', { size: 14 }) ?? e(PaperclipGlyph, null))),
                   e('div', { className: 'dbs-composerTrailing' },
+                    // Per-bot model seat — the native InputBar's right-cluster
+                    // model picker (compact chip → grouped popover above),
+                    // scoped to THIS conversation's bot.
+                    e(ComposerModelPicker, { agentId: agent?.id ?? '' }),
                     // ONE morphing circle, always — the native InputBar
                     // contract. With text in hand the corner is the action for
                     // that text: send when idle, a queued send while a run is
@@ -6435,7 +6602,13 @@ class BotEngine {
                 },
               }),
               e('b', null, row.name),
-              e('span', { className: 'dbs-meta' }, row.description ? ' · ' + String(row.description).split('\n')[0].slice(0, 100) : '')))) : null,
+              e('span', { className: 'dbs-meta' }, row.description ? ' · ' + String(row.description).split('\n')[0].slice(0, 100) : ''))))
+          : bridgeRows !== null
+            // Loaded but nothing to bridge: say so instead of vanishing.
+            ? e('div', { className: 'dbs-setcard', style: { margin: '6px 0' } },
+                e('div', { className: 'dbs-sethead' }, e('span', { className: 'dbs-title' }, t('settings.skills.bridge'))),
+                e('div', { className: 'dbs-setrow' }, t('settings.skills.bridge.empty')))
+            : null,
           err !== null ? e('div', { className: 'dbs-setrow' }, t('settings.skills.failed'), err) : null)
       }
 

@@ -35,6 +35,7 @@ import { realDelay, realLaunchctl, reloadLaunchdJob } from './launchd.js'
 import { GatewaySseClient, SseRingBuffer } from './sse.js'
 import { UnreadStore } from './unread.js'
 import { listAgentWorkspaces, readAgentWorkspace, setAgentWorkspace } from './workspace.js'
+import { readAgentModelId, writeAgentModelId } from './agent-settings.js'
 import {
   PLUGIN_SKILLS_CACHE_FILENAME, PLUGIN_SKILLS_DIRNAME,
   discoverDshSkills, readBridgeCache, syncSkillsBridge,
@@ -727,11 +728,14 @@ export class BotsRemote extends TypertRemoteService {
   }
 
   /** Model configuration surface: the engine's account-level default model
-   * (setHostSettings.agentDefaultModel) plus freeroute availability. The
-   * engine keeps no per-bot model — this is the one runtime-effective knob. */
-  async modelConfig(request: unknown): Promise<{
+   * (setHostSettings.agentDefaultModel) plus freeroute availability. When a
+   * non-empty `agentId` is given, also reports that agent's own override
+   * (agents/<id>/settings.json modelId) — null means "follow the engine
+   * default". */
+  async modelConfig(request: { agentId?: string } | null): Promise<{
     provider: string | null
     agentDefaultModel: string | null
+    agentModelId: string | null
     freerouteReachable: boolean
     models: string[]
     groups: Array<{ provider: string; models: string[] }>
@@ -742,9 +746,13 @@ export class BotsRemote extends TypertRemoteService {
     const settings = await callGateway<any>(this.cfg.dataDir, 'getHostSettings', {})
     const selection = settings?.agentDefaultModel ?? null
     const probe = await this.probeFreerouteModels()
+    const agentId = typeof request?.agentId === 'string' && request.agentId.trim() !== '' ? request.agentId.trim() : null
     return {
       provider: typeof settings?.inferenceProvider === 'string' ? settings.inferenceProvider : null,
       agentDefaultModel: typeof selection?.modelId === 'string' ? selection.modelId : null,
+      agentModelId: agentId !== null
+        ? readAgentModelId(effectiveDataDir(this.cfg.dataDir), agentId)
+        : null,
       freerouteReachable: probe.ok,
       models: probe.models,
       groups: probe.groups,
@@ -755,6 +763,19 @@ export class BotsRemote extends TypertRemoteService {
       engine: this.engineModelInfo(),
       native: await this.nativeModelCatalog(),
     }
+  }
+
+  /** Per-agent model override (null clears it back to the engine default).
+   * Direct write of agents/<id>/settings.json modelId, preserving unknown
+   * fields (the jail keys share that file) — effective on the bot's NEXT
+   * turn, no restart. The turn pipeline (sdk-bots production-turn-run-shell-
+   * adapter) feeds it into the per-turn sessionOptions.modelId channel. */
+  async setAgentModel(request: { agentId?: string; modelId?: string | null } | null): Promise<{ modelId: string | null }> {
+    const agentId = typeof request?.agentId === 'string' ? request.agentId.trim() : ''
+    if (agentId === '') throw new Error('setAgentModel requires agentId')
+    const raw = typeof request?.modelId === 'string' ? request.modelId.trim() : ''
+    const modelId = raw !== '' ? raw : null
+    return { modelId: writeAgentModelId(effectiveDataDir(this.cfg.dataDir), agentId, modelId) }
   }
 
   /** The model the engine will actually run, straight off the launchd job. */
@@ -1133,7 +1154,7 @@ for (const m of [
   'mcpServers', 'mcpTools', 'mcpAdd', 'mcpRemove', 'mcpRefresh', 'mcpExecute',
   'workspaceList', 'workspaceGet', 'workspaceSet', 'modelConfig', 'setModelConfig', 'applyModel',
   'skillsList', 'skillsSave', 'skillsEnable', 'skillsDelete', 'skillsRunNow', 'skillsImportText',
-  'skillsBridgeList', 'skillsBridgeSet',
+  'skillsBridgeList', 'skillsBridgeSet', 'setAgentModel',
   'eventsSince', 'sseState',
   'goals', 'createGoal', 'goalAction',
 ]) {

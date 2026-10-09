@@ -20,6 +20,19 @@ const dshSkills = [
   { id: 'dsh-finance', name: '金融助手', description: '金融场景总入口', bridged: false, path: '/mock/.dsh/skills/finance/SKILL.md' },
   { id: 'dsh-note', name: '笔记整理', description: '整理零散笔记', bridged: true, path: '/mock/.agents/skills/note.md' },
 ]
+let agentModelId = null
+// Mutable so the settings ModelCard case can prove the set→apply flow, and the
+// gateway-online state so the offline case can flip it. The composer seat is
+// per-bot (settings.json modelId, no restart) — applyModelCalls stays 0 there.
+let engineModelId = 'deepseek-v4'
+let pickedModel = null
+let applyModelCalls = 0
+let gwOk = true
+const modelCfg = () => ({
+  provider: null, agentDefaultModel: 'deepseek-v4', agentModelId, freerouteReachable: true,
+  models: ['deepseek-v4', 'glm-5'], groups: [{ provider: 'orcarouter', models: ['deepseek-v4', 'glm-5'] }],
+  deepseek: ['deepseek-v4'], engine: { modelId: engineModelId, plist: '/mock/com.sdk-bots.host.plist', present: true }, native: null,
+})
 const workflow = new GoalWorkflow(dir, async (method, args) => {
   if (method === 'listAgents') return [agent]
   if (method === 'getAgentAutomations') return autos
@@ -61,11 +74,21 @@ const server = createServer(async (req, res) => {
         value = { skills }
       }
       else if (method === 'skillsRunNow' || method === 'skillsImportText') value = { skills }
+      else if (method === 'skillsInstall') {
+        assert.equal(request.source, '/mock/skills/research')
+        skills.push({ id: 'research', name: 'research', description: 'Installed bundle', source: 'workflow', isEnabledForAgent: true, trigger: null })
+        value = { skills }
+      }
       else if (method === 'skillsBridgeList') value = { skills: dshSkills }
       else if (method === 'skillsBridgeSet') {
         const on = new Set((request.ids ?? []).filter((x) => typeof x === 'string'))
         for (const s of dshSkills) s.bridged = on.has(s.id)
         value = { bridged: on.size }
+      }
+      else if (method === 'modelConfig') value = modelCfg()
+      else if (method === 'setAgentModel') {
+        agentModelId = typeof request.modelId === 'string' && request.modelId !== '' ? request.modelId : null
+        value = { modelId: agentModelId }
       }
       else if (method === 'goals') value = await workflow.list(request.agentId)
       else if (method === 'createGoal') value = await workflow.create(request)
@@ -73,7 +96,15 @@ const server = createServer(async (req, res) => {
       else if (method === 'transcriptTail') value = { entries: [] }
       else if (method === 'eventsSince') value = { events: [], nextSeq: 0, unread: {} }
       else if (method === 'pin') value = { ids: [] }
-      else if (method === 'gatewayInfo') value = { ok: true, port: 7331 }
+      else if (method === 'gatewayInfo') value = { ok: gwOk, port: 7331 }
+      else if (method === 'reconnect') { gwOk = true; value = { ok: true, port: 7331, bootstrapped: true, waitedMs: 4000, reason: null } }
+      else if (method === 'setModelConfig') { pickedModel = String(request.modelId ?? ''); value = { ok: true } }
+      else if (method === 'applyModel') {
+        assert.equal(request.modelId, pickedModel, 'apply must target the model just set')
+        engineModelId = String(request.modelId)
+        applyModelCalls += 1
+        value = { modelId: engineModelId, restarted: true, reloaded: true, errors: [], healthy: true, waitedMs: 4000 }
+      }
       res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ ok: true, value }))
     } catch (error) { res.end(JSON.stringify({ ok: false, error: { message: error.message } })) }
     return
@@ -115,6 +146,18 @@ try {
   assert.equal(await page.locator('.dbs-chatview').count(), 0)
   await page.getByRole('button', { name: 'Fold sidebar' }).click()
   await page.getByText('测试 Bot', { exact: true }).click()
+  // Composer model seat (per-bot, per the committed design doc): the pill
+  // names THIS bot's model; picking writes the agent's settings.json modelId
+  // — effective next turn, NO restart. The engine-global set+apply flow is
+  // the settings ModelCard's surface and is NOT driven from the composer.
+  await page.locator('.dbs-modelChip').click()
+  await page.locator('.dbs-modelMenu').waitFor()
+  assert.ok((await page.locator('.dbs-modelRow[data-current="true"]').innerText()).includes('跟随引擎默认'),
+    'with no override the follow-engine-default row must be checked')
+  await page.locator('.dbs-modelRow', { hasText: 'glm-5' }).first().click()
+  await page.locator('.dbs-modelChip', { hasText: 'glm-5' }).waitFor()
+  assert.equal(agentModelId, 'glm-5', 'picking must write the per-agent modelId')
+  assert.equal(applyModelCalls, 0, 'the composer seat must never restart the engine')
   await page.getByRole('button', { name: '目标', exact: true }).click()
   await page.getByRole('heading', { name: '修复登录问题并通过回归' }).waitFor()
   // Simulate an engine checkpoint; the model claim must require explicit review.

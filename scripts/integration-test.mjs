@@ -12,7 +12,7 @@ const EXPECTED = [
   'create', 'createGroup', 'setGroupMembers', 'groupCap', 'pin', 'setHidden', 'update', 'remove', 'send', 'interrupt', 'readImage', 'openFile', 'transcriptTail',
   'markRead', 'diag', 'eventsSince', 'sseState',
   'mcpServers', 'mcpTools', 'mcpAdd', 'mcpRemove', 'mcpRefresh', 'mcpExecute',
-  'workspaceList', 'workspaceGet', 'workspaceSet', 'modelConfig', 'setModelConfig',
+  'workspaceList', 'workspaceGet', 'workspaceSet', 'modelConfig', 'setModelConfig', 'setAgentModel',
   'skillsList', 'skillsSave', 'skillsEnable', 'skillsDelete', 'skillsRunNow', 'skillsImportText',
   'skillsBridgeList', 'skillsBridgeSet',
 ]
