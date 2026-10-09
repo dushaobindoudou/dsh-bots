@@ -162,6 +162,13 @@ export function trimAgent(a: any): AgentInfo | null {
     isGroup: Boolean(a.isGroup),
     memberIds: Array.isArray(a.memberIds) ? a.memberIds.map(String) : [],
     isRunning: Boolean(a.isRunning),
+    runStartedAt: Number.isFinite(a.runStartedAt) && a.runStartedAt > 0 ? a.runStartedAt : null,
+    isRetrying: a.isRetrying === true,
+    currentActivity: a.currentActivity != null && typeof a.currentActivity === 'object' ? {
+      kind: typeof a.currentActivity.kind === 'string' ? a.currentActivity.kind.slice(0, 40) : undefined,
+      tool: typeof a.currentActivity.tool === 'string' ? a.currentActivity.tool.slice(0, 80) : undefined,
+      detail: typeof a.currentActivity.detail === 'string' ? a.currentActivity.detail.slice(0, 200) : undefined,
+    } : null,
     isActive: a.isActive !== false,
     lastMessagePreview: typeof a.lastMessagePreview === 'string' ? a.lastMessagePreview : null,
     updatedAt: a.updatedAt ?? null,
@@ -169,7 +176,9 @@ export function trimAgent(a: any): AgentInfo | null {
     hasUnread: Boolean(a.hasUnread),
     unreadCount: Number.isFinite(a.unreadCount) ? Number(a.unreadCount) : 0,
     isHiddenFromSidebar: Boolean(a.isHiddenFromSidebar),
-    awaitingUserResponse: typeof a.awaitingUserResponse === 'string' ? a.awaitingUserResponse : null,
+    awaitingUserResponse: typeof a.awaitingUserResponse === 'string' ? a.awaitingUserResponse
+      : a.awaitingUserResponse != null && typeof a.awaitingUserResponse === 'object'
+        ? String(a.awaitingUserResponse.reason ?? 'waiting-for-user').slice(0, 500) : null,
     lastActivityAt: Number.isFinite(a.lastActivityAt) ? Number(a.lastActivityAt) : null,
     // Oversized avatars are dropped, not truncated: a half data URL renders as
     // a broken image, whereas null cleanly falls through to the initial chip.

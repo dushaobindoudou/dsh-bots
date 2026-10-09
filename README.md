@@ -42,6 +42,14 @@ leaving the shell.
 - **Stop generating**: composer send button morphs into a stop square wired to the gateway's
   `interruptAgent`
 - Local media: inline image previews and one-click file chips for paths mentioned by bots
+- State-aware avatars and an engine-based execution timer that survives navigation and page reloads
+
+**Shared skills**
+
+- Share DSH, Agents, Codex and bundled skills across bots and groups; invoke them from the `@` menu
+- Install complete local or GitHub skill bundles in settings, or let bots install them with `update_state`
+- Bundled finance skill retrieves market data with explicit sources, timestamps and error handling
+- See [shared skills and session continuity](./docs/session-continuity-and-shared-skills.md) for the companion engine update and verified goal progress protocol
 
 **Persistent goals (single bots)**
 

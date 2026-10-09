@@ -22,6 +22,14 @@ const wireAgent = {
 }
 
 describe('trimAgent', () => {
+  it('preserves the execution clock and activity across the host boundary', () => {
+    expect(trimAgent({ id: 'x', isRunning: true, runStartedAt: 1787904500000, isRetrying: true,
+      currentActivity: { kind: 'tool', tool: 'Shell', detail: 'build', callId: 'call' } })).toMatchObject({
+      runStartedAt: 1787904500000, isRetrying: true,
+      currentActivity: { kind: 'tool', tool: 'Shell', detail: 'build' },
+    })
+    expect(trimAgent({ id: 'x', awaitingUserResponse: { tabId: 'tab', reason: 'approval', since: 123 } })?.awaitingUserResponse).toBe('approval')
+  })
   it('carries the fields the native-parity sidebar needs', () => {
     const a = trimAgent(wireAgent)!
     expect(a.isComposingMessage).toBe(true)

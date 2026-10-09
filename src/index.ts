@@ -25,7 +25,7 @@ import { homedir } from 'node:os'
 import { dirname, extname, join, resolve, sep } from 'node:path'
 import { appendFileSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
-import { pathToFileURL } from 'node:url'
+import { pathToFileURL, fileURLToPath } from 'node:url'
 import type {
   AgentInfo, Config, EventsSinceResult, GatewayInfo, McpServerInfo, McpToolInfo,
   SessionInfo, SseState, TranscriptEntry, WorkspaceInfo,
@@ -84,6 +84,18 @@ const DIAG_FILE = 'dsh-bots-diag.jsonl'
 const UNREAD_FILE = 'dsh-bots-unread.json'
 const BOTS_SETTINGS_FILE = 'dsh-bots-settings.json'
 
+/**
+ * Build-time version fallback, baked by scripts/bake-version.mjs after tsc.
+ *
+ * The manifest climb above resolves in a workspace layout, but every
+ * production diag line (1152 by 2026-10-09) still stamped "unresolved" —
+ * dsh's plugin loader does not preserve an import.meta.url under the package
+ * root, so no sibling/parent probe can ever find the manifest. The sentinel
+ * literal below is REPLACED with the real version by the build script, which
+ * is loader-independent by construction.
+ */
+const OWN_VERSION_FALLBACK = 'unresolved'
+
 /** Stamped into every diagnostic line so records survive version skew. */
 const PLUGIN_VERSION = ownModuleVersion()
 
@@ -101,18 +113,7 @@ function resolvedModuleVersion(id: string): string {
   }
 }
 
-/**
- * This plugin's own version for diagnostics (F12, 2026-10-08).
- *
- * `require.resolve('dsh-bots')` fails inside the installed plugin layout —
- * the plugin loads by absolute path, so its own name sits in no node_modules
- * index and every diag line that day was stamped "unresolved". The manifest
- * physically lives at the package root above this module file
- * (lib/index.js → ../package.json), so climb from here and take the version
- * only from a manifest that actually names the plugin. Kept separate from
- * `resolvedModuleVersion`, whose sentinel must never be fed a foreign
- * package's version (assertPeerCompatible consumes it).
- */
+
 function ownModuleVersion(): string {
   try {
     let dir = dirname(pathToFileURL(import.meta.url).pathname)
@@ -126,7 +127,7 @@ function ownModuleVersion(): string {
       dir = parent
     }
   } catch { /* fall through to the sentinel */ }
-  return 'unresolved'
+  return OWN_VERSION_FALLBACK
 }
 
 /**
@@ -206,6 +207,8 @@ export class BotsRemote extends TypertRemoteService {
   private readonly sse: GatewaySseClient
   private readonly unread: UnreadStore
   private rebasing = false
+  private skillSyncTimer: ReturnType<typeof setInterval> | null = null
+  private readonly bundledSkillRoots = [resolve(dirname(fileURLToPath(import.meta.url)), '..', 'skills')]
 
   private goalWorkflow(): GoalWorkflow {
     return new GoalWorkflow(effectiveDataDir(this.cfg.dataDir),
@@ -214,6 +217,29 @@ export class BotsRemote extends TypertRemoteService {
 
   async goals(request: { agentId: string }): Promise<import('./goals.js').GoalView[]> {
     return this.goalWorkflow().list(request?.agentId)
+  }
+
+  /** Read-only view of an agent's routines (standing orders) — the group
+   * task-planning panel lists each member's own plans. The engine's
+   * sand-state tools are how members create these in conversation. */
+  async automationsList(request: { agentId: string }): Promise<Array<{
+    id: string; name: string; prompt: string; isEnabled: boolean
+    schedule: string; triggerDescription: string; nextRunAt: number | null; lastStatus: string | null
+  }>> {
+    const agentId = typeof request?.agentId === 'string' ? request.agentId.trim() : ''
+    if (agentId === '') throw new Error('automationsList requires agentId')
+    const rows = await callGateway<any>(this.cfg.dataDir, 'getAgentAutomations', { id: agentId })
+    const list = Array.isArray(rows) ? rows : []
+    return list.map((a: any) => ({
+      id: String(a?.id ?? ''),
+      name: String(a?.name ?? ''),
+      prompt: String(a?.prompt ?? ''),
+      isEnabled: a?.isEnabled !== false,
+      schedule: String(a?.schedule ?? ''),
+      triggerDescription: String(a?.triggerDescription ?? ''),
+      nextRunAt: typeof a?.nextRunAt === 'number' ? a.nextRunAt : null,
+      lastStatus: Array.isArray(a?.runs) && a.runs.length > 0 ? String(a.runs.at(-1)?.status ?? '') || null : null,
+    }))
   }
 
   async createGoal(request: GoalCreate): Promise<import('./goals.js').GoalView[]> {
@@ -295,6 +321,47 @@ export class BotsRemote extends TypertRemoteService {
       ? healthRoot
       : join(expandHome(dataDir), 'box-workspace')
     return { ...discovered, dataDir, workspaceRoot: root }
+  }
+
+  /** Poll discovery until the engine answers /health (kickstart returns the
+   * prompt while the process is still booting — an immediate probe reads as
+   * DOWN and made the model picker report a failure for a restart that had
+   * actually succeeded). Budget-bounded; never throws. */
+  private async waitEngineHealthy(timeoutMs = 20_000): Promise<{ ok: boolean; port: number | null; waitedMs: number; reason: string | null }> {
+    const startedAt = Date.now()
+    let lastReason: string | null = null
+    for (;;) {
+      const info = await discover(this.cfg.dataDir)
+      if (info.ok) return { ok: true, port: info.port ?? null, waitedMs: Date.now() - startedAt, reason: null }
+      lastReason = info.reason ?? null
+      if (Date.now() - startedAt >= timeoutMs) {
+        return { ok: false, port: info.port ?? null, waitedMs: Date.now() - startedAt, reason: lastReason }
+      }
+      await realDelay(1000)
+    }
+  }
+
+  /** The 重新连接 surface: re-run discovery, and when the engine job is
+   * UNLOADED bring it back with the same guarded reload the self-check uses
+   * (a loaded-but-dead job is left alone — the operator restarts that). Then
+   * wait for /health so the client flips to online only when it is true. */
+  async reconnect(request: unknown): Promise<{ ok: boolean; port: number | null; bootstrapped: boolean; waitedMs: number; reason: string | null }> {
+    let info = await discover(this.cfg.dataDir)
+    let bootstrapped = false
+    if (info.ok === false && process.platform === 'darwin') {
+      const uid = typeof process.getuid === 'function' ? process.getuid() : 501
+      const target = `gui/${uid}/${ENGINE_LAUNCHD_LABEL}`
+      if (realLaunchctl(['print', target]).ok === false) {
+        const outcome = await reloadLaunchdJob({ uid, label: ENGINE_LAUNCHD_LABEL, plistPath: ENGINE_PLIST, run: realLaunchctl })
+        bootstrapped = outcome.restarted
+        if (outcome.errors.length > 0) {
+          void this.diag({ stage: 'reconnect', detail: { bootstrapped, errors: outcome.errors } })
+        }
+      }
+    }
+    const wait = await this.waitEngineHealthy()
+    if (wait.ok === false) info = await discover(this.cfg.dataDir)
+    return { ok: wait.ok, port: wait.port, bootstrapped, waitedMs: wait.waitedMs, reason: wait.ok ? null : (wait.reason ?? info.reason ?? null) }
   }
 
   /**
@@ -805,7 +872,7 @@ export class BotsRemote extends TypertRemoteService {
    * failed: 5: Input/output error", which (with stderr discarded) left the
    * engine silently UNLOADED in the 2026-09-18 outage. Failures now come back
    * as `errors` for the client to render. */
-  async applyModel(request: { modelId?: string } | null): Promise<{ modelId: string; restarted: boolean; reloaded: boolean; errors: string[] }> {
+  async applyModel(request: { modelId?: string } | null): Promise<{ modelId: string; restarted: boolean; reloaded: boolean; errors: string[]; healthy: boolean; waitedMs: number }> {
     const modelId = String(request?.modelId ?? '').trim()
     if (modelId === '') throw new Error('applyModel requires a model id')
     let xml = readFileSync(ENGINE_PLIST, 'utf8')
@@ -825,7 +892,22 @@ export class BotsRemote extends TypertRemoteService {
     if (outcome.errors.length > 0) {
       void this.diag({ stage: 'applyModel', detail: { modelId, ...outcome } })
     }
-    return { modelId, restarted: outcome.restarted, reloaded: outcome.reloaded, errors: outcome.errors }
+    // kickstart answers while the process is still booting: only a green
+    // /health makes the pick real (the picker showed 重启失败 for restarts
+    // that were merely still in flight, and 模型已生效 for ones that never
+    // came back — both lies are now impossible).
+    const health = outcome.restarted ? await this.waitEngineHealthy() : null
+    if (health !== null && health.ok === false) {
+      void this.diag({ stage: 'applyModel', detail: { modelId, ...outcome, health } })
+    }
+    return {
+      modelId,
+      restarted: outcome.restarted,
+      reloaded: outcome.reloaded,
+      errors: outcome.errors,
+      healthy: health?.ok ?? false,
+      waitedMs: health?.waitedMs ?? 0,
+    }
   }
 
   /* =============================================================
@@ -857,6 +939,7 @@ export class BotsRemote extends TypertRemoteService {
   /** List the skill catalog as one agent sees it (includes per-agent
    * enablement and the source tags the UI badges on). */
   async skillsList(request: { agentId?: string } | null): Promise<{ skills: any[] }> {
+    syncSkillsBridge(homedir(), effectiveDataDir(this.cfg.dataDir), PLUGIN_VERSION, { additionalRoots: this.bundledSkillRoots })
     const agentId = this.requireAgentId(request)
     const workflows = await callGateway<any>(this.cfg.dataDir, 'getAgentWorkflows', { id: agentId })
     const skills = Array.isArray(workflows) ? workflows : []
@@ -925,6 +1008,19 @@ export class BotsRemote extends TypertRemoteService {
     return { skills: Array.isArray(workflows) ? workflows : [] }
   }
 
+  /** Install the whole bundle in the engine's shared library, including helpers. */
+  async skillsInstall(request: { agentId?: string; source?: string } | null): Promise<{ skills: any[] }> {
+    const agentId = this.requireAgentId(request)
+    const source = typeof request?.source === 'string' ? request.source.trim() : ''
+    if (!source) throw new Error('Provide a local skill directory or GitHub skill URL')
+    if (/^[a-z]+:\/\//i.test(source) && (!source.startsWith('https://') || new URL(source).hostname !== 'github.com')) {
+      throw new Error('Use an HTTPS GitHub skill directory URL or an absolute local skill directory')
+    }
+    const result = await callGateway<any>(this.cfg.dataDir, 'importAgentWorkflowUrl', { id: agentId, url: source })
+    if (!result?.result?.imported?.length) throw new Error(result?.result?.skipped?.[0]?.reason ?? 'Skill installation failed')
+    return this.skillsList({ agentId })
+  }
+
   /* --- dsh skill bridge ----------------------------------------------------
    * The bridge (skill-bridge.ts) publishes the harness's own skill roots to
    * the engine's plugin-skills channel as LIVE file pointers; the engine's
@@ -932,7 +1028,8 @@ export class BotsRemote extends TypertRemoteService {
 
   /** Discovery + current bridge state for the card's checkbox list. */
   async skillsBridgeList(request: unknown): Promise<{ skills: Array<{ id: string; name: string; description: string; bridged: boolean; path: string }> }> {
-    const refs = discoverDshSkills(homedir())
+    syncSkillsBridge(homedir(), effectiveDataDir(this.cfg.dataDir), PLUGIN_VERSION, { additionalRoots: this.bundledSkillRoots })
+    const refs = discoverDshSkills(homedir(), this.bundledSkillRoots)
     const cachePath = join(effectiveDataDir(this.cfg.dataDir), PLUGIN_SKILLS_DIRNAME, PLUGIN_SKILLS_CACHE_FILENAME)
     const ids = new Set(readBridgeCache(cachePath)?.ids ?? [])
     return {
@@ -946,24 +1043,26 @@ export class BotsRemote extends TypertRemoteService {
   /** Rewrite the bridge index to exactly `ids` (empty array = bridge none). */
   async skillsBridgeSet(request: { ids?: string[] } | null): Promise<{ bridged: number }> {
     const ids = Array.isArray(request?.ids) ? request.ids.filter((id): id is string => typeof id === 'string') : []
-    return syncSkillsBridge(homedir(), effectiveDataDir(this.cfg.dataDir), PLUGIN_VERSION, { enabled: ids })
+    return syncSkillsBridge(homedir(), effectiveDataDir(this.cfg.dataDir), PLUGIN_VERSION, { enabled: ids, additionalRoots: this.bundledSkillRoots })
   }
 
   /** Mount-time sync: first run bridges everything; later runs reconcile
    * (prune vanished, keep the user's trimmed set). Best-effort by policy —
    * a failed bridge must never block activation or the RPC surface. */
   scheduleSkillsBridgeSync(): void {
-    const t = setTimeout(() => {
+    const sync = () => {
       try {
-        const result = syncSkillsBridge(homedir(), effectiveDataDir(this.cfg.dataDir), PLUGIN_VERSION)
+        const result = syncSkillsBridge(homedir(), effectiveDataDir(this.cfg.dataDir), PLUGIN_VERSION, { additionalRoots: this.bundledSkillRoots })
         if (result.firstRun || result.bridged !== result.discovered) {
           void this.diag({ stage: 'skillsBridgeSync', detail: result })
         }
       } catch (error: any) {
         void this.diag({ stage: 'skillsBridgeSync', detail: { error: String(error?.message ?? error) } })
       }
-    }, 6000)
-    if (typeof t === 'object' && t !== null && 'unref' in t) (t as { unref(): void }).unref()
+    }
+    sync()
+    this.skillSyncTimer = setInterval(sync, 15_000)
+    this.skillSyncTimer.unref()
   }
 
   /**
@@ -1144,19 +1243,20 @@ export class BotsRemote extends TypertRemoteService {
 
   /** Stop the live event loop on plugin teardown. */
   stopSse(): void {
+    if (this.skillSyncTimer !== null) { clearInterval(this.skillSyncTimer); this.skillSyncTimer = null }
     this.sse.stop()
   }
 }
 
 for (const m of [
-  'gatewayInfo', 'list', 'workspaces', 'sessions',
+  'gatewayInfo', 'reconnect', 'list', 'workspaces', 'sessions',
   'create', 'createGroup', 'setGroupMembers', 'groupCap', 'pin', 'setHidden', 'update', 'remove', 'send', 'interrupt', 'readImage', 'openFile', 'transcriptTail', 'markRead', 'diag',
   'mcpServers', 'mcpTools', 'mcpAdd', 'mcpRemove', 'mcpRefresh', 'mcpExecute',
   'workspaceList', 'workspaceGet', 'workspaceSet', 'modelConfig', 'setModelConfig', 'applyModel',
   'skillsList', 'skillsSave', 'skillsEnable', 'skillsDelete', 'skillsRunNow', 'skillsImportText',
-  'skillsBridgeList', 'skillsBridgeSet', 'setAgentModel',
+  'skillsBridgeList', 'skillsBridgeSet', 'skillsInstall', 'setAgentModel',
   'eventsSince', 'sseState',
-  'goals', 'createGoal', 'goalAction',
+  'goals', 'createGoal', 'goalAction', 'automationsList',
 ]) {
   markRemoteMethod(BotsRemote.prototype, m)
 }

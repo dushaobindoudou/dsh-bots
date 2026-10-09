@@ -9,8 +9,8 @@ const CLIENT = readFileSync(join(ROOT, 'src', 'client.ts'), 'utf8')
 describe('bloub live bot avatars', () => {
   // The fallback avatars are the bloub engine (the x.ai bot avatar recreated
   // as measured SVG, MIT, © Jérémy Perret) running INSIDE the client: bots
-  // without a custom avatarDataUrl render live at ~30 fps, gaze at the
-  // pointer, and get their volume from a soft-light gloss. The engine is
+  // without a custom avatarDataUrl render live at ~30 fps and move on their
+  // own (independent gaze/drift, never pointer-coupled). The engine is
   // merged verbatim into client.ts because the client entry must stay one
   // self-contained file; tools/bloub is the vendored source of truth.
   it('carries the merged engine, generated from the vendored sources', () => {
@@ -27,25 +27,31 @@ describe('bloub live bot avatars', () => {
     // eyes are holes in a mask over the body, not shapes painted on top
     expect(CLIENT).toMatch(/maskUnits="userSpaceOnUse"/)
     expect(CLIENT).toMatch(/<path d="\$\{attr\(frame\.bodyPath\)\}" fill="#fff"\/>/)
-    // 3D gloss: radial body gradient + specular sheen + top-lit tile
+    // 3D gloss: radial body gradient + specular sheen; the tile itself is
+    // transparent (no white card behind the blob — it must sit on the
+    // shell surface in both modes).
     expect(CLIENT).toContain('radialGradient')
     expect(CLIENT).toContain('specular sheen')
     expect(CLIENT).toContain('mixHex(ink, \'#ffffff\', 0.26)')
-    expect(CLIENT).toContain('mixHex(bg, \'#ffffff\', 0.35)')
+    expect(CLIENT).not.toContain('mixHex(bg, \'#ffffff\', 0.35)')
+    expect(CLIENT).not.toContain('width="${BLOUB_TILE}" height="${BLOUB_TILE}" fill=')
   })
 
-  it('animates on a shared clock, with reduced-motion and gaze fallbacks', () => {
+  it('animates on a shared clock, independent of the pointer', () => {
     expect(CLIENT).toContain('(prefers-reduced-motion: reduce)')
     expect(CLIENT).toContain('requestAnimationFrame(bloubLoop)')
-    // pointer gaze with the engine's own mixing; no pointer → drift restored
-    expect(CLIENT).toContain('yaw: nx * 16, pitch: 10 - ny * 13, mix: 1, spin: 0, wander: 0')
+    // User feedback: avatars move INDEPENDENTLY — the pose's own gaze and
+    // drift on the shared clock, never chasing the cursor.
+    expect(CLIENT).not.toContain('bloubGaze')
+    expect(CLIENT).not.toContain('bloubLook')
     expect(CLIENT).toContain('engine.setLook(null, now)')
+    expect(CLIENT).toContain('never chases the cursor')
     // one clock stops itself when the last avatar unregisters
     expect(CLIENT).toContain('if (bloubTicks.size === 0) return')
   })
 
   it('routes bots to the live avatar, groups and custom avatars unchanged', () => {
-    expect(CLIENT).toMatch(/e\(BloubAvatar, \{ seed: String\(a\.id \?\? a\.name \?\? 'bot'\), size \}\)/)
+    expect(CLIENT).toMatch(/e\(BloubAvatar, \{ seed: String\(a\.id \?\? a\.name \?\? 'bot'\), size, mode \}\)/)
     expect(CLIENT).toMatch(/if \(typeof a\.avatarDataUrl === 'string' && a\.avatarDataUrl !== ''\)/)
     expect(CLIENT).not.toContain('BOT_AVATARS') // baked stills are gone
   })

@@ -3,3 +3,6 @@ lib/
 *.tgz
 .DS_Store
 *.tgz
+
+__pycache__/
+*.pyc

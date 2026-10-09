@@ -9,10 +9,11 @@ import assert from 'node:assert/strict'
 import { GoalWorkflow } from '../lib/goals.js'
 
 const dir = mkdtempSync(join(tmpdir(), 'dsh-bots-browser-'))
-const agent = { id: 'bot', name: '测试 Bot', isGroup: false, memberIds: [], isRunning: false, isActive: true }
+const agent = { id: 'bot', name: '测试 Bot', isGroup: false, memberIds: [], isRunning: true, isActive: true,
+  runStartedAt: Date.now() - 90000, currentActivity: { kind: 'thinking' } }
 const autos = []
 const skills = [
-  { id: 'weekly', name: '周报生成', description: '每周五生成周报草稿', body: '# 步骤', source: 'workflow', isEnabledForAgent: true, trigger: null },
+  { id: 'weekly', name: '周报生成', description: '每周五生成周报草稿', body: '# 步骤', source: 'workflow', isEnabledForAgent: true, trigger: null, disableModelInvocation: true },
   { id: 'dsh-bridged', name: 'DSH 桥接技能', description: '来自 ~/.dsh/skills', body: 'bridged', source: 'plugin', isEnabledForAgent: true, trigger: null },
   { id: 'routine', name: '每日站会提醒', description: 'cron 例行', body: 'remind', source: 'workflow', isEnabledForAgent: true, trigger: { schedule: '0 9 * * *', isEnabled: true }, scheduleDescription: '每天 09:00' },
 ]
@@ -33,8 +34,9 @@ const modelCfg = () => ({
   models: ['deepseek-v4', 'glm-5'], groups: [{ provider: 'orcarouter', models: ['deepseek-v4', 'glm-5'] }],
   deepseek: ['deepseek-v4'], engine: { modelId: engineModelId, plist: '/mock/com.sdk-bots.host.plist', present: true }, native: null,
 })
+const group = { id: 'room1', name: '项目群', isGroup: true, memberIds: ['bot'], description: '协作群' }
 const workflow = new GoalWorkflow(dir, async (method, args) => {
-  if (method === 'listAgents') return [agent]
+  if (method === 'listAgents') return [agent, group]
   if (method === 'getAgentAutomations') return autos
   if (method === 'createAgentAutomation') {
     autos.push({ id: 'routine', ...args.spec, runs: [], nextRunAt: Date.now() + 60000 })
@@ -54,7 +56,7 @@ const server = createServer(async (req, res) => {
       let body = ''; for await (const chunk of req) body += chunk
       const { method, request } = JSON.parse(body)
       let value = null
-      if (method === 'list') value = [agent]
+      if (method === 'list') value = [agent, group]
       else if (method === 'skillsList') value = { skills }
       else if (method === 'skillsEnable') {
         const row = skills.find((s) => s.id === request.workflowId)
@@ -86,6 +88,11 @@ const server = createServer(async (req, res) => {
         value = { bridged: on.size }
       }
       else if (method === 'modelConfig') value = modelCfg()
+      else if (method === 'automationsList') {
+        value = request.agentId === 'bot'
+          ? [{ id: 'r1', name: '晨报汇总', prompt: '汇总昨日进展', isEnabled: true, schedule: '0 9 * * *', triggerDescription: '每天 09:00', nextRunAt: Date.now() + 3600000, lastStatus: 'ok' }]
+          : []
+      }
       else if (method === 'setAgentModel') {
         agentModelId = typeof request.modelId === 'string' && request.modelId !== '' ? request.modelId : null
         value = { modelId: agentModelId }
@@ -121,33 +128,17 @@ try {
   await page.goto(`http://127.0.0.1:${server.address().port}`)
   await page.getByRole('button', { name: 'Bots', exact: true }).click()
   await page.getByText('测试 Bot', { exact: true }).click()
-  await page.getByRole('button', { name: '目标', exact: true }).click()
-  await page.getByLabel('希望完成什么？').fill('修复登录问题并通过回归')
-  await page.getByLabel('验收标准（每行一条）').fill('复现并修复登录失败\n移动端回归通过')
-  await page.getByRole('button', { name: '开始持续推进' }).click()
-  await page.getByRole('heading', { name: '修复登录问题并通过回归' }).waitFor()
-  assert.equal(autos.length, 1)
-  await page.getByRole('button', { name: '暂停目标', exact: true }).click()
-  await page.getByRole('button', { name: '恢复推进', exact: true }).waitFor()
-  assert.equal(autos[0].isEnabled, false)
-  await page.getByRole('button', { name: '恢复推进', exact: true }).click()
-  await page.getByRole('button', { name: '暂停目标', exact: true }).waitFor()
-  assert.equal(autos[0].isEnabled, true)
-  await page.keyboard.press('Escape')
-  await page.getByRole('heading', { name: '修复登录问题并通过回归' }).waitFor()
-  await page.getByRole('button', { name: 'Fold sidebar' }).click()
-  await page.waitForTimeout(150)
-  const geometry = await page.locator('.dbs-chatview').boundingBox()
-  assert.equal(Math.round(geometry.x), 80)
-  assert.equal(Math.round(geometry.width), 1200)
-  // Returning from a native panel must reopen the same chat without overlays.
+  await page.locator('.dbs-runningText').waitFor()
+  assert.match(await page.locator('.dbs-runningText').innerText(), /1分/, 'clock must reflect the actual run start before opening')
+  assert.equal(await page.locator('.dbs-chatbar').getByRole('button', { name: '关闭', exact: true }).count(), 0)
+  assert.equal(await page.locator('.dbs-chatbar [data-avatar-state="thinking"]').count(), 1)
   await page.getByRole('button', { name: 'Native workspace' }).click()
-  await page.getByText('Native workspace content').waitFor()
-  assert.equal(await page.locator('.dbs-chatview').count(), 0)
-  await page.getByRole('button', { name: 'Fold sidebar' }).click()
   await page.getByText('测试 Bot', { exact: true }).click()
-  // @mention completion lists skills too: picking one inserts the engine's
-  // sand-workflow:<id> handle so the body lands in the turn's context.
+  assert.match(await page.locator('.dbs-runningText').innerText(), /1分/, 'switching away must preserve the run clock')
+  await page.reload()
+  await page.getByRole('button', { name: 'Bots', exact: true }).click()
+  await page.getByText('测试 Bot', { exact: true }).click()
+  assert.match(await page.locator('.dbs-runningText').innerText(), /1分/, 'reload must preserve the engine run clock')
   await page.locator('.dbs-composerInput').fill('@周报')
   await page.locator('.dbs-mentionRow').filter({ hasText: '周报生成' }).waitFor()
   await page.locator('.dbs-composerInput').press('Tab')
@@ -165,23 +156,38 @@ try {
   await page.locator('.dbs-modelChip', { hasText: 'glm-5' }).waitFor()
   assert.equal(agentModelId, 'glm-5', 'picking must write the per-agent modelId')
   assert.equal(applyModelCalls, 0, 'the composer seat must never restart the engine')
-  await page.getByRole('button', { name: '目标', exact: true }).click()
-  await page.getByRole('heading', { name: '修复登录问题并通过回归' }).waitFor()
-  // Simulate an engine checkpoint; the model claim must require explicit review.
-  const ledgerPath = join(dir, 'agents', 'bot', 'automations', 'routine', 'goal.json')
-  const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8'))
-  ledger.status = 'achieved'; ledger.acceptance.forEach(c => { c.done = true })
-  writeFileSync(ledgerPath, JSON.stringify(ledger))
-  writeFileSync(join(dir, 'agents', 'bot', 'automations', 'routine', 'progress.md'), '证据：登录回归测试通过。下一步：等待用户验收。')
-  await page.getByRole('button', { name: '刷新状态' }).click()
-  await page.getByRole('button', { name: '确认验收通过' }).waitFor()
-  assert.equal((await workflow.list('bot'))[0].status, 'review')
-  await page.getByRole('button', { name: '退回继续改进' }).click()
-  await page.getByLabel('还需要完成什么？').fill('补充过期登录态用例')
-  await page.getByRole('button', { name: '保存并继续推进' }).click()
-  await page.getByRole('button', { name: '暂停目标', exact: true }).waitFor()
-  assert.equal((await workflow.list('bot'))[0].status, 'scheduled')
-  assert.equal((await workflow.list('bot'))[0].acceptance.some(c => c.done), false)
+  const headerAvatar = await page.locator('.dbs-chatbar [data-avatar-state]').boundingBox()
+  assert.equal(headerAvatar.width, 28, 'the header avatar must be compact')
+  assert.ok(await page.locator('.dbs-chatbar .dbs-avatarBlob').evaluate(el => el.querySelector('mask path').getBBox().width > 160),
+    'thinking must keep a full character silhouette')
+  await page.screenshot({ path: '/tmp/dsh-bots-running.png' })
+  agent.isRunning = false; agent.runStartedAt = null; agent.currentActivity = null
+  // The standalone goals module is gone (user feedback: conversations only);
+  // group planning lives INSIDE the group conversation behind a 任务 toggle.
+  assert.equal(await page.getByRole('button', { name: '目标', exact: true }).count(), 0,
+    'no standalone goals module')
+  await page.getByRole('button', { name: 'Fold sidebar' }).click()
+  await page.waitForTimeout(150)
+  const geometry = await page.locator('.dbs-chatview').boundingBox()
+  assert.equal(Math.round(geometry.x), 80)
+  assert.equal(Math.round(geometry.width), 1200)
+  // Returning from a native panel must reopen the same chat without overlays.
+  await page.getByRole('button', { name: 'Native workspace' }).click()
+  await page.getByText('Native workspace content').waitFor()
+  assert.equal(await page.locator('.dbs-chatview').count(), 0)
+  await page.getByRole('button', { name: 'Fold sidebar' }).click()
+  await page.getByText('测试 Bot', { exact: true }).click()
+  // Group task planning: the group header carries a 任务 toggle; the panel
+  // lists each member's routines/goals (read-only — members plan in chat).
+  await page.getByText('项目群', { exact: true }).click()
+  await page.getByRole('button', { name: '任务规划', exact: true }).click()
+  await page.locator('.dbs-taskPanel').waitFor()
+  assert.ok(await page.locator('.dbs-taskPanel').innerText().then(t => t.includes('晨报汇总')),
+    'member routines must be visible in the room panel')
+  assert.ok(await page.locator('.dbs-taskPanel').innerText().then(t => t.includes('测试 Bot')),
+    'rows must be attributed to the planning member')
+  await page.getByRole('button', { name: '任务规划', exact: true }).click()
+  await page.getByText('测试 Bot', { exact: true }).click()
   // Verify narrow layout and capture a reviewable artifact.
   await page.setViewportSize({ width: 720, height: 900 })
   await page.getByRole('button', { name: 'Fold sidebar' }).click()
@@ -208,6 +214,10 @@ try {
   await page.getByRole('button', { name: '保存技能' }).click()
   await page.getByText('冒烟技能', { exact: true }).waitFor()
   assert.equal(skills.some((s) => s.name === '冒烟技能'), true)
+  await page.getByRole('button', { name: '安装技能', exact: true }).click()
+  await page.getByRole('textbox', { name: '本机技能目录或 GitHub 技能目录链接' }).fill('/mock/skills/research')
+  await page.getByRole('button', { name: '安装技能', exact: true }).last().click()
+  await page.getByText('research', { exact: true }).waitFor()
   // Bridge block: check the unbridged row, save, and the mock set updates.
   await page.getByText('DSH 技能桥', { exact: true }).waitFor()
   const financeRow = page.getByRole('checkbox').first()
@@ -217,8 +227,26 @@ try {
   assert.equal(dshSkills[0].bridged, true)
   assert.equal(dshSkills[1].bridged, true)
   await page.screenshot({ path: process.env.BROWSER_SKILLS_SCREENSHOT ?? '/tmp/dsh-bots-skills.png', fullPage: true })
+  // Gateway-offline UX: with the engine unreachable the sidebar collapses to
+  // an actionable reconnect card; reconnect boots the engine and flips the UI
+  // back only when it truly answers (no more dead "网关未连接" hint).
+  gwOk = false
+  const page2 = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  const errors2 = []; page2.on('pageerror', (error) => errors2.push(error.message))
+  await page2.goto(`http://127.0.0.1:${server.address().port}`)
+  await page2.getByRole('button', { name: 'Bots', exact: true }).click()
+  const compact = page2.locator('.dbs-offlineCompact')
+  await compact.waitFor()
+  await compact.getByRole('button', { name: '重新连接' }).click()
+  await page2.getByText('测试 Bot', { exact: true }).waitFor()
+  assert.equal(gwOk, true, 'reconnect must have run against the host')
+  await page2.getByText('测试 Bot', { exact: true }).click()
+  await page2.locator('.dbs-composerInput').waitFor()
+  assert.equal(await page2.locator('.dbs-offlineCard').count(), 0, 'an online chat must not render the offline card')
+  assert.deepEqual(errors2, [])
+  await page2.close()
   assert.deepEqual(errors, [])
-  console.log('browser: goal create/pause/resume/review/revise, native navigation, Escape, fold geometry, narrow layout and skills card passed')
+  console.log('browser: native navigation, Escape, fold geometry, narrow layout, @mention skills, composer model seat, group task planning, skills card and offline reconnect passed')
 } finally {
   await browser?.close(); await new Promise(resolve => server.close(resolve)); rmSync(dir, { recursive: true, force: true })
 }

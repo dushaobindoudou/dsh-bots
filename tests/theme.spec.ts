@@ -52,6 +52,10 @@ describe('theme tokens', () => {
       '--dsw-alias-brand-primary', '--dsw-alias-interactive-bg-hover-solid',
       '--dsw-alias-border-l4',
       '--dsw-font-markdown-code-block-small',
+      // RunningStatus pair (2026-10-08 audit): both tokens ship light+dark
+      // definitions in dsh-client-ui-theme (color-mix over --dsw-static-*
+      // deepseek/blue scales) — the native ChatView running row uses them bare.
+      '--dsw-alias-label-deep-diving', '--dsw-alias-label-deep-diving-shimmer',
       // The --dsw-radius-* scale does not exist in 0.2.0-rc.2 (native CSS
       // modules hardcode their radii); a bare radius var() must never return.
     ])

@@ -18,19 +18,21 @@
   "files": [
     "lib",
     "locale",
+    "skills",
     "icon.svg",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json && node scripts/bake-version.mjs",
     "prepare": "pnpm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:browser": "node scripts/browser-test.mjs",
     "test:integration": "node scripts/integration-test.mjs",
-    "test:dsh-smoke": "bash scripts/dsh-smoke.sh"
+    "test:dsh-smoke": "bash scripts/dsh-smoke.sh",
+    "test:finance": "python3 -m unittest discover -s tests/finance -p \"test_*.py\""
   },
   "keywords": [
     "bots",

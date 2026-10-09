@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -24,13 +24,14 @@ function fixture(): { home: string; sandRoot: string } {
 }
 
 describe('dsh skill bridge', () => {
-  it('discovers directory bundles and flat files, top level only, honoring dsh flags', () => {
+  it('discovers bundles and flat files including skills requiring explicit user invocation', () => {
     const { home } = fixture()
     const refs = discoverDshSkills(home)
-    expect(refs.map((r) => r.id)).toEqual(['dsh-finance', 'dsh-note'])
+    expect(refs.map((r) => r.id)).toEqual(['dsh-finance', 'dsh-internal', 'dsh-note'])
     expect(refs[0]).toMatchObject({ name: 'finance', description: '金融场景入口' })
     expect(refs[0].filePath).toMatch(/SKILL\.md$/)
-    expect(refs[1].filePath.endsWith('note.md')).toBe(true)
+    expect(readFileSync(refs[1].filePath, 'utf8')).toContain('disable-model-invocation: true')
+    expect(refs[2].filePath.endsWith('note.md')).toBe(true)
   })
 
   it('slugifies exotic names into the engine id grammar', () => {
@@ -42,9 +43,9 @@ describe('dsh skill bridge', () => {
   it('first sync bridges everything; explicit sets and reconcile keep the user in charge', () => {
     const { home, sandRoot } = fixture()
     const first = syncSkillsBridge(home, sandRoot, '0.0.0-test')
-    expect(first).toEqual({ discovered: 2, bridged: 2, firstRun: true })
+    expect(first).toEqual({ discovered: 3, bridged: 3, firstRun: true })
 
-    // Trim to one; a newly discovered skill must NOT creep back.
+    // Explicit exclusions stay excluded while new installations are shared.
     const again = syncSkillsBridge(home, sandRoot, '0.0.0-test', { enabled: ['dsh-finance'] })
     expect(again).toMatchObject({ bridged: 1, firstRun: false })
     expect(readBridgeCache(join(sandRoot, 'plugin-skills', 'cache.json'))?.ids).toEqual(['dsh-finance'])
@@ -52,7 +53,45 @@ describe('dsh skill bridge', () => {
     // Vanished files are pruned on the next reconcile.
     rmSync(join(home, '.dsh', 'skills', 'finance'), { recursive: true, force: true })
     const reconciled = syncSkillsBridge(home, sandRoot, '0.0.0-test')
-    expect(reconciled).toMatchObject({ discovered: 1, bridged: 0, firstRun: false })
+    expect(reconciled).toMatchObject({ discovered: 2, bridged: 0, firstRun: false })
+  })
+
+  it('shares newly installed skills, follows symlink bundles and honors root precedence', () => {
+    const { home, sandRoot } = fixture()
+    syncSkillsBridge(home, sandRoot, 'test', { enabled: ['dsh-finance'] })
+    const bundle = join(home, 'bundle')
+    mkdirSync(bundle)
+    writeFileSync(join(bundle, 'SKILL.md'), '---\nname: installed\ndescription: >-\n  read data\n  reliably\n---\nInstructions')
+    symlinkSync(bundle, join(home, '.agents', 'skills', 'installed'))
+    mkdirSync(join(home, '.codex', 'skills'), { recursive: true })
+    writeFileSync(join(home, '.codex', 'skills', 'finance.md'), '---\nname: finance\ndescription: duplicate\n---\nwrong precedence')
+    const refs = discoverDshSkills(home)
+    expect(refs.filter(r => r.name === 'finance')).toHaveLength(1)
+    expect(refs.find(r => r.name === 'installed')?.description).toBe('read data reliably')
+    syncSkillsBridge(home, sandRoot, 'test')
+    expect(readBridgeCache(join(sandRoot, 'plugin-skills', 'cache.json'))?.ids).toEqual(['dsh-finance', 'dsh-installed'])
+  })
+
+  it('does not migrate formerly undiscovered user-only skills as exclusions', () => {
+    const { home, sandRoot } = fixture()
+    const cachePath = join(sandRoot, 'plugin-skills', 'cache.json')
+    mkdirSync(join(sandRoot, 'plugin-skills'), { recursive: true })
+    writeFileSync(cachePath, JSON.stringify({ fetchedAt: 1, skills: [{ id: 'dsh-finance', pluginId: 'dsh-bots' }], currentUserId: null, authBlocked: [] }))
+    syncSkillsBridge(home, sandRoot, 'test')
+    expect(readBridgeCache(cachePath)?.ids).toEqual(['dsh-finance', 'dsh-internal'])
+  })
+
+  it('preserves skill records and authentication owned by other plugins', () => {
+    const { home, sandRoot } = fixture()
+    const cachePath = join(sandRoot, 'plugin-skills', 'cache.json')
+    mkdirSync(join(sandRoot, 'plugin-skills'), { recursive: true })
+    const foreign = { id: 'other-skill', pluginId: 'other', name: 'other', filePath: '/other/SKILL.md' }
+    writeFileSync(cachePath, JSON.stringify({ fetchedAt: 1, currentUserId: 42, authBlocked: [{ pluginId: 'private' }], skills: [foreign] }))
+    syncSkillsBridge(home, sandRoot, 'test')
+    const cache = JSON.parse(readFileSync(cachePath, 'utf8'))
+    expect(cache.skills).toContainEqual(foreign)
+    expect(cache.currentUserId).toBe(42)
+    expect(cache.authBlocked).toEqual([{ pluginId: 'private' }])
   })
 
   it('writes a cache the engine reader accepts (shape parity with plugin-skills-cache)', () => {
@@ -79,6 +118,6 @@ describe('dsh skill bridge', () => {
     const { home, sandRoot } = fixture()
     mkdirSync(join(sandRoot, 'plugin-skills'), { recursive: true })
     writeFileSync(join(sandRoot, 'plugin-skills', 'cache.json'), '{broken')
-    expect(syncSkillsBridge(home, sandRoot, '0.0.0-test').bridged).toBe(2)
+    expect(syncSkillsBridge(home, sandRoot, '0.0.0-test').bridged).toBe(3)
   })
 })

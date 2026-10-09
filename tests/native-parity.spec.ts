@@ -105,6 +105,24 @@ describe('message stream parity (native MessageItem / ChatView)', () => {
     expect(CLIENT).toMatch(/\.dbs-md pre\{[^}]*line-height:var\(--dsw-font-markdown-code-block-small-line-height/)
   })
 
+  it('renders message bodies with the native MarkdownText contract', () => {
+    // Full-GFM native renderer preferred; the local renderer only serves
+    // shells whose primitives bundle lacks MarkdownText.
+    expect(CLIENT).toContain('const MarkdownText = NATIVE.MarkdownText !== undefined ? NativeMarkdown : MarkdownFallback')
+    expect(CLIENT).toMatch(/streaming: p\.streaming === true/)
+    // Inline file mentions stay clickable through the native resolver.
+    expect(CLIENT).toMatch(/fileMentions: \{[\s\S]*resolve: \(value: string\)[\s\S]*openFile/)
+    expect(CLIENT).toContain("copyLabel: t('md.codeCopy')")
+  })
+
+  it('animates custom avatars with the shared liveliness clock', () => {
+    expect(CLIENT).toMatch(/function LiveAvatar\(p: \{ src: string; size: number; alt\?: string; shape\?: string; mode: AvatarMode \}\)/)
+    expect(CLIENT).toContain('bloubTicks.add(tick)')
+    expect(CLIENT).toContain("matchMedia('(prefers-reduced-motion: reduce)').matches")
+    expect(CLIENT).toMatch(/\.dbs-avatarLive img\{will-change:transform;transform-origin:50% 55%\}/)
+    expect(CLIENT).toContain('e(LiveAvatar, { src: a.avatarDataUrl, size, shape, mode })')
+  })
+
   it('makes the scroll container a query container for responsive tables', () => {
     expect(CLIENT).toMatch(/\.dbs-scroll\{[^}]*container-type:inline-size/)
   })
@@ -115,15 +133,17 @@ describe('message stream parity (native MessageItem / ChatView)', () => {
     expect(CLIENT).toMatch(/\.dbs-jump\{[^}]*width:34px;height:34px/)
   })
 
-  it('shows the running turn with the native shimmer plus an elapsed clock', () => {
-    expect(CLIENT).toContain("className: 'dbs-turnStatus'")
-    expect(CLIENT).toContain("className: 'dbs-turnStatusClock'")
-    expect(CLIENT).toContain("e(NATIVE.TextShimmer, { active: true, className: 'dbs-turnStatus' }")
-    // Native TurnStatus: the clock only appears past 15s, in the whole
-    // seconds / minutes+seconds format, and no icon rides the row.
-    expect(CLIENT).toMatch(/dbs-turnStatusClock'[^}]*\}, formatRunDuration\(elapsedMs\)/)
-    expect(CLIENT).toMatch(/elapsedMs !== null && elapsedMs >= 15000/)
-    expect(CLIENT).toMatch(/setInterval\(\(\) => setElapsedMs\(Date\.now\(\) - started\), 1000\)/)
+  it('shows the running turn with the native whale tail and an inline elapsed clock', () => {
+    // Native ChatView RunningStatus: whale APNG mask + still SVG fallback,
+    // the shimmer label carrying the clock inline ("深度求索中，用时 12秒 ···").
+    expect(CLIENT).toContain("className: 'dbs-turnStatus dbs-runningText'")
+    expect(CLIENT).toContain("e(NATIVE.TextShimmer, { active: true, className: 'dbs-turnStatus dbs-runningText' }, composingLabel)")
+    expect(CLIENT).toMatch(/dbs-runningIcon/)
+    expect(CLIENT).toContain("e('span', { className: 'dbs-runningWhaleAnimated' })")
+    expect(CLIENT).toMatch(/t\('chat\.composingFor', \{ duration: formatRunDuration\(Math\.max\(1000, elapsedMs\)\) \}\)/)
+    // The clock ticks twice a second and survives conversation switches.
+    expect(CLIENT).toMatch(/setInterval\(\(\) => setElapsedMs\(Date\.now\(\) - started\), 500\)/)
+    expect(CLIENT).toMatch(/runStartMemory/)
     expect(CLIENT).not.toContain('dbs-typingIcon')
   })
 
@@ -136,10 +156,16 @@ describe('message stream parity (native MessageItem / ChatView)', () => {
   it('keeps the turn status at the native TurnStatus metrics', () => {
     expect(CLIENT).toMatch(/\.dbs-turnStatus\{height:calc\(26px \+ var\(--dsh-content-font-delta,0px\)\)/)
     expect(CLIENT).toMatch(/\.dbs-turnStatus\{[^}]*line-height:calc\(22px \+ var\(--dsh-content-font-delta,0px\)\)/)
-    // The native label is the deepDiving string; the plugin's own label copy
-    // and stop pill (which the native row never had) are gone.
-    expect(CLIENT).toContain("'chat.composing': '深度求索中...'")
+    // The native label is the deepDiving string, and the elapsed clock is
+    // carried INLINE by the deepDivingFor copy ("深度求索中，用时 {duration} ···")
+    // over the whale-tail APNG mask — no separate 15s clock row.
+    expect(CLIENT).toContain("'chat.composing': '深度求索中'")
+    expect(CLIENT).toContain("'chat.composingFor': '深度求索中，用时 {duration} ···'")
+    expect(CLIENT).toContain('dbs-runningWhaleAnimated')
+    expect(CLIENT).toContain('WHALE_REST_PATH')
+    expect(CLIENT).toContain('@supports (mask-mode:alpha) and (mask-image:url(\'\'))')
     expect(CLIENT).not.toContain('dbs-typingStop')
+    expect(CLIENT).not.toContain('.dbs-typing{')
   })
 
   it('resolves the content column with the native responsive clamp', () => {
@@ -305,7 +331,7 @@ describe('plugin-facing theme contract', () => {
     expect(CLIENT).not.toMatch(/var\(--dsw-static-[a-z0-9-]+\)/)
     expect(CLIENT).not.toMatch(/var\(--dsw-specific-[a-z-]+\)/)
     expect(CLIENT).toMatch(/var\(--dsw-elevation-soft,0 2px 8px rgba\(0,0,0,\.08\)\)/)
-    expect(CLIENT).toContain("e(NATIVE.TextShimmer, { active: true, className: 'dbs-turnStatus' }")
+    expect(CLIENT).toContain("e(NATIVE.TextShimmer, { active: true, className: 'dbs-turnStatus dbs-runningText' }, composingLabel)")
   })
 })
 

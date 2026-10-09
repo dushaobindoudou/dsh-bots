@@ -25,6 +25,10 @@ export interface AgentInfo {
       gateway row omits it, so the host enriches group rows from disk. */
   maxMembers?: number
   isRunning: boolean
+  /** Engine execution window start, independent of the current browser view. */
+  runStartedAt?: number | null
+  isRetrying?: boolean
+  currentActivity?: { kind?: string; tool?: string; detail?: string } | null
   isActive: boolean
   lastMessagePreview: string | null
   updatedAt: string | null

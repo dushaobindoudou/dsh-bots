@@ -12,9 +12,9 @@ const EXPECTED = [
   'create', 'createGroup', 'setGroupMembers', 'groupCap', 'pin', 'setHidden', 'update', 'remove', 'send', 'interrupt', 'readImage', 'openFile', 'transcriptTail',
   'markRead', 'diag', 'eventsSince', 'sseState',
   'mcpServers', 'mcpTools', 'mcpAdd', 'mcpRemove', 'mcpRefresh', 'mcpExecute',
-  'workspaceList', 'workspaceGet', 'workspaceSet', 'modelConfig', 'setModelConfig', 'setAgentModel',
+  'workspaceList', 'workspaceGet', 'workspaceSet', 'modelConfig', 'setModelConfig', 'setAgentModel', 'automationsList',
   'skillsList', 'skillsSave', 'skillsEnable', 'skillsDelete', 'skillsRunNow', 'skillsImportText',
-  'skillsBridgeList', 'skillsBridgeSet',
+  'skillsBridgeList', 'skillsBridgeSet', 'skillsInstall',
 ]
 
 let failed = 0
