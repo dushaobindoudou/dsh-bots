@@ -146,6 +146,13 @@ try {
   assert.equal(await page.locator('.dbs-chatview').count(), 0)
   await page.getByRole('button', { name: 'Fold sidebar' }).click()
   await page.getByText('测试 Bot', { exact: true }).click()
+  // @mention completion lists skills too: picking one inserts the engine's
+  // sand-workflow:<id> handle so the body lands in the turn's context.
+  await page.locator('.dbs-composerInput').fill('@周报')
+  await page.locator('.dbs-mentionRow').filter({ hasText: '周报生成' }).waitFor()
+  await page.locator('.dbs-composerInput').press('Tab')
+  assert.equal(await page.locator('.dbs-composerInput').inputValue(), 'sand-workflow:weekly ')
+  await page.locator('.dbs-composerInput').fill('')
   // Composer model seat (per-bot, per the committed design doc): the pill
   // names THIS bot's model; picking writes the agent's settings.json modelId
   // — effective next turn, NO restart. The engine-global set+apply flow is

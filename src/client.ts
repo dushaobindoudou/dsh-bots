@@ -5616,6 +5616,7 @@ class BotEngine {
         const [stopping, setStopping] = React.useState(false)
         const [error, setError] = React.useState(null)
         const [mention, setMention] = React.useState(null) // {query, index} | null
+        const [chatSkills, setChatSkills] = React.useState([] as any[])
         // Pending image attachments (multimodal): read to base64 the moment
         // they are picked or pasted so the preview is byte-exact what gets
         // sent; cleared on a successful send. Not part of draftMemory — a
@@ -5648,6 +5649,15 @@ class BotEngine {
             setEntries(Array.isArray(r?.entries) ? r.entries : [])
           } catch (err: any) { setError(String(err?.message ?? err)) }
         }
+
+        React.useEffect(() => {
+          let cancelled = false
+          setChatSkills([])
+          void botsCall<{ skills?: any[] }>('skillsList', { agentId: p.agentId }).then(result => {
+            if (!cancelled) setChatSkills((result?.skills ?? []).filter((skill: any) => skill.trigger == null && skill.isEnabledForAgent !== false))
+          }).catch(() => {})
+          return () => { cancelled = true }
+        }, [p.agentId])
 
         React.useEffect(() => {
           setEntries(null); setError(null); setMention(null)
@@ -5818,7 +5828,7 @@ class BotEngine {
          * mention re-opens the menu, and moving out of it closes the menu.
          */
         function syncMention(node: any): void {
-          if (!isGroup || node === null || node === undefined) { setMention(null); return }
+          if (node === null || node === undefined) { setMention(null); return }
           const value = String(node.value)
           const upto = value.slice(0, node.selectionStart ?? value.length)
           const m = /@([^\s@]*)$/.exec(upto)
@@ -5853,10 +5863,12 @@ class BotEngine {
         const mentionHits = mention === null
           ? []
           : [
-              ...(mention.query === '' || EVERYONE_ALIASES.some((h) => h.startsWith(mention.query.toLowerCase()))
+              ...(isGroup && (mention.query === '' || EVERYONE_ALIASES.some((h) => h.startsWith(mention.query.toLowerCase())))
                 ? [EVERYONE_MENTION]
                 : []),
               ...memberNames.filter((a: any) => a.name.toLowerCase().startsWith(mention.query.toLowerCase())).slice(0, 8),
+              ...chatSkills.filter((skill: any) => String(skill.name).toLowerCase().includes(mention.query.toLowerCase()))
+                .slice(0, 12).map((skill: any) => ({ ...skill, id: 'skill:' + skill.id, workflowId: skill.id, skill: true })),
             ]
 
         // Keyboard selection scrolls the active row into view — the native
@@ -5875,7 +5887,8 @@ class BotEngine {
         function applyMention(a: any) {
           const node = inputRef.current
           const caret = node?.selectionStart ?? input.length
-          const before = input.slice(0, caret).replace(/@([^\s@]*)$/, '@' + a.name + ' ')
+          const handle = a.skill === true ? 'sand-workflow:' + a.workflowId : '@' + a.name
+          const before = input.slice(0, caret).replace(/@([^\s@]*)$/, handle + ' ')
           const next = before + input.slice(caret)
           setInput(next)
           draftMemory.set(p.agentId, next)
@@ -6126,7 +6139,7 @@ class BotEngine {
                         onMouseDown: (ev: any) => { ev.preventDefault(); applyMention(a) },
                       },
                         e('span', { className: 'dbs-mentionIcon' },
-                          a.everyone === true ? e(PeopleGlyph, null) : e(Avatar, { agent: a, size: 16 })),
+                          a.skill === true ? e('span', { 'aria-hidden': true }, '#') : a.everyone === true ? e(PeopleGlyph, null) : e(Avatar, { agent: a, size: 16 })),
                         e('span', { className: 'dbs-mentionName' }, a.name),
                         e('span', { className: 'dbs-mentionDesc' }, String(a.description ?? '').split('\n')[0]),
                         // The native menu advertises its keyboard drill on the
