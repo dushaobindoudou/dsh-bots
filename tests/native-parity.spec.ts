@@ -483,3 +483,38 @@ describe('native content area: flow rhythm, dividers, turn process', () => {
     expect(CLIENT).toContain('.dbs-toolRow[data-open] .dbs-toolChevron svg,.dbs-thinkRow[data-open] .dbs-toolChevron svg{transform:rotate(180deg)}')
   })
 })
+
+describe('file preview: chips open the native-renderer modal', () => {
+  it('never calls the removed openFile RPC', () => {
+    // The host replaced openFile with revealFile; a stray client call would
+    // silently do nothing on click (the reported "document won't open").
+    expect(CLIENT).not.toContain("botsCall('openFile'")
+  })
+
+  it('matches workspace-relative paths, not just absolute ones', () => {
+    // Bots write `risk/09999_risk_opinion_20261009.md`; the old
+    // leading-slash-only regex truncated the chip to `/09999….md`, which the
+    // host allowlist rightly rejected.
+    expect(CLIENT).toContain(
+      'const MEDIA_PATH_RE = /\\/?(?:[\\w.\\-]+\\/)+[\\w.\\-]+\\.[A-Za-z0-9]{1,8}/g',
+    )
+  })
+
+  it('renders the preview with the native renderers over allowlisted reads', () => {
+    // Markdown goes through the same MarkdownText the messages use; text
+    // uses the diff/code font token; images and PDFs stream as data URLs.
+    expect(CLIENT).toContain('function FilePreviewModal(p: { path: string })')
+    expect(CLIENT).toMatch(/FilePreviewModal[\s\S]{0,5200}e\(MarkdownText, /)
+    expect(CLIENT).toMatch(/\.dbs-previewPre\{[^}]*font:var\(--dsw-font-markdown-code-block/)
+    expect(CLIENT).toContain("botsCall<{ mime: string; dataBase64: string; sizeBytes: number }>('readBytes', { path })")
+    expect(CLIENT).toContain("'preview.reveal'")
+    // Unsupported formats reveal in the system file manager (native revealFile).
+    expect(CLIENT).toContain("botsCall('revealFile', { path })")
+  })
+
+  it('wires chip, image and mention clicks into the preview overlay', () => {
+    expect(CLIENT).toContain('previewPath: null as string | null')
+    expect(CLIENT).toMatch(/onClick: \(\) => patch\(\{ previewPath: p\.path \}\)/)
+    expect(CLIENT).toMatch(/e\(FilePreviewModal, \{ key: 'preview:' \+ s\.previewPath, path: s\.previewPath \}\)/)
+  })
+})

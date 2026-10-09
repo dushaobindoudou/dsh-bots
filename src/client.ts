@@ -33,6 +33,12 @@
  */
 
 ;(() => {
+  // Baked by scripts/bake-version.mjs to the host build's compiled fingerprint
+  // (see the HOST_BUILD note in index.ts): the page re-reads the client on
+  // every load while the host half is loaded once, so the client can tell
+  // when the running host predates the page's code.
+  const EXPECTED_HOST_BUILD = 'unbaked-host-build'
+  void EXPECTED_HOST_BUILD
   const loader = (window as any).__ModuleLoader__
   if (loader === undefined) return
   loader.load({
@@ -257,7 +263,7 @@
             resolve: (value: string) => {
               const path = String(value ?? '').trim()
               if (path.length < 4 || path.startsWith('//') || MEDIA_IMG_RE.test(path) || !MEDIA_FILE_RE.test(path)) return undefined
-              return { title: path, label: path, open: () => { botsCall('openFile', { path }).catch(() => undefined) } }
+              return { title: path, label: path, open: () => { patch({ previewPath: path }) } }
             },
           },
         })
@@ -569,6 +575,23 @@
 .dbs-modalBody{display:flex;flex-direction:column;gap:10px}
 .dbs-modalMembers{display:flex;flex-direction:column;gap:2px;max-height:240px;overflow-y:auto;background:var(--dsw-alias-bg-layer-1,transparent);border:0;border-radius:14px;padding:4px}
 .dbs-modalFooter{display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-top:18px}
+/* File preview modal — the native document preview's anatomy re-hosted: same
+   MarkdownText renderer, the diff/code font token, native radius/elevation. */
+.dbs-previewCard{position:relative;width:min(760px,calc(100vw - 48px));max-height:calc(100vh - 48px);display:flex;flex-direction:column;overflow:hidden;background:var(--dsw-alias-bg-layer-2,var(--dsw-alias-bg-layer-1,#fff));--dsw-elevation-stroke-color:var(--dsw-alias-border-l2);border:0;border-radius:20px;box-shadow:var(--dsw-elevation-prominent,var(--dsw-shadow-lv3,0 24px 80px rgba(0,0,0,.3)));animation:dbs-modal-in .18s ease-out}
+.dbs-previewHead{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:.5px solid var(--dsw-alias-border-l2);flex:none;color:var(--dsw-alias-label-secondary)}
+.dbs-previewTitles{min-width:0;flex:1;display:flex;flex-direction:column;gap:1px}
+.dbs-previewName{font-size:14px;line-height:19px;font-weight:500;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dbs-previewPath{font-size:12px;line-height:16px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left}
+.dbs-previewMeta{flex:none;font-size:12px;line-height:16px;color:var(--dsw-alias-label-tertiary)}
+.dbs-previewClose{flex:none;display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--dsw-radius-sm,8px);border:0;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;padding:0}
+.dbs-previewClose:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dbs-previewBody{min-height:0;overflow:auto;flex:1;display:flex;flex-direction:column}
+.dbs-previewMd{padding:8px 20px 20px}
+.dbs-previewPre{margin:0;padding:16px 20px;font:var(--dsw-font-markdown-code-block,var(--ds-font-family-code,monospace));white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dsw-alias-label-primary)}
+.dbs-previewImg{display:block;max-width:100%;max-height:calc(100vh - 200px);margin:0 auto;padding:16px;box-sizing:border-box}
+.dbs-previewPdf{flex:1;width:100%;border:0;min-height:480px;background:var(--dsw-alias-bg-layer-1,#fff)}
+.dbs-previewEmpty{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;padding:48px 20px;color:var(--dsw-alias-label-tertiary);font-size:13px}
+.dbs-previewFoot{flex:none;display:flex;justify-content:center;padding:0 16px 14px}
 .dbs-rowMore{display:none;border:none;background:transparent;cursor:pointer;color:var(--dsw-alias-label-tertiary);flex:none;justify-content:center;align-items:center;width:24px;height:24px;border-radius:6px;padding:0}
 .dbs-rowMore:hover,.dbs-rowMore:focus-visible{color:var(--dsw-alias-label-primary);background:transparent}
 .dbs-srow:hover .dbs-rowMore,.dbs-rowMore:focus-visible,.dbs-srow[data-menu="true"] .dbs-rowMore{display:inline-flex}
@@ -734,6 +757,9 @@
         'action.stop': '停止生成',
         'chat.stop.noop': '当前没有进行中的生成',
         'media.openFailed': '打开失败，文件可能已移动或被删除',
+        'preview.reveal': '在系统中显示',
+        'preview.loadMore': '继续读取',
+        'preview.unsupported': '此格式暂不支持预览，可在系统中查看',
         'chat.members.manage': '管理成员',
         'chat.members.cap': '已达群成员上限 {cap} 人——可在会话设置里调高',
         'chat.settings': '设置',
@@ -961,6 +987,9 @@
         'action.stop': 'Stop generating',
         'chat.stop.noop': 'No generation in progress',
         'media.openFailed': 'Open failed — the file may have moved or been deleted',
+        'preview.reveal': 'Reveal in system',
+        'preview.loadMore': 'Load more',
+        'preview.unsupported': 'This format can\'t be previewed here — view it in the system instead',
         'chat.members.manage': 'Manage members',
         'chat.members.cap': 'Group cap is {cap} members — raise it in session settings',
         'chat.settings': 'Settings',
@@ -1187,8 +1216,13 @@
       let slotsSvc: any = null
       let layoutSvc: any = null
 
-      /** Cadence for draining the host's in-memory SSE ring (no gateway hop). */
+      /** Cadence for draining the host's in-memory SSE ring (no gateway hop):
+       * relaxed while nothing moves, tight while events are flowing, so a
+       * streaming reply lands in ~4 updates a second instead of one. */
       const RING_DRAIN_MS = 1000
+      const RING_DRAIN_ACTIVE_MS = 250
+      /** Consecutive empty drains before the cadence relaxes again. */
+      const RING_ACTIVE_GRACE = 8
 
       async function botsCall<T = unknown>(method: string, request?: unknown): Promise<T> {
         if (connectionSvc === null) throw new Error(t('error.noConnection'))
@@ -1219,31 +1253,49 @@
         let unread: Record<string, number> | null = null
         const subs = new Set<(channels: Set<string>, events: any[]) => void>()
 
-        async function drain(): Promise<void> {
+        /** Empty drains left before relaxing to the idle cadence. */
+        let activeLeft = 0
+
+        /** One drain; resolves to whether any event arrived. */
+        async function drain(): Promise<boolean> {
           let r: any
           try { r = await botsCall('eventsSince', { seq }) }
-          catch { return /* gateway offline; the next tick retries */ }
-          if (r === null || typeof r !== 'object') return
+          catch { return false /* gateway offline; the next tick retries */ }
+          if (r === null || typeof r !== 'object') return false
           if (Number.isFinite(r.nextSeq)) seq = Number(r.nextSeq)
           if (r.state !== undefined) live = r.state
           if (r.unread !== null && typeof r.unread === 'object') unread = r.unread
           const events: any[] = Array.isArray(r.events) ? r.events : []
-          if (events.length === 0) return
+          if (events.length === 0) return false
           const channels = new Set<string>()
           for (const ev of events) if (ev !== null && typeof ev?.channel === 'string') channels.add(ev.channel)
           for (const fn of [...subs]) { try { fn(channels, events) } catch { /* one bad subscriber must not stop the rest */ } }
+          return true
+        }
+
+        /** Self-scheduling loop: the next drain is queued only after the
+         * previous one settled, so a slow RPC can never stack overlapping
+         * drains (the old setInterval could, and then raced the cursor). */
+        let loop = 0
+        function schedule(delay: number, id: number): void {
+          timer = setTimeout(() => {
+            void drain().then((moved) => {
+              // A stop (or stop + restart) while this drain was in flight
+              // retires this loop; only the current one may reschedule.
+              if (id !== loop) return
+              activeLeft = moved ? RING_ACTIVE_GRACE : Math.max(0, activeLeft - 1)
+              schedule(activeLeft > 0 ? RING_DRAIN_ACTIVE_MS : RING_DRAIN_MS, id)
+            })
+          }, delay)
         }
 
         return {
           subscribe(fn: (channels: Set<string>, events: any[]) => void): () => void {
             subs.add(fn)
-            if (timer === null) {
-              timer = setInterval(() => { void drain() }, RING_DRAIN_MS)
-              void drain()
-            }
+            if (timer === null) { loop += 1; schedule(0, loop) }
             return () => {
               subs.delete(fn)
-              if (subs.size === 0 && timer !== null) { clearInterval(timer); timer = null }
+              if (subs.size === 0 && timer !== null) { clearTimeout(timer); timer = null; loop += 1 }
             }
           },
           state: () => live,
@@ -1277,6 +1329,8 @@
         /** Manage-members dialog: group agentId | null (system modal). */
         manageMembers: null as string | null,
         settingsAgentId: null as string | null,
+        /** File preview overlay: the chip/mention path | null (host readText). */
+        previewPath: null as string | null,
         sectionMenu: null as string | null,
         rowMenu: null as string | null,
         /** Last row's menu may not fit below — flipped above the row when the
@@ -5035,12 +5089,18 @@ class BotEngine {
 
       // ---- Media references: bot-written local files in message text. ----
       // Images render inline (host readImage → data URL, session-cached);
-      // documents/media render as a click-to-open chip (host openFile). The
-      // host enforces the real boundary — gateway data dir only, ≤8MB, image
-      // extension allowlist — so the client regexes are UX filters, not trust.
+      // documents/media render as a click-to-preview chip (FilePreviewModal
+      // → host readText/readBytes, or revealFile for exotic formats). The
+      // host enforces the real boundary — gateway data dir allowlist — so
+      // the client regexes are UX filters, not trust.
       const MEDIA_IMG_RE = /\.(png|jpe?g|gif|webp|bmp|svg)$/i
       const MEDIA_FILE_RE = /\.(pdf|mp3|wav|m4a|mp4|mov|zip|csv|xlsx|docx|pptx|md|txt|json)$/i
-      const MEDIA_PATH_RE = /\/[^\s，。；、！？：；""''（）【】《》<>"'`\\|]+/g
+      // A path needs at least one directory separator and an extension. The
+      // leading slash is optional: bots write workspace-relative paths
+      // (`risk/09999_risk_opinion_20261009.md`) far more often than absolute
+      // ones, and the old leading-slash requirement truncated those chips to
+      // just the basename — a path the allowlist then rightly rejected.
+      const MEDIA_PATH_RE = /\/?(?:[\w.\-]+\/)+[\w.\-]+\.[A-Za-z0-9]{1,8}/g
       const MEDIA_MAX_REFS = 6
       const mediaUrlCache = new Map<string, string>()
 
@@ -5084,17 +5144,14 @@ class BotEngine {
       }
 
       function FileChip(p: { path: string }) {
-        const [failed, setFailed] = React.useState(false)
         const base = p.path.slice(p.path.lastIndexOf('/') + 1) || p.path
-        const open = () => { botsCall('openFile', { path: p.path }).catch(() => setFailed(true)) }
         return e('span', {
           className: 'dbs-fileChip', title: p.path, role: 'button', tabIndex: 0,
-          onClick: open,
-          onKeyDown: (ev: any) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open() } },
+          onClick: () => patch({ previewPath: p.path }),
+          onKeyDown: (ev: any) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); patch({ previewPath: p.path }) } },
         },
           Ico('IconFolderClose16', { size: 12 }),
-          e('span', { className: 'dbs-fileChipName' }, base),
-          failed === true ? e('span', { className: 'dbs-meta' }, t('media.openFailed')) : null)
+          e('span', { className: 'dbs-fileChipName' }, base))
       }
 
       function MediaImage(p: { path: string }) {
@@ -5116,7 +5173,7 @@ class BotEngine {
         if (url !== null) {
           return e('img', {
             className: 'dbs-mediaImg', src: url, alt: p.path, title: p.path,
-            onClick: () => { botsCall('openFile', { path: p.path }).catch(() => undefined) },
+            onClick: () => patch({ previewPath: p.path }),
           })
         }
         if (err === true) return e(FileChip, { path: p.path })
@@ -7530,6 +7587,111 @@ class BotEngine {
               }, working ? t('delete.working') : t('action.delete')))))
       }
 
+      // =========================================================
+      // File preview: the native document preview, re-hosted.
+      //
+      // Clicking a bot-written document used to call the host `openFile` RPC,
+      // which no longer exists — the chip silently did nothing. The shell's
+      // own preview (sidebarRight.openResource) can't serve it either: the
+      // workbench panel is a global panel, so no session surface is mounted,
+      // and the file lives under the gateway data dir, outside any session
+      // workspace. So the preview renders the SAME native renderers in a
+      // modal over the chat — MarkdownText for markdown, the native code
+      // token for text, data-URL embeds for images and PDFs — fed by the
+      // host's allowlisted readText/readBytes. Formats the modal can't show
+      // (office, archives, media) reveal in the system file manager instead.
+      // =========================================================
+      const PREVIEW_TEXT_RE = /\.(txt|json|csv|log|ya?ml|ts|tsx|js|mjs|cjs|py|rb|go|rs|java|c|cpp|h|hpp|sh|html?|css|xml|ini|toml|sql)$/i
+      const PREVIEW_MD_RE = /\.(md|markdown)$/i
+      const PREVIEW_PDF_RE = /\.pdf$/i
+
+      function fmtBytes(n: number): string {
+        if (n < 1024) return n + ' B'
+        if (n < 1024 * 1024) return (n / 1024).toFixed(n < 10240 ? 1 : 0) + ' KB'
+        return (n / (1024 * 1024)).toFixed(1) + ' MB'
+      }
+
+      function FilePreviewModal(p: { path: string }) {
+        type Load = { phase: 'loading' | 'text' | 'image' | 'pdf' | 'unsupported' | 'error'; text: string; nextOffset: number; eof: boolean; bytes: number; url: string | null; err: string | null }
+        const [st, setSt] = React.useState({ phase: 'loading', text: '', nextOffset: 0, eof: true, bytes: 0, url: null, err: null } as Load)
+        const [revealed, setRevealed] = React.useState(false)
+        const path = p.path
+        const isImg = MEDIA_IMG_RE.test(path)
+        const isPdf = PREVIEW_PDF_RE.test(path)
+        const isMd = PREVIEW_MD_RE.test(path)
+        React.useEffect(() => {
+          let alive = true
+          setSt({ phase: 'loading', text: '', nextOffset: 0, eof: true, bytes: 0, url: null, err: null })
+          if (isImg) {
+            botsCall<{ mime: string; dataBase64: string }>('readImage', { path })
+              .then((r) => { if (alive) setSt({ phase: 'image', text: '', nextOffset: 0, eof: true, bytes: 0, url: 'data:' + r.mime + ';base64,' + r.dataBase64, err: null }) })
+              .catch((e2) => { if (alive) setSt({ phase: 'error', text: '', nextOffset: 0, eof: true, bytes: 0, url: null, err: errText(e2) }) })
+          } else if (isPdf) {
+            botsCall<{ mime: string; dataBase64: string; sizeBytes: number }>('readBytes', { path })
+              .then((r) => { if (alive) setSt({ phase: 'pdf', text: '', nextOffset: 0, eof: true, bytes: r.sizeBytes, url: 'data:' + r.mime + ';base64,' + r.dataBase64, err: null }) })
+              .catch((e2) => { if (alive) setSt({ phase: 'error', text: '', nextOffset: 0, eof: true, bytes: 0, url: null, err: errText(e2) }) })
+          } else if (isMd || PREVIEW_TEXT_RE.test(path)) {
+            botsCall<{ text: string; nextOffset: number; eof: boolean; bytes: number }>('readText', { path, offset: 0 })
+              .then((r) => { if (alive) setSt({ phase: 'text', text: r.text, nextOffset: r.nextOffset, eof: r.eof, bytes: r.bytes, url: null, err: null }) })
+              .catch((e2) => {
+                const msg = errText(e2)
+                // Binary files the text sniffer rejected: no renderer here.
+                if (alive) setSt({ phase: /not-text/.test(msg) ? 'unsupported' : 'error', text: '', nextOffset: 0, eof: true, bytes: 0, url: null, err: msg })
+              })
+          } else {
+            setSt({ phase: 'unsupported', text: '', nextOffset: 0, eof: true, bytes: 0, url: null, err: null })
+          }
+          return () => { alive = false }
+          // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, [path])
+
+        function loadMore() {
+          if (st.phase !== 'text' || st.eof) return
+          const offset = st.nextOffset
+          botsCall<{ text: string; nextOffset: number; eof: boolean; bytes: number }>('readText', { path, offset })
+            .then((r) => setSt((s0: Load) => ({ ...s0, text: s0.text + r.text, nextOffset: r.nextOffset, eof: r.eof, bytes: r.bytes })))
+            .catch((e2) => setSt({ ...st, err: errText(e2) }))
+        }
+
+        function reveal() {
+          setRevealed(true)
+          botsCall('revealFile', { path }).catch(() => setRevealed(false))
+        }
+
+        const base = path.slice(path.lastIndexOf('/') + 1) || path
+        const dir = path.slice(0, path.length - base.length)
+        const head = e('div', { className: 'dbs-previewHead' },
+          Ico('IconFolderClose16', { size: 14 }),
+          e('div', { className: 'dbs-previewTitles' },
+            e('div', { className: 'dbs-previewName' }, base),
+            e('div', { className: 'dbs-previewPath' }, dir !== '' ? dir : base)),
+          st.bytes > 0 ? e('span', { className: 'dbs-previewMeta' }, fmtBytes(st.bytes)) : null,
+          e(Button, { variant: 'ghost', size: 'sm', disabled: revealed, onClick: reveal }, t('preview.reveal')),
+          e('button', {
+            type: 'button', className: 'dbs-previewClose', 'aria-label': t('action.close'),
+            onClick: () => patch({ previewPath: null }),
+          }, Ico('IconCloseOutline16', { size: 16 })))
+        let body: any
+        if (st.phase === 'loading') body = e('div', { className: 'dbs-previewEmpty' }, Ico('IconLoadingOutline16', { size: 14 }))
+        else if (st.phase === 'image') body = e('img', { className: 'dbs-previewImg', src: st.url ?? '', alt: path })
+        else if (st.phase === 'pdf') body = e('embed', { className: 'dbs-previewPdf', src: st.url ?? '', type: 'application/pdf', title: base })
+        else if (st.phase === 'text') body = e('div', { className: 'dbs-previewBody' },
+          isMd ? e('div', { className: 'dbs-previewMd' }, e(MarkdownText, { text: st.text }))
+               : e('pre', { className: 'dbs-previewPre' }, st.text),
+          st.eof === false ? e('div', { className: 'dbs-previewFoot' },
+            e(Button, { variant: 'ghost', size: 'sm', onClick: loadMore }, t('preview.loadMore'))) : null)
+        else if (st.phase === 'unsupported') body = e('div', { className: 'dbs-previewEmpty' }, t('preview.unsupported'))
+        else body = e('div', { className: 'dbs-previewEmpty dbs-error' }, st.err ?? t('media.openFailed'))
+        return e('div', {
+          className: 'dbs-modalBackdrop',
+          onClick: () => patch({ previewPath: null }),
+        },
+          e('div', {
+            className: 'dbs-previewCard', role: 'dialog', 'aria-modal': true, 'aria-label': base,
+            onClick: (ev: any) => { ev.stopPropagation() },
+          }, head, body))
+      }
+
       function BotsMain() {
         const s = useStore()
         return s.chatAgentId === null
@@ -7544,6 +7706,7 @@ class BotEngine {
             if (ev.key !== 'Escape') return
             // Escape dismisses transient UI; native panel navigation stays intact.
             if (state.rowMenu !== null) { patch({ rowMenu: null }); return }
+            if (state.previewPath !== null) { patch({ previewPath: null }); return }
             if (state.confirmDelete !== null) { patch({ confirmDelete: null }); return }
             if (state.create !== null) { patch({ create: null }); return }
             if (state.manageMembers !== null) { patch({ manageMembers: null }); return }
@@ -7553,6 +7716,7 @@ class BotEngine {
           return () => { window.removeEventListener('keydown', onKey) }
         }, [])
         const layers: any[] = []
+        if (s.previewPath !== null) layers.push(e(FilePreviewModal, { key: 'preview:' + s.previewPath, path: s.previewPath }))
         if (s.create !== null) layers.push(e(CreateModal, { key: 'create' }))
         if (s.manageMembers !== null) layers.push(e(ManageMembersModal, { key: 'manage-members' }))
         if (s.settingsAgentId !== null) layers.push(e(AgentSettingsModal, { key: 'agent-settings' }))

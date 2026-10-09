@@ -17,16 +17,22 @@
  * skills remain available for explicit user selection in the @ menu,
  * while staying out of automatic model discovery.
  *
- * The engine catalog lives in cache.json; explicit exclusions are persisted
- * separately so new installations can be discovered automatically:
- *   - first sync (no cache.json): bridge everything discovered;
- *   - later syncs reconcile and automatically share newly installed skills;
- *     explicit exclusions live in dsh-bots-skill-bridge.json. Other plugins
- *     retain ownership of their cache records and authentication fields.
+ * Sharing is opt-in per skill. Every bridged skill reaches EVERY bot and
+ * group, and the system prompt tells bots to read and follow it — so a skill
+ * dropped into ~/.agents/skills by some installer must not silently become
+ * instructions for the whole crew:
+ *   - a newly discovered skill is `pending` (not bridged) until the user
+ *     shares or declines it on the settings card;
+ *   - skills bundled with this plugin ship shared (same trust as its code);
+ *   - decisions live in dsh-bots-skill-bridge.json with the SKILL.md sha256
+ *     recorded at share time, so a later edit surfaces as `changed`;
+ *   - the v1 exclusion list migrates as-is: whatever was shared stays shared.
+ * Other plugins retain ownership of their cache records and auth fields.
  * @module dsh-bots/skill-bridge
  */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, renameSync, realpathSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { dirname, join } from 'node:path'
 
 /** The engine's plugin-skills dir name and cache file (workflow-store.ts). */
@@ -57,6 +63,8 @@ export interface DshSkillRef {
   /** Original file path — bridged entries point HERE (live semantics). */
   filePath: string
   root: string
+  /** sha256 of the SKILL.md bytes, hex — what a share decision vouches for. */
+  sha256: string
 }
 
 /** Minimal frontmatter read: only the fields the bridge needs. The engine
@@ -112,7 +120,14 @@ export function discoverDshSkills(home: string, additionalRoots: readonly string
       const name = meta.name?.trim() || entry.name.replace(/\.(md|markdown)$/i, '')
       if (paths.has(canonical) || names.has(name.toLowerCase())) continue
       paths.add(canonical); names.add(name.toLowerCase())
-      const slug = slugifySkillId(entry.name.replace(/\.(md|markdown)$/i, ''))
+      // Names with no ASCII left (中文目录) would all collapse onto "skill"
+      // and then be told apart by scan order — an id that shifts when a new
+      // skill lands would re-point old `sand-workflow:` mentions. Key those
+      // on their real path instead, which is stable.
+      const ascii = slugifySkillId(entry.name.replace(/\.(md|markdown)$/i, ''))
+      const slug = ascii === 'skill' && !/^skill(\.(md|markdown))?$/i.test(entry.name)
+        ? 'skill-' + createHash('sha256').update(canonical).digest('hex').slice(0, 8)
+        : ascii
       let id = 'dsh-' + slug
       for (let n = 2; seen.has(id); n++) id = 'dsh-' + slug + '-' + n
       seen.add(id)
@@ -123,6 +138,7 @@ export function discoverDshSkills(home: string, additionalRoots: readonly string
         disableModelInvocation: meta.disableModelInvocation,
         filePath,
         root,
+        sha256: createHash('sha256').update(raw).digest('hex'),
       })
     }
   }
@@ -163,10 +179,56 @@ export function writeBridgeCache(cachePath: string, cache: BridgeCache): void {
   renameSync(temp, cachePath)
 }
 
-export interface BridgeSyncResult { discovered: number; bridged: number; firstRun: boolean }
+/** A skill's sharing state as the settings card shows it. */
+export type BridgeStatus = 'shared' | 'pending' | 'declined'
 
-/** Explicit exclusions are separate from the engine-owned catalog. New
- * installations are enabled automatically without re-enabling excluded ones. */
+export interface BridgeRow {
+  id: string; name: string; description: string; path: string; root: string
+  sha256: string; status: BridgeStatus
+  /** Shared, but SKILL.md changed since the user shared it. */
+  changed: boolean
+  /** Ships inside this plugin (shared by default). */
+  bundled: boolean
+  disableModelInvocation: boolean
+}
+
+export interface BridgeSyncResult { discovered: number; bridged: number; pending: number; firstRun: boolean; rows: BridgeRow[] }
+
+/** Persisted decisions: shared id → sha256 at share time, declined ids. */
+interface BridgePrefs { version: 2; shared: Record<string, string>; declined: string[] }
+
+function readPrefs(prefsPath: string, refs: DshSkillRef[], existing: BridgeCache | null): { prefs: BridgePrefs; migrated: boolean } | null {
+  let raw: any
+  try { raw = JSON.parse(readFileSync(prefsPath, 'utf8')) } catch { raw = null }
+  if (raw !== null && raw.version === 2 && raw.shared !== null && typeof raw.shared === 'object' && Array.isArray(raw.declined)) {
+    const shared: Record<string, string> = {}
+    for (const [id, hash] of Object.entries(raw.shared)) if (typeof hash === 'string') shared[id] = hash
+    return { prefs: { version: 2, shared, declined: raw.declined.filter((id: unknown) => typeof id === 'string') }, migrated: false }
+  }
+  const hashOf = new Map(refs.map((r) => [r.id, r.sha256]))
+  if (raw !== null && Array.isArray(raw.excluded)) {
+    // v1: everything not excluded was shared, and stays shared.
+    const excluded = raw.excluded.filter((id: unknown): id is string => typeof id === 'string')
+    const shared: Record<string, string> = {}
+    for (const ref of refs) if (!excluded.includes(ref.id)) shared[ref.id] = ref.sha256
+    return { prefs: { version: 2, shared, declined: excluded }, migrated: true }
+  }
+  const old = existing?.skills.filter((s) => s.pluginId === 'dsh-bots') ?? []
+  if (old.length > 0) {
+    // Pre-prefs bridge: what the engine already had stays shared.
+    const shared: Record<string, string> = {}
+    for (const s of old) { const hash = hashOf.get(s.id); if (hash !== undefined) shared[s.id] = hash }
+    return { prefs: { version: 2, shared, declined: [] }, migrated: true }
+  }
+  return null
+}
+
+/**
+ * Reconcile the engine catalog with the user's sharing decisions. Without
+ * `enabled` it only applies stored decisions (plus bundled defaults);
+ * `enabled` is an explicit decision over every discovered skill — listed ids
+ * are shared at their current content hash, the rest declined.
+ */
 export function syncSkillsBridge(
   home: string,
   sandRoot: string,
@@ -175,32 +237,48 @@ export function syncSkillsBridge(
 ): BridgeSyncResult {
   const cachePath = join(sandRoot, PLUGIN_SKILLS_DIRNAME, PLUGIN_SKILLS_CACHE_FILENAME)
   const prefsPath = join(sandRoot, 'dsh-bots-skill-bridge.json')
+  const bundledRoots = new Set(opts.additionalRoots ?? [])
   const refs = discoverDshSkills(home, opts.additionalRoots)
   let existing: BridgeCache | null = null
   try {
     const parsed = JSON.parse(readFileSync(cachePath, 'utf8'))
     if (Number.isFinite(parsed.fetchedAt) && Array.isArray(parsed.skills)) existing = parsed
   } catch { /* initial sync */ }
-  let excluded: string[] = []
-  try {
-    const prefs = JSON.parse(readFileSync(prefsPath, 'utf8'))
-    if (Array.isArray(prefs.excluded)) excluded = prefs.excluded.filter((id: unknown) => typeof id === 'string')
-  } catch {
-    // Migrate a previously trimmed bridge once. A foreign-only cache is not
-    // a prior bridge and must not suppress this plugin's initial catalog.
-    const old = existing?.skills.filter(s => s.pluginId === 'dsh-bots') ?? []
-    if (old.length > 0) excluded = refs.filter(r => !r.disableModelInvocation && dshSkillRoots(home).slice(0, 2).includes(r.root) && !old.some(s => s.id === r.id)).map(r => r.id)
+  const loaded = readPrefs(prefsPath, refs, existing)
+  const firstRun = loaded === null
+  const prefs: BridgePrefs = loaded?.prefs ?? { version: 2, shared: {}, declined: [] }
+  if (opts.enabled != null) {
+    for (const ref of refs) {
+      if (opts.enabled.includes(ref.id)) {
+        prefs.shared[ref.id] = ref.sha256
+        prefs.declined = prefs.declined.filter((id) => id !== ref.id)
+      } else {
+        delete prefs.shared[ref.id]
+        if (!prefs.declined.includes(ref.id)) prefs.declined.push(ref.id)
+      }
+    }
   }
-  if (opts.enabled != null) excluded = refs.filter(r => !opts.enabled!.includes(r.id)).map(r => r.id)
-  const prefs = JSON.stringify({ version: 1, excluded }, null, 2) + '\n'
+  // Bundled skills ship with the plugin's own trust: shared on first sight.
+  for (const ref of refs) {
+    if (bundledRoots.has(ref.root) && !(ref.id in prefs.shared) && !prefs.declined.includes(ref.id)) prefs.shared[ref.id] = ref.sha256
+  }
+  const body = JSON.stringify(prefs, null, 2) + '\n'
   mkdirSync(sandRoot, { recursive: true })
   let oldPrefs = ''
   try { oldPrefs = readFileSync(prefsPath, 'utf8') } catch {}
-  if (oldPrefs !== prefs) {
+  if (oldPrefs !== body) {
     const temp = prefsPath + '.' + process.pid + '.tmp'
-    writeFileSync(temp, prefs, { mode: 0o600 }); renameSync(temp, prefsPath)
+    writeFileSync(temp, body, { mode: 0o600 }); renameSync(temp, prefsPath)
   }
-  const chosen = refs.filter(r => !excluded.includes(r.id))
+  const rows: BridgeRow[] = refs.map((ref) => {
+    const status: BridgeStatus = ref.id in prefs.shared ? 'shared' : prefs.declined.includes(ref.id) ? 'declined' : 'pending'
+    return {
+      id: ref.id, name: ref.name, description: ref.description, path: ref.filePath, root: ref.root,
+      sha256: ref.sha256, status, changed: status === 'shared' && prefs.shared[ref.id] !== ref.sha256,
+      bundled: bundledRoots.has(ref.root), disableModelInvocation: ref.disableModelInvocation,
+    }
+  })
+  const chosen = refs.filter((r) => r.id in prefs.shared)
   const foreign = existing?.skills.filter(s => s.pluginId !== 'dsh-bots') ?? []
   const occupied = new Set(foreign.map(s => s.id))
   const skills = chosen.filter(r => !occupied.has(r.id)).map(ref => ({
@@ -215,7 +293,10 @@ export function syncSkillsBridge(
   }
   // Avoid continuously invalidating the engine's watcher when nothing changed.
   if (JSON.stringify(existing?.skills) !== JSON.stringify(cache.skills)) writeBridgeCache(cachePath, cache)
-  return { discovered: refs.length, bridged: skills.length, firstRun: existing == null }
+  return {
+    discovered: refs.length, bridged: skills.length,
+    pending: rows.filter((r) => r.status === 'pending').length, firstRun, rows,
+  }
 }
 
 /** Used by the card to warn when a bridged file vanished between syncs. */

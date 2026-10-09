@@ -23,7 +23,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { dirname, extname, join, resolve, sep } from 'node:path'
-import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import type {
@@ -36,10 +36,7 @@ import { GatewaySseClient, SseRingBuffer } from './sse.js'
 import { UnreadStore } from './unread.js'
 import { WORKSPACE_VIRTUAL_PREFIX, listAgentWorkspaces, readAgentWorkspace, setAgentWorkspace } from './workspace.js'
 import { readAgentModelId, writeAgentModelId } from './agent-settings.js'
-import {
-  PLUGIN_SKILLS_CACHE_FILENAME, PLUGIN_SKILLS_DIRNAME,
-  discoverDshSkills, readBridgeCache, syncSkillsBridge,
-} from './skill-bridge.js'
+import { syncSkillsBridge, type BridgeRow } from './skill-bridge.js'
 import { satisfiesCaret } from './version.js'
 
 export const name = 'dsh-bots'
@@ -94,6 +91,13 @@ const BOTS_SETTINGS_FILE = 'dsh-bots-settings.json'
  * is loader-independent by construction.
  */
 const OWN_VERSION_FALLBACK = 'unresolved'
+
+/**
+ * Host build fingerprint (see GatewayInfo.hostBuild). The build script swaps
+ * the sentinel for a hash of the compiled host files; the same value is baked
+ * into the client, which compares the two to detect a stale running host.
+ */
+const HOST_BUILD = 'unbaked-host-build'
 
 /** Stamped into every diagnostic line so records survive version skew. */
 const PLUGIN_VERSION = ownModuleVersion()
@@ -326,7 +330,7 @@ export class BotsRemote extends TypertRemoteService {
     const root = typeof healthRoot === 'string' && healthRoot.trim() !== ''
       ? healthRoot
       : join(expandHome(dataDir), 'box-workspace')
-    return { ...discovered, dataDir, workspaceRoot: root }
+    return { ...discovered, dataDir, workspaceRoot: root, hostBuild: HOST_BUILD }
   }
 
   /** Poll discovery until the engine answers /health (kickstart returns the
@@ -565,14 +569,44 @@ export class BotsRemote extends TypertRemoteService {
   private resolveMediaPath(raw: unknown): { resolved: string; ext: string } {
     let p = String(raw ?? '').trim()
     if (p === '') throw new Error('path is required')
+    const box = join(effectiveDataDir(this.cfg.dataDir), 'box-workspace')
     if (p.startsWith(WORKSPACE_VIRTUAL_PREFIX) && !p.includes('/../')) {
-      p = join(effectiveDataDir(this.cfg.dataDir), 'box-workspace', p.slice(WORKSPACE_VIRTUAL_PREFIX.length))
+      p = join(box, p.slice(WORKSPACE_VIRTUAL_PREFIX.length))
+    } else if (!p.startsWith('/') && !p.startsWith('~')) {
+      p = this.resolveRelativeBotPath(p, box)
     }
     let resolved = resolve(expandHome(p))
     try { resolved = realpathSync(resolved) } catch { /* missing → prefix-check the literal path */ }
     const inside = this.previewRoots().some((root) => resolved === root || resolved.startsWith(root + sep))
     if (!inside) throw new Error('path is outside the bots data dir: ' + resolved)
     return { resolved, ext: extname(resolved).toLowerCase() }
+  }
+
+  /**
+   * Bots usually cite deliverables relative to their own working directory
+   * (`risk/report.md`), which is one of the box workspaces — never the dsh
+   * web process cwd. Look the path up under the box root, each workspace
+   * directly beneath it, and the data dir; when several exist, the most
+   * recently written one is what the bot just reported. No hit → the box
+   * candidate, so the caller's not-found error names a sensible place.
+   */
+  private resolveRelativeBotPath(rel: string, box: string): string {
+    const clean = rel.replace(/^\.\//, '')
+    if (clean.split('/').includes('..')) return join(box, clean)
+    const candidates = [join(box, clean), join(effectiveDataDir(this.cfg.dataDir), clean)]
+    try {
+      for (const entry of readdirSync(box, { withFileTypes: true })) {
+        if (entry.isDirectory() && !entry.name.startsWith('.')) candidates.push(join(box, entry.name, clean))
+      }
+    } catch { /* no box workspace yet */ }
+    let best: { path: string; mtimeMs: number } | null = null
+    for (const candidate of candidates) {
+      try {
+        const stat = statSync(candidate)
+        if (stat.isFile() && (best === null || stat.mtimeMs > best.mtimeMs)) best = { path: candidate, mtimeMs: stat.mtimeMs }
+      } catch { /* not here */ }
+    }
+    return best?.path ?? candidates[0]
   }
 
   /** Text page size for `readText`: big enough for most files in one read,
@@ -739,13 +773,23 @@ export class BotsRemote extends TypertRemoteService {
     return { hadActiveRun: body.hadActiveRun === true }
   }
 
-  async transcriptTail(request: { id?: string; limit?: number } | null): Promise<{ entries: TranscriptEntry[] }> {
+  /**
+   * Newest-first window of a transcript. `beforeSeq` pages backwards (the
+   * engine's own cursor); `nextBeforeSeq` is present only while older
+   * entries remain, so the chat knows whether to offer "load earlier".
+   */
+  async transcriptTail(request: { id?: string; limit?: number; beforeSeq?: number } | null): Promise<{ entries: TranscriptEntry[]; nextBeforeSeq: number | null }> {
+    const beforeSeq = Number(request?.beforeSeq)
     const res = await callGateway<any>(this.cfg.dataDir, 'getAgentTranscriptTail', {
       id: request?.id,
-      limit: Number(request?.limit) || 40,
+      limit: Math.min(500, Math.max(1, Math.floor(Number(request?.limit) || 40))),
+      ...(Number.isFinite(beforeSeq) ? { beforeSeq } : {}),
     })
     const entries: any[] = Array.isArray(res?.entries) ? res.entries : []
-    return { entries: entries.map(trimEntry) }
+    return {
+      entries: entries.map(trimEntry),
+      nextBeforeSeq: typeof res?.nextBeforeSeq === 'number' && Number.isFinite(res.nextBeforeSeq) ? res.nextBeforeSeq : null,
+    }
   }
 
   /**
@@ -1117,35 +1161,33 @@ export class BotsRemote extends TypertRemoteService {
    * the engine's plugin-skills channel as LIVE file pointers; the engine's
    * stat-keyed re-read makes harness edits propagate without copying. */
 
-  /** Discovery + current bridge state for the card's checkbox list. */
-  async skillsBridgeList(request: unknown): Promise<{ skills: Array<{ id: string; name: string; description: string; bridged: boolean; path: string }> }> {
-    syncSkillsBridge(homedir(), effectiveDataDir(this.cfg.dataDir), PLUGIN_VERSION, { additionalRoots: this.bundledSkillRoots })
-    const refs = discoverDshSkills(homedir(), this.bundledSkillRoots)
-    const cachePath = join(effectiveDataDir(this.cfg.dataDir), PLUGIN_SKILLS_DIRNAME, PLUGIN_SKILLS_CACHE_FILENAME)
-    const ids = new Set(readBridgeCache(cachePath)?.ids ?? [])
+  /** Discovery + every skill's sharing state (shared / pending / declined,
+   * content hash, changed-since-shared) for the settings card. */
+  async skillsBridgeList(request: unknown): Promise<{ skills: Array<BridgeRow & { bridged: boolean }>; pending: number }> {
+    const result = syncSkillsBridge(homedir(), effectiveDataDir(this.cfg.dataDir), PLUGIN_VERSION, { additionalRoots: this.bundledSkillRoots })
     return {
-      skills: refs.map((ref) => ({
-        id: ref.id, name: ref.name, description: ref.description,
-        bridged: ids.has(ref.id), path: ref.filePath,
-      })),
+      skills: result.rows.map((row) => ({ ...row, bridged: row.status === 'shared' })),
+      pending: result.pending,
     }
   }
 
-  /** Rewrite the bridge index to exactly `ids` (empty array = bridge none). */
-  async skillsBridgeSet(request: { ids?: string[] } | null): Promise<{ bridged: number }> {
+  /** Decide every discovered skill at once: `ids` are shared (at their
+   * current content hash), everything else is declined. */
+  async skillsBridgeSet(request: { ids?: string[] } | null): Promise<{ bridged: number; pending: number }> {
     const ids = Array.isArray(request?.ids) ? request.ids.filter((id): id is string => typeof id === 'string') : []
-    return syncSkillsBridge(homedir(), effectiveDataDir(this.cfg.dataDir), PLUGIN_VERSION, { enabled: ids, additionalRoots: this.bundledSkillRoots })
+    const result = syncSkillsBridge(homedir(), effectiveDataDir(this.cfg.dataDir), PLUGIN_VERSION, { enabled: ids, additionalRoots: this.bundledSkillRoots })
+    return { bridged: result.bridged, pending: result.pending }
   }
 
-  /** Mount-time sync: first run bridges everything; later runs reconcile
-   * (prune vanished, keep the user's trimmed set). Best-effort by policy —
-   * a failed bridge must never block activation or the RPC surface. */
+  /** Background reconcile: applies stored decisions to the current skill
+   * roots (vanished files drop out, new ones wait as pending). Best-effort
+   * by policy — a failed bridge must never block activation or the RPCs. */
   scheduleSkillsBridgeSync(): void {
     const sync = () => {
       try {
         const result = syncSkillsBridge(homedir(), effectiveDataDir(this.cfg.dataDir), PLUGIN_VERSION, { additionalRoots: this.bundledSkillRoots })
-        if (result.firstRun || result.bridged !== result.discovered) {
-          void this.diag({ stage: 'skillsBridgeSync', detail: result })
+        if (result.firstRun) {
+          void this.diag({ stage: 'skillsBridgeSync', detail: { discovered: result.discovered, bridged: result.bridged, pending: result.pending } })
         }
       } catch (error: any) {
         void this.diag({ stage: 'skillsBridgeSync', detail: { error: String(error?.message ?? error) } })
@@ -1325,7 +1367,17 @@ export class BotsRemote extends TypertRemoteService {
   // Live event channel: ring-replay instead of transcript polling.
   eventsSince(request: { seq?: number } | null): EventsSinceResult {
     if (!this.sse.state().running) this.sse.start()
-    return { ...this.sse.eventsSince(Number(request?.seq) || 0), unread: this.unread.counts() }
+    const result = this.sse.eventsSince(Number(request?.seq) || 0)
+    // Transcript arrivals carry the full engine entry. Ship it in the same
+    // display shape `transcriptTail` returns, so the open chat merges live
+    // rows straight from the ring instead of re-reading the tail per event.
+    const events = result.events.map((ev) => {
+      const data = ev.data as any
+      if (ev.channel !== 'transcript' || data === null || typeof data !== 'object' || data.entry === null || typeof data.entry !== 'object') return ev
+      const { entry, ...rest } = data
+      return { ...ev, data: { ...rest, view: trimEntry(entry) } }
+    })
+    return { ...result, events, unread: this.unread.counts() }
   }
 
   sseState(request: unknown): SseState {

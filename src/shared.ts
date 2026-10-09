@@ -83,6 +83,13 @@ export interface GatewayInfo {
    * directories live at `<root>/agents/<agentId>`.
    */
   workspaceRoot?: string
+  /**
+   * Fingerprint of the host half's build, baked at build time. dsh web loads
+   * the host once at startup while the client is re-read on every page load,
+   * so a client built against a different host fingerprint means the running
+   * host is stale (restart dsh web). Absent on hosts older than the check.
+   */
+  hostBuild?: string
   health?: {
     pid: number | null
     isBusy: boolean

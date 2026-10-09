@@ -102,7 +102,18 @@ const server = createServer(async (req, res) => {
       else if (method === 'goals') value = []
       else if (method === 'createGoal') value = null
       else if (method === 'goalAction') value = null
-      else if (method === 'transcriptTail') value = { entries: [] }
+      else if (method === 'transcriptTail') value = {
+        entries: [{
+          id: 'm1', kind: 'message', display: 'assistant', timestampMs: Date.now() - 60_000, role: 'assistant',
+          content: '风险评估已完成：risk/09999_risk_opinion_20261009.md，请查收。',
+          authorId: 'bot', authorName: '风险助手', isStreaming: false,
+        }],
+      }
+      else if (method === 'readText') {
+        value = { path: request.path, text: '# 风险意见\n\n组合回撤上限 8%，单票仓位不超过 15%。\n', offset: 0, nextOffset: 4096, eof: true, bytes: 96, mtimeMs: Date.now() }
+      }
+      else if (method === 'readBytes') value = { path: request.path, mime: 'application/pdf', dataBase64: '', sizeBytes: 128_000, mtimeMs: Date.now() }
+      else if (method === 'revealFile') value = { revealed: true }
       else if (method === 'eventsSince') value = { events: [], nextSeq: 0, unread: {} }
       else if (method === 'pin') value = { ids: [] }
       else if (method === 'gatewayInfo') value = { ok: gwOk, port: 7331 }
@@ -192,6 +203,22 @@ try {
     'rows must be attributed to the planning member')
   await page.getByRole('button', { name: '任务规划', exact: true }).click()
   await page.getByText('测试 Bot', { exact: true }).click()
+  // File preview: the bot's reply carries a workspace-relative document
+  // path; its chip must open the native-renderer preview modal (the old
+  // openFile RPC is gone, and the old path regex truncated relative paths).
+  const docChip = page.locator('.dbs-fileChip', { hasText: '09999_risk_opinion_20261009.md' })
+  await docChip.waitFor()
+  assert.match(await docChip.getAttribute('title') ?? '', /risk\/09999_risk_opinion_20261009\.md$/,
+    'the chip must carry the full workspace-relative path, not the truncated basename')
+  await docChip.click()
+  await page.locator('.dbs-previewCard').waitFor()
+  assert.equal(await page.locator('.dbs-previewName').innerText(), '09999_risk_opinion_20261009.md')
+  // The body streams in from readText — wait for the render, don't race it.
+  await page.locator('.dbs-previewMd').waitFor()
+  assert.match(await page.locator('.dbs-previewCard').innerText(), /风险意见/, 'markdown must render through the native renderer')
+  assert.match(await page.locator('.dbs-previewCard').innerText(), /回撤上限/, 'markdown body content must be present')
+  await page.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.locator('.dbs-previewCard').waitFor({ state: 'detached' })
   // Verify narrow layout and capture a reviewable artifact.
   await page.setViewportSize({ width: 720, height: 900 })
   await page.getByRole('button', { name: 'Fold sidebar' }).click()
