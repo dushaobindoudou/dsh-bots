@@ -4,6 +4,28 @@ All notable changes to this project are documented in this file. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **finance-skill never turns "not found" into a fact** (2026-10-10 report: a
+  room of bots declared MiniMax unlisted and kept saying so after the user
+  corrected them; it trades in Hong Kong as 00100). `data_bus.py search
+  --name` resolves a company name / English name / pinyin to the codes the
+  data source returns (Tencent smartbox; warrants and CBBCs hidden unless
+  `--all`), and a miss says "未找到" with a hint that 查不到≠未上市 — no more
+  guessing codes by scanning ranges. A quote without data points to
+  `search` the same way.
+- **Market cap is a returned, cross-checked field**: `quote` adds
+  `market_cap` / `total_shares` (and the H-share pair for HK) only when the
+  provider's total-cap figure agrees with price × total shares within 1%,
+  otherwise null — and every A/HK quote notes that `amount` is the day's
+  turnover, not market cap (the bots had reported 智谱's 31.45 亿 turnover as
+  its "市值"; its total market cap is ≈ 3,128 亿 HKD).
+- SKILL.md red lines and the runbook gain the matching rules: 查不到≠不存在,
+  use only returned fields (other bots' conclusions are claims, not
+  evidence), and re-verify with tools when the user corrects a fact.
+
 ## [0.2.69] - 2026-10-10
 
 Requires `multibot-sdk` ^0.6.0 (one-time routines, per-bot models, skill

@@ -7,6 +7,7 @@
   · 资金流/新闻/板块/龙虎榜 → akshare 的东财通道（部分网络环境 push2.eastmoney.com 被重置，
     失败时按 hint 降级 web_search，不要重试超过一次）
   · call 逃生舱 → 任意 akshare 函数
+  · 名称 → 代码 → 腾讯 smartbox（search），只认数据源返回的代码，不猜、不扫号段
 
 输出紧凑 JSON：{"ok": true, "data": ..., "meta": {"source": ..., "fetched_at": ...}}
 时间参数统一 YYYY-MM-DD；金额单位以来源口径为准（腾讯成交额为"万元"）。
@@ -19,6 +20,7 @@ import re
 import ssl
 import sys
 import time
+import urllib.parse
 import urllib.request
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
@@ -178,7 +180,11 @@ def cmd_quote(code):
             return _emit(False, error="美股实时报价不可用", hint="用 kline --limit 5 的最近收盘价并标注非实时")
         q, _raw = _tx_quote_from_fields(f, k["symbol"])
         return _emit(True, q, source="tencent:fqkline.qt")
-    q, _raw = _tx_quote(n["tx"])
+    try:
+        q, _raw = _tx_quote(n["tx"])
+    except ValueError as e:
+        return _emit(False, error=str(e), source="tencent:qt.gtimg.cn",
+                     hint="代码不确定时先 search --name <公司名> 取得数据源给出的代码；某个代码无行情≠公司未上市，不要扫号段猜代码")
     return _emit(True, q, source="tencent:qt.gtimg.cn")
 
 
@@ -209,7 +215,107 @@ def _tx_quote_from_fields(f, sym):
         # Unverified US extended fields are deliberately absent.
         q["amount"] = None
         q["amount_unit"] = "USD"
+    _attach_market_cap(q, f, market)
     return q, f
+
+
+# Total shares / total market cap (亿) field pairs, by market. HK: 69 total
+# shares, 45 total cap; 70 / 44 the HK-listed (H) share class. A: 73 total
+# shares, 45 total cap. Verified against live quotes (2026-10-10):
+# 00700 424.8 × 9,092,605,595 = 38,625 亿; 02513 641.5 × 487,588,090 = 3,128 亿.
+MKTCAP_FIELDS = {"hk": {"total": (69, 45), "h": (70, 44)}, "a": {"total": (73, 45)}}
+
+
+def _verified_market_cap(price, shares, cap_yi, tolerance=0.01):
+    """Market cap in currency units — only when price × shares agrees with the
+    provider's own 亿-unit figure; a number that can't be cross-checked is
+    not reported (None), never estimated from another field."""
+    if price is None or shares is None or cap_yi is None or shares <= 0 or cap_yi <= 0:
+        return None
+    computed = price * shares
+    provided = cap_yi * 1e8
+    if abs(computed - provided) > tolerance * provided:
+        return None
+    return round(computed, 2)
+
+
+def _attach_market_cap(q, f, market):
+    pairs = MKTCAP_FIELDS.get(market)
+    notes = []
+    if market in ("a", "hk"):
+        notes.append("amount 是当日成交额（turnover），不是市值")
+    if pairs is None:
+        q["market_cap"] = None
+        notes.append("数据源未提供可校验的总市值：不得用成交额或其他字段推算市值")
+        q["notes"] = notes
+        return
+    price = q.get("price")
+    def field(i):
+        return _numf(f[i]) if i < len(f) else None
+    shares_i, cap_i = pairs["total"]
+    q["total_shares"] = field(shares_i)
+    q["market_cap"] = _verified_market_cap(price, q["total_shares"], field(cap_i))
+    q["market_cap_unit"] = q["currency"]
+    if "h" in pairs:
+        h_shares_i, h_cap_i = pairs["h"]
+        q["h_shares"] = field(h_shares_i)
+        q["h_share_market_cap"] = _verified_market_cap(price, q["h_shares"], field(h_cap_i))
+    notes.append("market_cap = 现价 × 总股本，已与数据源总市值交叉校验" if q["market_cap"] is not None
+                 else "总市值无法与股本交叉校验，不予报告：不得用成交额或其他字段推算市值")
+    q["notes"] = notes
+
+
+SEARCH_TYPES = {"GP": "股票", "GP-A": "A股", "GP-B": "B股", "ZS": "指数", "QZ": "权证/牛熊证",
+                "ETF": "ETF", "LOF": "LOF", "JJ": "基金", "ZQ": "债券"}
+SEARCH_DERIVATIVES = {"QZ"}
+SEARCH_EXCHANGE_SUFFIX = {"sh": "SH", "sz": "SZ", "bj": "BJ", "hk": "HK"}
+
+
+def _search_quote_code(market, code):
+    if market in SEARCH_EXCHANGE_SUFFIX:
+        return f"{code.upper()}.{SEARCH_EXCHANGE_SUFFIX[market]}"
+    if market == "us":
+        return code.split(".")[0].upper()
+    return code
+
+
+def _parse_smartbox(raw):
+    """smartbox v_hint: entries joined by "^", fields by "~":
+    market~code~name~pinyin~type, names as literal backslash-u escapes."""
+    raw = re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m[1], 16)), raw or "")
+    out = []
+    for item in raw.split("^"):
+        parts = item.split("~")
+        if len(parts) < 5 or not parts[0] or not parts[1]:
+            continue
+        market, code, name, _pinyin, kind = parts[:5]
+        out.append({"market": market, "code": code, "name": name, "type": kind,
+                    "type_label": SEARCH_TYPES.get(kind, kind), "quote_code": _search_quote_code(market, code)})
+    return out
+
+
+def cmd_search(query, market=None, limit=10, include_derivatives=False):
+    """Name / English name / ticker / pinyin → codes, straight from the data
+    source. Nothing found is reported as "not found" — never as "not listed"."""
+    q = (query or "").strip()
+    if not q:
+        return _emit(False, error="search 需要 --name", hint="传公司中文名、英文名、简称、拼音或代码")
+    txt = _http(f"https://smartbox.gtimg.cn/s3/?v=2&q={urllib.parse.quote(q)}&t=all&c=1")
+    hit = re.search(r'v_hint="([^"]*)"', txt)
+    matches = _parse_smartbox(hit[1] if hit else "")
+    if market:
+        want = {"a": ("sh", "sz", "bj")}.get(market, (market,))
+        matches = [m for m in matches if m["market"] in want]
+    derivatives = [m for m in matches if m["type"] in SEARCH_DERIVATIVES]
+    if not include_derivatives:
+        matches = [m for m in matches if m["type"] not in SEARCH_DERIVATIVES]
+    if not matches:
+        return _emit(False, error=f"数据源未找到与“{q}”匹配的证券" + (f"（另有 {len(derivatives)} 条权证/牛熊证，加 --all 查看）" if derivatives and not include_derivatives else ""),
+                     hint="查不到≠不存在/未上市：换中文全称、英文名、简称或拼音再搜一次；仍无结果就如实报告“未查到（已尝试：…）”，"
+                          "不得据此断言“未上市/概念阶段”，也不要扫号段猜代码", source="tencent:smartbox")
+    return _emit(True, {"query": q, "matches": matches[:limit],
+                        "derivatives_hidden": len(derivatives) if not include_derivatives else 0},
+                 source="tencent:smartbox")
 
 
 def cmd_kline(code, period="day", start=None, end=None, adjust="qfq", limit=30):
@@ -363,6 +469,9 @@ def main():
     sub = p.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("normalize"); s.add_argument("--code", required=True)
     s = sub.add_parser("quote"); s.add_argument("--code", required=True)
+    s = sub.add_parser("search"); s.add_argument("--name", required=True)
+    s.add_argument("--market", choices=["a", "hk", "us", "sh", "sz", "bj"]); s.add_argument("--limit", type=int, default=10)
+    s.add_argument("--all", action="store_true", help="包含权证/牛熊证")
     s = sub.add_parser("kline")
     s.add_argument("--code", required=True); s.add_argument("--period", default="day", choices=["day", "week", "month", "daily", "weekly", "monthly"])
     s.add_argument("--start"); s.add_argument("--end"); s.add_argument("--adjust", default="qfq", choices=["qfq", "hfq", "none"])
@@ -391,6 +500,8 @@ def main():
             cmd_normalize(a.code)
         elif a.cmd == "quote":
             cmd_quote(a.code)
+        elif a.cmd == "search":
+            cmd_search(a.name, a.market, a.limit, a.all)
         elif a.cmd == "kline":
             cmd_kline(a.code, {"daily": "day", "weekly": "week", "monthly": "month"}.get(a.period, a.period), a.start, a.end, "" if a.adjust == "none" else a.adjust, a.limit)
         elif a.cmd == "financial":

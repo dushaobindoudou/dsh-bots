@@ -20,8 +20,9 @@
 
 | 子命令 | 关键参数 | 返回 | 说明 |
 |---|---|---|---|
+| `search --name X` | `--market a\|hk\|us` `--all`（含权证/牛熊证） | 公司中文名/英文名/简称/拼音 → 数据源给出的代码（quote_code 可直接用） | **只知道公司名时先跑这个**；没有命中＝“未查到”，不等于未上市；禁止扫号段猜代码 |
 | `normalize --code X` | 600519 / 00700.HK / AAPL | 市场路由+各接口代码形态 | **任何标的先跑这个** |
-| `quote --code X` | — | 实时行情/盘口 | A股/港股轻量报价；美股从 K 线附带报价读取，标注延时或非实时 |
+| `quote --code X` | — | 实时行情/盘口 | A股/港股轻量报价；美股从 K 线附带报价读取，标注延时或非实时。`market_cap` 为总市值（现价×总股本，已与数据源交叉校验，无法校验时为 null）；`amount` 是当日成交额，**不是市值** |
 | `kline --code X` | --period day/week/month（兼容 daily/weekly/monthly） --start --end --adjust qfq/hfq --limit N | OHLCV+涨跌幅 | 默认前复权、最近 30 根；美股自动尝试腾讯 .OQ/.N/无后缀；请求口径无数据时报告失败，不偷换周期或复权 |
 | `financial --code X` | --statement income/balance/cashflow/indicator | 三大报表或财务指标 | indicator=近3年财务指标（推荐先查）；三表仅沪深，报表科目名以返回为准 |
 | `fundflow --code X` | --limit N | 主力/超大单资金流 | 仅 A 股；**北向个股级数据 2024-08 起停止披露**，勿再查北向个股 |
@@ -36,6 +37,7 @@
 
 拿到"一句话意图"后自主规划，典型模板（按需取舍，不要机械全跑）：
 
+- **只有公司名（如“MiniMax”“智谱”）**：search --name → 用返回的 quote_code 跑 normalize/quote；search 未命中时换中文全称/英文名/拼音再试一次，仍无结果就报告“未查到（已尝试：…）”
 - **个股初探/整体情况**：normalize → quote → kline(--limit 120，看趋势与分位) → financial --statement indicator → fundflow --limit 5 → news --limit 5
 - **估值贵不贵**：kline(拉 PE 需 financial+行情自行计算) → financial indicator（PE/PB/ROE 历史序列）→ 横向加 1-2 家可比公司同样步骤
 - **财报分析**：financial 三表（income/balance/cashflow --limit 8 期）→ financial indicator（同比环比）→ news（业绩解读）
@@ -50,8 +52,9 @@
 2. **代码格式**：港股必须 5 位（00700）；美股保留份额类别（BRK.B），腾讯路由自动试后缀；北交所 4/8/920 开头，显式 .BJ/.SH/.SZ 优先，三表接口不支持
 3. **财报时效**：新浪三表按披露日期滞后更新；indicator 的报告期是期末值。回答"最新一期"时核对 `报告期` 字段与当前日期的差距，超 1 个季度未更新要说明
 4. **接口易变**：akshare 上游（东财/新浪）偶发改名限流；报错先重试一次，再换 `call` 用近义函数，最后 web_search 兜底——**每次失败都要在结果里说明降级原因**
-5. **限频**：同一子命令批量查多标的时串行调用、间隔 1s；`quote`/`etf` 全表接口一次调用可过滤多标的，不要循环单查
-6. **单位与口径**：quote 的 currency/amount_unit/volume_unit 是准则：A 股成交额 amount 为 CNY（amount_wan 为万元），成交量 volume 为手；港股 amount 为港元、volume 为股；港美股不输出未经核实的 A 股涨跌停/市净率字段。资金流"主力净流入"含超大单+大单；指标字段名以返回 JSON 为准，禁止脑补字段名
+5. **查不到≠不存在**：search 无命中、某代码无行情、web_search 没搜到，都只能说“未查到”并列出已尝试的检索词/代码，**不得据此断言“未上市/不存在/概念阶段”**，也不得用穷举号段的方式猜代码。
+6. **限频**：同一子命令批量查多标的时串行调用、间隔 1s；`quote`/`etf` 全表接口一次调用可过滤多标的，不要循环单查
+7. **单位与口径**：quote 的 currency/amount_unit/volume_unit 是准则：A 股成交额 amount 为 CNY（amount_wan 为万元），成交量 volume 为手；港股 amount 为港元、volume 为股；港美股不输出未经核实的 A 股涨跌停/市净率字段。资金流"主力净流入"含超大单+大单；指标字段名以返回 JSON 为准，禁止脑补字段名
 
 ## 返回契约（subagent → 主 agent）
 
