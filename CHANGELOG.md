@@ -29,6 +29,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
   HK `kline` now defaults to 不复权 and labels it (`adjust: none` + note); an
   explicit `--adjust qfq/hfq` on HK is refused with that explanation rather
   than relabeled. A shares keep `qfq` by default.
+- **Indicator method is fixed and stated**: the bots computed RSI14 as a
+  simple 14-day average (00100: 17.9, "极度超卖") where the skill's own
+  `basic_indicators.py` uses Wilder smoothing (35.4) — real data, undisclosed
+  method, opposite conclusion. SKILL.md now points at the skill's
+  implementations and requires the formula when a bot computes its own.
 - SKILL.md red lines and the runbook gain the matching rules: 查不到≠不存在,
   use only returned fields (other bots' conclusions are claims, not
   evidence), and re-verify with tools when the user corrects a fact.
