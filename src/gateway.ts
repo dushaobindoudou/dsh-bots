@@ -10,7 +10,7 @@
  */
 
 import { join } from 'node:path'
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { rename, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import type { AgentInfo, GatewayInfo, TranscriptDisplay, TranscriptEntry } from './shared.js'
@@ -32,30 +32,52 @@ const TOKEN_RE = /^[A-Za-z0-9._~+-]+$/
 export const LEGACY_DATA_DIR = '~/.sdk-bots'
 
 /**
+ * A directory the engine actually runs in: it keeps its box workspace (and
+ * agents/) in its data root. Holding a gateway.json alone proves nothing —
+ * 2026-10-10: with the real discovery file wiped, a self-healed copy landed in
+ * the empty configured dir, which then won every lookup; file previews
+ * resolved under a box-workspace that does not exist (ENOENT), and unread,
+ * skill sharing and per-bot settings went where the engine never reads them.
+ */
+function isEngineRoot(dir: string): boolean {
+  try { return statSync(join(expandHome(dir), 'box-workspace')).isDirectory() } catch { return false }
+}
+
+/** Candidate data dirs, best first: one holding the engine's data before one
+ * that merely holds discovery; the configured dir wins ties. */
+function dataDirCandidates(dataDir: string, legacyDir: string): string[] {
+  const dirs = expandHome(dataDir) === expandHome(legacyDir) ? [dataDir] : [dataDir, legacyDir]
+  return [...dirs.filter(isEngineRoot), ...dirs.filter((dir) => !isEngineRoot(dir))]
+}
+
+/**
  * Discovery that follows the gateway to wherever it actually lives: the
- * configured dir when it holds a gateway.json, else the legacy root. Returns
- * null when neither has one (the gateway is simply down).
+ * engine's data root first, then the configured dir, then the legacy root.
+ * Returns null when none has one (the gateway is simply down).
  */
 export function readDiscoveryWithFallback(dataDir: string, legacyDir: string = LEGACY_DATA_DIR): Discovery | null {
-  const direct = readDiscovery(dataDir)
-  if (direct !== null) return direct
-  if (expandHome(dataDir) !== expandHome(legacyDir)) return readDiscovery(legacyDir)
+  for (const dir of dataDirCandidates(dataDir, legacyDir)) {
+    const found = readDiscovery(dir)
+    if (found !== null) return found
+  }
   return null
 }
 
 /**
- * The directory where the gateway (and therefore agents/, box-workspace/,
- * swarm/) actually lives right now: the configured dir if it has discovery,
- * else the legacy root, else the configured dir as-is. All state-adjacent
- * consumers (unread ledger, workspace ops, media allowlist, diag) resolve
- * through this so they stay co-located with the real data across migration.
+ * The directory where the engine's data (agents/, box-workspace/, swarm/)
+ * actually lives right now: an engine root with discovery; else an engine
+ * root whose discovery was lost (the data did not move with the file); else
+ * whichever dir has discovery; else the configured dir. All state-adjacent
+ * consumers (unread ledger, workspace ops, media allowlist, diag, the
+ * discovery self-heal) resolve through this so they stay with the real data.
  */
 export function effectiveDataDir(dataDir: string, legacyDir: string = LEGACY_DATA_DIR): string {
-  if (readDiscovery(dataDir) !== null) return expandHome(dataDir)
-  if (expandHome(dataDir) !== expandHome(legacyDir) && readDiscovery(legacyDir) !== null) {
-    return expandHome(legacyDir)
-  }
-  return expandHome(dataDir)
+  const dirs = dataDirCandidates(dataDir, legacyDir)
+  const root = dirs.find((dir) => isEngineRoot(dir) && readDiscovery(dir) !== null)
+    ?? dirs.find(isEngineRoot)
+    ?? dirs.find((dir) => readDiscovery(dir) !== null)
+    ?? dataDir
+  return expandHome(root)
 }
 
 export function expandHome(p: string): string {
@@ -177,7 +199,9 @@ async function healDiscoveryFile(dataDir: string, d: Discovery, startedAt: numbe
   try {
     const current = readDiscoveryWithFallback(dataDir)
     if (current !== null && current.port === d.port && (d.pid === null || current.pid === d.pid)) return
-    const file = join(expandHome(dataDir), 'gateway.json')
+    // Into the engine's own data root — never an empty configured dir,
+    // which would then pose as the data dir for every other consumer.
+    const file = join(effectiveDataDir(dataDir), 'gateway.json')
     const payload = JSON.stringify({
       port: d.port,
       pid: d.pid,

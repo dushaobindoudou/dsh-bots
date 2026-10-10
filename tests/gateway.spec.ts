@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest'
 import { callGateway, discover, effectiveDataDir, normalizeAgents, readDiscovery, readDiscoveryWithFallback, resolveGateway, readPinnedGatewayPort, clearGatewayHintCache, trimAgent } from '../src/gateway.js'
-import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -79,6 +79,31 @@ describe('normalizeAgents / trimAgent', () => {
 })
 
 describe('readDiscoveryWithFallback / effectiveDataDir (0.2.16 default rename)', () => {
+  // 2026-10-10: a self-healed gateway.json in the empty configured dir made it
+  // "the data dir"; previews then looked under a box-workspace that does not
+  // exist (ENOENT) and unread / skills / per-bot settings went astray.
+  it('a dir holding the engine data beats one that merely holds discovery', () => {
+    const configured = mkdtempSync(join(tmpdir(), 'dsh-conf-'))
+    const engine = mkdtempSync(join(tmpdir(), 'dsh-engine-'))
+    mkdirSync(join(engine, 'box-workspace'))
+    writeFileSync(join(configured, 'gateway.json'), JSON.stringify({ port: 7331, pid: 1, token: 'tok-stray', host: '127.0.0.1' }))
+    writeFileSync(join(engine, 'gateway.json'), JSON.stringify({ port: 7331, pid: 2, token: 'tok-engine', host: '127.0.0.1' }))
+    expect(readDiscoveryWithFallback(configured, engine)?.token).toBe('tok-engine')
+    expect(effectiveDataDir(configured, engine)).toBe(engine)
+    rmSync(configured, { recursive: true, force: true })
+    rmSync(engine, { recursive: true, force: true })
+  })
+
+  it('stays with the engine data when every discovery file is gone', () => {
+    const configured = mkdtempSync(join(tmpdir(), 'dsh-conf-'))
+    const engine = mkdtempSync(join(tmpdir(), 'dsh-engine-'))
+    mkdirSync(join(engine, 'box-workspace'))
+    expect(readDiscoveryWithFallback(configured, engine)).toBeNull()
+    expect(effectiveDataDir(configured, engine)).toBe(engine)
+    rmSync(configured, { recursive: true, force: true })
+    rmSync(engine, { recursive: true, force: true })
+  })
+
   it('prefers the configured dir when it holds gateway.json', () => {
     const primary = mkdtempSync(join(tmpdir(), 'dsh-prim-'))
     const legacy = mkdtempSync(join(tmpdir(), 'dsh-leg-'))
@@ -187,6 +212,20 @@ describe('resolveGateway — gateway.json lost but the engine answers its pinned
     expect(existsSync(join(dir, 'gateway.json'))).toBe(true)
     expect(JSON.parse(readFileSync(join(dir, 'gateway.json'), 'utf8')).port).toBe(43211)
     rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('heals into the engine data root, never the empty configured dir', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'bots-home-engine-'))
+    vi.stubEnv('HOME', home)
+    mkdirSync(join(home, '.sdk-bots', 'box-workspace'), { recursive: true })
+    const configured = mkdtempSync(join(tmpdir(), 'bots-conf-'))
+    stubFetch([{ url: '/health', body: healthJson(777) }])
+    const d = await resolveGateway(configured, PLIST_WITH_PORT())
+    expect(d!.pid).toBe(777)
+    expect(existsSync(join(home, '.sdk-bots', 'gateway.json'))).toBe(true)
+    expect(existsSync(join(configured, 'gateway.json'))).toBe(false)
+    rmSync(configured, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
   })
 
   it('returns null when the hint probe finds no engine (honest offline)', async () => {

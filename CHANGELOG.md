@@ -8,6 +8,17 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The data dir follows the engine's data, not a stray discovery file**
+  (2026-10-10: previews failed with `ENOENT … ~/.dsh-bots/box-workspace/
+  intel/…md`). With the engine's `~/.sdk-bots/gateway.json` wiped, the data
+  dir fell back to the empty configured `~/.dsh-bots`, and the discovery
+  self-heal then wrote its record there — so `~/.dsh-bots` won every lookup:
+  relative bot paths resolved under a box-workspace that does not exist, and
+  the unread ledger, skill-sharing state and per-bot settings were written
+  where the engine never reads them. A dir holding the engine's data
+  (`box-workspace/`) now outranks one that merely holds a `gateway.json`,
+  the plugin stays with the engine's data when every discovery file is gone,
+  and the self-heal writes into that same engine root.
 - **finance-skill never turns "not found" into a fact** (2026-10-10 report: a
   room of bots declared MiniMax unlisted and kept saying so after the user
   corrected them; it trades in Hong Kong as 00100). `data_bus.py search
