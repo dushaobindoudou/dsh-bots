@@ -10,7 +10,7 @@
  * to be released before bootstrapping, retry, and surface every stderr.
  */
 import { describe, expect, it } from 'vitest'
-import { labelIsFree, realLaunchctl, reloadLaunchdJob, waitForLabelFree, type LaunchctlRunner } from '../src/launchd.js'
+import { engineRecoveryPlan, labelIsFree, realLaunchctl, reloadLaunchdJob, waitForLabelFree, type LaunchctlRunner } from '../src/launchd.js'
 
 /** Instant fake sleep — keeps the polling semantics without real waiting. */
 const noDelay = () => Promise.resolve()
@@ -144,5 +144,26 @@ describe('realLaunchctl (darwin smoke)', () => {
     const r = realLaunchctl(['print', 'gui/501/com.dshb.launchd-spec.nonexistent'])
     expect(r.ok).toBe(false)
     expect(r.stderr).toContain('Could not find service')
+  })
+})
+
+/** The 2026-10-10 reconnect dead-end: with the engine process alive but its
+ * discovery file wiped, the old ladder treated "job loaded" as "leave it
+ * alone" and waited out the health budget on a gateway that would never
+ * write the file again. The plan must bounce a loaded-but-unreachable job
+ * and must NOT touch anything while discovery (now with the port-hint
+ * fallback) still reaches a live engine. */
+describe('engineRecoveryPlan', () => {
+  it('leaves a reachable engine alone', () => {
+    expect(engineRecoveryPlan(true, true)).toBe('none')
+    expect(engineRecoveryPlan(true, false)).toBe('none')
+  })
+
+  it('bootstraps only when the label is unloaded', () => {
+    expect(engineRecoveryPlan(false, false)).toBe('reload')
+  })
+
+  it('kickstart -k a loaded job that is not answering', () => {
+    expect(engineRecoveryPlan(false, true)).toBe('kickstart')
   })
 })

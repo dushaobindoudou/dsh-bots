@@ -33,12 +33,6 @@
  */
 
 ;(() => {
-  // Baked by scripts/bake-version.mjs to the host build's compiled fingerprint
-  // (see the HOST_BUILD note in index.ts): the page re-reads the client on
-  // every load while the host half is loaded once, so the client can tell
-  // when the running host predates the page's code.
-  const EXPECTED_HOST_BUILD = 'unbaked-host-build'
-  void EXPECTED_HOST_BUILD
   const loader = (window as any).__ModuleLoader__
   if (loader === undefined) return
   loader.load({
@@ -47,6 +41,8 @@
       const module = { exports: {} as any }
       const exports = module.exports
       const React: any = require('react')
+      let ReactDOM: any = null
+      try { ReactDOM = require('react-dom') } catch { ReactDOM = null }
       const e = React.createElement
 
       /**
@@ -91,9 +87,16 @@
         return e('svg', { viewBox: '0 0 16 16', width: '15', height: '15', 'aria-hidden': true },
           e('path', {
             d: 'M10.6 4.2 5.4 9.4a1.6 1.6 0 0 0 2.3 2.3l5.2-5.2a3.1 3.1 0 0 0-4.4-4.4L3.3 7.3a4.6 4.6 0 0 0 6.5 6.5l4.1-4.1',
-            fill: 'none', stroke: 'currentColor', 'stroke-width': '1.4',
-            'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+            fill: 'none', stroke: 'currentColor', strokeWidth: '1.4',
+            strokeLinecap: 'round', strokeLinejoin: 'round',
           }))
+      }
+
+      /** Plus glyph for the composer's add/commands button — stands in only
+       * if IconPlusOutlineMedium (what the native InputBar draws) is gone. */
+      function PlusGlyph(): any {
+        return e('svg', { viewBox: '0 0 16 16', width: '14', height: '14', 'aria-hidden': true },
+          e('path', { d: 'M8 2.5v11M2.5 8h11', fill: 'none', stroke: 'currentColor', strokeWidth: '1.5', strokeLinecap: 'round' }))
       }
 
       /** Shipped component by export name, or a local stand-in. */
@@ -162,7 +165,9 @@
           if ((m = MEDIA_FILE_AT_RE.exec(rest)) !== null) {
             const p = m[0].replace(/[.,;:!?、。，；：！？）)】\]>}]+$/, '')
             if (p.length >= 4 && !p.startsWith('//') && !MEDIA_IMG_RE.test(p) && MEDIA_FILE_RE.test(p)) {
-              out.push(e(FileChip, { key: p, path: p })); i += p.length; continue
+              // Flush the text before the chip first, or the chip jumps ahead
+              // of the sentence it sits in.
+              push(); out.push(e(FileChip, { key: p + ':' + String(i), path: p })); i += p.length; continue
             }
           }
           if ((m = /^!\[([^\]\n]*)\]\((https?:\/\/[^)\s]+)\)/.exec(rest)) !== null) {
@@ -233,7 +238,8 @@
       }
 
       function MarkdownFallback(p: any) {
-        return e('div', { className: 'dbs-md' }, mdBlocks(String(p.text ?? '')))
+        // Spread, not an array child: block siblings are static per render.
+        return e('div', { className: 'dbs-md' }, ...mdBlocks(String(p.text ?? '')))
       }
 
       const Button = nat('Button', FallbackButton)
@@ -254,16 +260,35 @@
           footnotes: t('md.footnotes'),
         }
       }
+      /**
+       * The native renderer resolves file mentions only inside code spans, so
+       * a bot's bare 「见 risk/report.md」 rendered as dead text. Wrap bare file
+       * paths in backticks first — they then become the shell's own
+       * file-mention chips. Fenced blocks, code spans, link targets, URLs and
+       * image paths (previewed inline below the message) stay untouched.
+       */
+      function linkifyFilePaths(text: string): string {
+        if (text.indexOf('/') === -1) return text
+        return text.split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`)/).map((part: string, i: number) => {
+          if (i % 2 === 1) return part
+          return part.replace(MEDIA_PATH_RE, (match: string, offset: number, whole: string) => {
+            const path = match.replace(/[.,;:!?、。，；：！？）)】\]>}]+$/, '')
+            if (path.length < 4 || path.startsWith('//') || MEDIA_IMG_RE.test(path) || !MEDIA_FILE_RE.test(path)) return match
+            if (whole.slice(Math.max(0, offset - 2), offset) === '](' || whole[offset - 1] === '<') return match
+            return '`' + path + '`' + match.slice(path.length)
+          })
+        }).join('')
+      }
       function NativeMarkdown(p: any): any {
         return e(NATIVE.MarkdownText, {
-          text: String(p.text ?? ''),
+          text: linkifyFilePaths(String(p.text ?? '')),
           streaming: p.streaming === true,
           labels: markdownLabels(),
           fileMentions: {
             resolve: (value: string) => {
               const path = String(value ?? '').trim()
               if (path.length < 4 || path.startsWith('//') || MEDIA_IMG_RE.test(path) || !MEDIA_FILE_RE.test(path)) return undefined
-              return { title: path, label: path, open: () => { patch({ previewPath: path }) } }
+              return { title: path, label: path, open: () => { openFilePreview(path) } }
             },
           },
         })
@@ -304,8 +329,8 @@
 .dbs-secGroup[data-open="true"] .dbs-secHead{margin-bottom:4px}
 .dbs-secHead:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dbs-secHead .dbs-rowActions{display:inline-flex;visibility:hidden;opacity:0;pointer-events:none;transition:opacity .12s ease-out}
-.dbs-secHead:hover .dbs-rowActions,.dbs-secHead:focus-within .dbs-rowActions,.dbs-secHead[data-menu="true"] .dbs-rowActions{visibility:visible;opacity:1;pointer-events:auto}
-.dbs-secMenu{position:absolute;top:100%;right:0;z-index:40;min-width:min(220px,100%);background:var(--dsw-specific-menu,var(--dsw-alias-bg-overlay,var(--dsw-alias-bg-layer-2)));--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);border:0;border-radius:20px;padding:4px;box-shadow:var(--dsw-elevation-prominent,var(--dsw-shadow-lv2));animation:dbs-modal-in .14s ease-out;overflow:hidden}
+.dbs-secHead:hover .dbs-rowActions,.dbs-secHead:focus-within .dbs-rowActions,.dbs-secHead[data-menu="true"] .dbs-rowActions,.dbs-secHead[data-empty="true"] .dbs-rowActions{visibility:visible;opacity:1;pointer-events:auto}
+.dbs-secMenu{position:absolute;top:100%;right:0;z-index:40;min-width:min(220px,100%);background:linear-gradient(var(--dsw-specific-menu,transparent),var(--dsw-specific-menu,transparent)),var(--dsw-alias-bg-base,#fff);--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);border:0;border-radius:20px;padding:4px;box-shadow:var(--dsw-elevation-prominent,var(--dsw-shadow-lv2));animation:dbs-modal-in .14s ease-out;overflow:hidden}
 .dbs-secMenuItem{display:flex;align-items:center;gap:8px;width:100%;min-height:40px;padding:8px 10px;border-radius:10px;font-size:14px;line-height:22px;color:var(--dsw-alias-label-primary);cursor:pointer;background:none;border:none;text-align:left}
 .dbs-secMenuItem:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dbs-prow,.dbs-srow{cursor:pointer;user-select:none;color:var(--dsw-alias-label-primary);border-radius:8px;align-items:center;gap:6px;padding:0 8px;display:flex;box-sizing:border-box}
@@ -317,6 +342,9 @@
 .dbs-srow.dbs-selected{background:var(--dsw-alias-interactive-bg-hover)}
 .dbs-prow{height:34px}
 .dbs-srow{height:32px;gap:0}
+/* 24px avatars leave 4px of air above and below in the 32px row, and the
+   name sits 8px off the avatar (a full-height 32px avatar crowded both). */
+.dbs-srow>.dbs-avatar+.dbs-title{margin-left:8px}
 .dbs-slot{width:16px;height:20px;color:var(--dsw-alias-label-tertiary);flex:none;justify-content:center;align-items:center;display:inline-flex}
 .dbs-chevron{color:var(--dsw-alias-label-caption);display:inline-flex}
 .dbs-arrow{transition:transform .15s var(--ds-ease-in-out)}
@@ -329,7 +357,9 @@
 .dbs-prow:hover .dbs-rowActions,.dbs-srow:hover .dbs-rowActions{display:inline-flex}
 .dbs-prow:hover .dbs-hideOnHover,.dbs-srow:hover .dbs-hideOnHover{display:none}
 .dbs-avatar{width:20px;height:20px;border-radius:6px;flex:none;display:grid;place-items:center;font-size:11px;line-height:1;font-weight:600;color:#fff;overflow:hidden;user-select:none}
-.dbs-avatar.dbs-group{border-radius:999px}
+/* Group avatar: its members' own avatars clustered in one tile. */
+.dbs-avatarGroup{position:relative;display:block;overflow:visible;border-radius:0}
+.dbs-avatarGroupSeat{position:absolute;display:flex}
 .dbs-avatarBlob{overflow:visible;border-radius:0}
 .dbs-avatarBlob svg{width:100%;height:100%;display:block}
 .dbs-avatarBlob[data-avatar-state="thinking"] svg,.dbs-avatarLive[data-avatar-state="thinking"] img{animation:dbs-avatarThought 2.8s ease-in-out infinite}
@@ -365,21 +395,6 @@
 .dbs-error{margin:4px 8px;padding:5px 9px;border-radius:8px;font-size:12px;line-height:18px;cursor:pointer;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-state-error-primary,#f85149)}
 
 
-/* Group task-planning panel: an in-conversation strip (no standalone goals
- * module), listing each member's standing orders and persistent goals. */
-.dbs-taskPanel{flex:none;max-height:min(320px,40vh);overflow:auto;padding:12px 20px;border-bottom:1px solid var(--dsw-alias-border-l1);display:flex;flex-direction:column;gap:8px}
-.dbs-taskHint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
-.dbs-taskLoading{padding:4px 0}
-.dbs-taskMember{display:flex;flex-direction:column;gap:4px}
-.dbs-taskMemberHead{display:flex;align-items:center;gap:8px}
-.dbs-taskMemberName{font-size:13px;font-weight:600;line-height:20px}
-.dbs-taskRow{display:flex;align-items:baseline;gap:8px;padding:2px 0 2px 28px;font-size:13px;line-height:20px}
-.dbs-taskDot{flex:none;width:8px;height:8px;border-radius:999px;background:var(--dsw-alias-state-business-primary);align-self:center}
-.dbs-taskDotOff{background:var(--dsw-alias-label-tertiary)}
-.dbs-taskDotGoal{background:var(--dsw-alias-state-warning-primary,var(--dsw-alias-label-tertiary))}
-.dbs-taskName{overflow-wrap:anywhere}
-.dbs-taskMeta{color:var(--dsw-alias-label-tertiary);font-size:12px;overflow-wrap:anywhere}
-@media(max-width:600px){.dbs-taskPanel{padding:10px 12px}.dbs-taskRow{padding-left:4px}}
 
 .dbs-chatview{position:relative;flex:1;min-height:0;pointer-events:auto;display:flex;flex-direction:column;background:var(--dsw-alias-bg-base);font-family:var(--dsw-font-family,inherit);z-index:2;--dsh-chat-content-width:var(--dsh-chat-user-width,clamp(680px,calc(var(--dsh-conversation-column-width,0px)*.64),920px));--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;--dsh-composer-text-max-height:336px;min-width:0}
 /* Not a standalone block: shrink to the chips/images, hug the text end in
@@ -421,28 +436,98 @@
 .dbs-attachBtn{corner-shape:round;background:var(--dsw-specific-selector,var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06)));width:28px;height:28px;color:var(--dsw-alias-label-primary);cursor:pointer;border:none;border-radius:999px;flex:none;place-items:center;display:grid;padding:0}
 /* Engine model chip (native InputBar control-row seat): compact pill naming
  * the launchd model; opens a grouped popover above the composer. */
-.dbs-modelChip{align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:999px;background:transparent;border:none;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;cursor:pointer;max-width:180px;min-width:0}
+.dbs-modelChip{display:flex;align-items:center;gap:4px;height:28px;padding:0 4px 0 8px;border-radius:24px;background:transparent;border:none;color:var(--dsw-alias-label-secondary);font-size:13px;font-weight:500;line-height:20px;cursor:pointer;max-width:min(360px,45cqw);min-width:0}
 .dbs-modelChip:hover,.dbs-modelChipActive{background:var(--dsw-alias-interactive-bg-hover)}
+.dbs-modelChip:focus-visible{outline:none;box-shadow:0 0 0 2px var(--dsw-alias-border-l3)}
 .dbs-modelChipLabel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dbs-modelChevron{flex:none;color:var(--dsw-alias-label-caption,var(--dsw-alias-label-tertiary));transition:transform .12s}
+.dbs-modelChipActive .dbs-modelChevron{transform:rotate(180deg)}
+.dbs-modelCompactIcon{display:none;flex:none}
+@container (width<=360px){.dbs-modelCompactIcon{display:block}.dbs-modelChip>.dbs-modelChipLabel{display:none}}
+.dbs-modelSpinner{width:14px;height:14px;border:1.5px solid currentColor;border-right-color:transparent;border-radius:50%;flex:none;animation:dbsModelSpin .7s linear infinite}
+@keyframes dbsModelSpin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.dbs-modelSpinner{animation:none}.dbs-modelChevron{transition:none}}
 .dbs-modelSeat{position:relative;display:inline-flex;min-width:0}
-.dbs-modelMenu{position:absolute;bottom:calc(100% + 8px);left:0;z-index:60;min-width:280px;max-width:360px;max-height:340px;overflow-y:auto;background:var(--dsw-specific-menu,var(--dsw-alias-bg-layer-2,rgba(0,0,0,.06)));--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);border-radius:16px;padding:4px;box-shadow:var(--dsw-elevation-prominent,var(--dsw-shadow-lv2));animation:dbs-modal-in .14s ease-out}
-.dbs-modelGroup{padding:8px 10px 4px;font-size:11px;line-height:16px;font-weight:600;color:var(--dsw-alias-label-tertiary)}
-.dbs-modelRow{display:flex;align-items:center;gap:8px;width:100%;padding:6px 10px;border-radius:10px;border:none;background:transparent;font-size:12.5px;line-height:18px;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left}
-.dbs-modelRow:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.dbs-modelRow:disabled{opacity:.5;cursor:default}
-.dbs-modelRow[data-current='true']{color:var(--dsw-alias-state-business-primary);font-weight:600}
-.dbs-modelCheck{width:14px;flex:none;color:inherit}
-.dbs-modelName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dbs-modelErr{padding:6px 10px;font-size:12px;line-height:18px;color:var(--dsw-alias-state-error-primary)}
-.dbs-modelHint{padding:8px 10px 6px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);border-top:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.08));margin-top:4px}
-.dbs-modelSearch{margin:2px 2px 4px;padding:6px 8px;font-size:12.5px;border-radius:8px;border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.12));outline:none;background:transparent;color:var(--dsw-alias-label-primary)}
+.dbs-menuScrim{position:fixed;inset:0;z-index:59}
+/* Settings seat: the same menu, dropping below a select-shaped trigger. */
+.dbs-modelSeatSettings{margin-left:auto}
+.dbs-modelSelect{display:inline-flex;align-items:center;justify-content:space-between;gap:8px;height:32px;min-width:220px;max-width:320px;padding:0 8px 0 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l4,var(--dsw-alias-border-l2,rgba(0,0,0,.12)));background:var(--dsw-specific-input-major,var(--dsw-alias-bg-layer-1,#fff));color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:18px;cursor:pointer;text-align:left}
+.dbs-modelSelect:hover:not(:disabled),.dbs-modelSelect[aria-expanded="true"]{background:var(--dsw-alias-interactive-bg-hover)}
+.dbs-modelSelect:disabled{opacity:.5;cursor:default}
+.dbs-modelSelect>svg{flex:none;color:var(--dsw-alias-label-tertiary)}
+.dbs-modelEmpty{padding:10px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
+.dbs-modelMenu{position:fixed;z-index:1100;box-sizing:border-box;width:max-content;min-width:min(240px,calc(100vw - 32px));max-width:min(420px,calc(100vw - 32px));max-height:min(360px,calc(100vh - 96px));display:flex;flex-direction:column;overflow:hidden;background:linear-gradient(var(--dsw-specific-menu,transparent),var(--dsw-specific-menu,transparent)),var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary);--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);border-radius:20px;padding:4px;box-shadow:var(--dsw-elevation-prominent,var(--dsw-shadow-lv2));font-family:var(--dsw-font-family,inherit)}
+.dbs-modelGroups{min-height:0;overflow-y:auto}
+.dbs-modelGroup{position:sticky;top:0;z-index:1;padding:5px 8px 3px;font-size:12px;line-height:18px;font-weight:500;color:var(--dsw-alias-label-tertiary);background:linear-gradient(var(--dsw-specific-menu,transparent),var(--dsw-specific-menu,transparent)),var(--dsw-alias-bg-base,#fff)}
+.dbs-modelRow{display:flex;align-items:center;gap:8px;width:100%;min-height:38px;padding:6px 8px;border-radius:10px;border:none;background:transparent;font-size:14px;font-weight:500;line-height:20px;color:inherit;cursor:pointer;text-align:left;outline:none}
+.dbs-modelRow:hover:not(:disabled),.dbs-modelRow:focus-visible,.dbs-modelCell:hover,.dbs-modelCell:focus-visible{background:var(--dsw-alias-interactive-bg-hover)}
+.dbs-modelRow:disabled{color:var(--dsw-alias-label-dimmed,var(--dsw-alias-label-tertiary));cursor:default}
+.dbs-modelCheck{width:18px;flex:none;display:grid;place-items:center;color:var(--dsw-alias-label-primary)}
+.dbs-modelName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dbs-modelCell{display:flex;align-items:center;gap:8px;height:40px;width:100%;padding:0 10px;border-radius:10px;border:none;background:transparent;color:inherit;font-size:14px;line-height:22px;text-align:left;cursor:pointer;outline:none}
+.dbs-modelCellValue{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;color:var(--dsw-alias-label-tertiary)}
+.dbs-modelBack{display:flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--dsw-alias-label-tertiary);padding:6px 8px;cursor:pointer;text-align:left;font:inherit;font-size:12px}
+.dbs-modelBack:hover,.dbs-modelBack:focus-visible{background:var(--dsw-alias-interactive-bg-hover);border-radius:10px}
+.dbs-modelStatus{padding:10px;color:var(--dsw-alias-label-tertiary);font-size:13px;line-height:20px}
+.dbs-modelErrorStrip{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;border-radius:8px;margin-bottom:4px;padding:7px 8px;background:var(--dsw-alias-interactive-bg-hover-danger);color:var(--dsw-alias-state-error-primary);font-size:12px;line-height:18px}
+.dbs-modelRetry{border:0;background:transparent;color:inherit;font:inherit;font-weight:600;padding:0;cursor:pointer;flex:none}
+.dbs-modelSearch{display:block;box-sizing:border-box;width:calc(100% - 4px);margin:2px 2px 4px;padding:6px 8px;font-size:12.5px;border-radius:8px;border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.12));outline:none;background:transparent;color:var(--dsw-alias-label-primary)}
 .dbs-modelCaption{display:block;font-size:10.5px;line-height:14px;color:var(--dsw-alias-label-tertiary);font-weight:400}
 /* Gateway-offline card: actionable, not a dead hint — reconnect boots an
  * unloaded engine and waits for health. */
 .dbs-offlineCard{margin:48px auto 0;max-width:340px;display:flex;flex-direction:column;align-items:center;gap:8px;padding:24px 20px;text-align:center}
 .dbs-offlineCompact{margin:8px 12px;padding:12px;align-items:flex-start;text-align:left;gap:6px}
+/* Host update status = native DesktopUpdateIndicator (dsh-client-ui-
+   settings-general): 28px brand pill, 1px brand 20% stroke, 8% fill,
+   12/18 weight 500, 14px icon + label; its radius token is the theme's 8px. */
+.dbs-hostUpdateSeat{display:flex;padding:0 var(--dsh-sidebar-inline-padding,12px) 6px;min-width:0}
+.dbs-hostUpdate{box-sizing:border-box;border:1px solid color-mix(in srgb,var(--dsw-alias-brand-primary-new-colorprimary-new-color,var(--dsw-alias-state-business-primary)) 20%,transparent);border-radius:8px;height:28px;color:var(--dsw-alias-brand-primary-new-colorprimary-new-color,var(--dsw-alias-state-business-primary));background:color-mix(in srgb,var(--dsw-alias-brand-primary-new-colorprimary-new-color,var(--dsw-alias-state-business-primary)) 8%,transparent);text-align:left;white-space:nowrap;cursor:default;flex:none;grid-template-columns:14px max-content;align-items:center;column-gap:4px;padding:0 8px;font-family:inherit;font-size:12px;font-weight:500;line-height:18px;display:inline-grid;max-width:100%;overflow:hidden}
+.dbs-hostUpdate:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}
+.dbs-hostUpdateIcon{place-items:center;width:14px;height:14px;display:grid}
+.dbs-hostUpdateDot{border-radius:50%;width:6px;height:6px;background:currentColor}
 .dbs-offlineTitle{font-size:14px;line-height:20px;font-weight:600;color:var(--dsw-alias-label-primary)}
 .dbs-offlineBody{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
+/* Skill-sharing rows mirror the native settings row (dsh-client-ui-
+   settings-models ModelsSection): rowIdentity name + rowTag tags (.5px l3
+   stroke, 4px radius, 11/16), editorRoute 12/18 tertiary secondary lines.
+   The pending note borrows the schedule popover's warn tone (rowOverdue). */
+.dbs-bridgeNotice{margin:4px 0;padding:10px 12px;border-radius:10px;font-size:13px;line-height:18px;color:var(--dsw-alias-state-warn-label);background:var(--dsw-alias-state-warn-tertiary)}
+.dbs-bridgeRow{display:flex;align-items:flex-start;gap:10px;padding:6px 0;cursor:pointer}
+.dbs-bridgeRow input{margin-top:5px;flex:none}
+.dbs-bridgeText{min-width:0;display:flex;flex-direction:column;gap:2px}
+.dbs-bridgeHead{align-items:center;gap:6px;min-width:0;display:inline-flex;flex-wrap:wrap}
+.dbs-bridgeHead b{color:var(--dsw-alias-label-primary);font-size:14px;font-weight:500;line-height:22px}
+.dbs-bridgeBadge{border:.5px solid var(--dsw-alias-border-l3);border-radius:4px;color:var(--dsw-alias-label-secondary);flex:none;padding:1px 6px;font-size:11px;line-height:16px}
+.dbs-bridgeBadge[data-tone=new]{color:var(--dsw-alias-state-business-primary)}
+.dbs-bridgeBadge[data-tone=changed]{color:var(--dsw-alias-state-warn-label)}
+.dbs-bridgeText .dbs-meta{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
+.dbs-bridgePath{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
+/* Native ChatView .older (dsh-client-ui-chat): row centers, button is the
+   small filled secondary pill; values copied, not approximated (its radius
+   token resolves to the theme's 8px). */
+/* Routines entry = native ScheduleCatalogAction (dsh-client-ui-schedule):
+   28px round icon trigger, 336px fixed popover, 48px rows, 13/18 title,
+   10/15 tertiary metadata; warn tones for a failed last run. */
+.dbs-routines{margin-left:4px;position:relative;display:inline-flex}
+.dbs-routinesTrigger{width:28px;height:28px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:0;border-radius:28px;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}
+.dbs-routinesTrigger:hover,.dbs-routinesTrigger:focus-visible,.dbs-routinesTrigger[aria-expanded=true]{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover)}
+.dbs-routinesMenu{z-index:100;box-sizing:border-box;background:linear-gradient(var(--dsw-specific-menu,transparent),var(--dsw-specific-menu,transparent)),var(--dsw-alias-bg-base,#fff);width:336px;max-width:min(336px,100vw - 32px);max-height:min(420px,100vh - 140px);--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent,0 12px 40px rgba(0,0,0,.18));border:0;border-radius:16px;flex-direction:column;gap:1px;margin:0;padding:3px;list-style:none;display:flex;position:fixed;overflow:auto;font-family:var(--dsw-font-family,inherit)}
+.dbs-routinesRow{box-sizing:border-box;width:100%;min-height:48px;color:var(--dsw-alias-label-primary);border-radius:10px;flex-shrink:0;align-items:start;gap:2px;padding:10px 12px;display:flex}
+.dbs-routinesRow:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dbs-routinesRowWarn,.dbs-routinesRowWarn:hover{background:var(--dsw-alias-state-warn-tertiary)}
+.dbs-routinesBody{flex-direction:column;flex:1;gap:3px;min-width:0;display:flex}
+.dbs-routinesTitle{overflow-wrap:anywhere;white-space:normal;font-size:13px;line-height:18px}
+.dbs-routinesMeta{min-width:0;color:var(--dsw-alias-label-tertiary);flex-wrap:wrap;align-items:center;gap:4px;font-size:10px;line-height:15px;display:flex}
+.dbs-routinesMetaWarn{color:var(--dsw-alias-state-warn-label)}
+.dbs-routinesCancel{flex:none;align-self:center;border:0;background:transparent;border-radius:6px;padding:2px 6px;font:inherit;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);cursor:pointer;opacity:0;transition:opacity .12s ease-out}
+.dbs-routinesRow:hover .dbs-routinesCancel,.dbs-routinesCancel:focus-visible,.dbs-routinesCancel[data-armed="true"]{opacity:1}
+.dbs-routinesCancel:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dbs-routinesCancel[data-armed="true"]{color:var(--dsw-alias-state-error-primary,#f85149)}
+@media (pointer:coarse){.dbs-routinesCancel{opacity:1}}
+.dbs-routinesRetry{border:0;background:transparent;color:var(--dsw-alias-state-business-primary);cursor:pointer;font:inherit;padding:0 4px}
+.dbs-older{justify-content:center;display:flex;margin-bottom:12px}
+.dbs-older button{border-radius:8px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover-solid);cursor:pointer;border:none;padding:4px 12px;font-size:12px;font-family:inherit}
+.dbs-older button:disabled{cursor:default;opacity:.6}
 .dbs-attachBtn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover-solid)}
 .dbs-attachBtn:disabled{opacity:.5;cursor:default}
 /* Composer attachment rail, matching the shipped ComposerAttachments:
@@ -587,28 +672,65 @@
 .dbs-previewClose:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .dbs-previewBody{min-height:0;overflow:auto;flex:1;display:flex;flex-direction:column}
 .dbs-previewMd{padding:8px 20px 20px}
+.dbs-previewCode{padding:8px 12px 16px;min-width:0}
 .dbs-previewPre{margin:0;padding:16px 20px;font:var(--dsw-font-markdown-code-block,var(--ds-font-family-code,monospace));white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dsw-alias-label-primary)}
 .dbs-previewImg{display:block;max-width:100%;max-height:calc(100vh - 200px);margin:0 auto;padding:16px;box-sizing:border-box}
 .dbs-previewPdf{flex:1;width:100%;border:0;min-height:480px;background:var(--dsw-alias-bg-layer-1,#fff)}
 .dbs-previewEmpty{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;padding:48px 20px;color:var(--dsw-alias-label-tertiary);font-size:13px}
 .dbs-previewFoot{flex:none;display:flex;justify-content:center;padding:0 16px 14px}
+/* Workbench row: the chat and, when a file is open, the preview pane docked
+   to its right (the native right-sidebar document preview's place: 38px
+   header, .5px l3 rules). Below 820px the pane covers the chat, as it does
+   when expanded; closing it hands the row back to the conversation. */
+.dbs-workbench{position:relative;flex:1;min-width:0;min-height:0;display:flex;container:dbs-workbench/inline-size}
+.dbs-previewPane{position:relative;z-index:3;flex:0 0 clamp(360px,46%,760px);min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden;pointer-events:auto;background:var(--dsw-alias-bg-base);border-left:.5px solid var(--dsw-alias-border-l3);font-family:var(--dsw-font-family,inherit);animation:dbs-pane-in .16s ease-out}
+.dbs-previewPane[data-expanded="true"]{position:absolute;inset:0;border-left:0}
+@container dbs-workbench (max-width:820px){.dbs-previewPane{position:absolute;inset:0;border-left:0}}
+.dbs-previewPane .dbs-previewHead{height:38px;box-sizing:border-box;padding:0 6px 0 16px;gap:4px;border-bottom-color:var(--dsw-alias-border-l3)}
+.dbs-previewPane .dbs-previewTitles{flex-direction:row;align-items:baseline;gap:8px;margin-left:4px}
+.dbs-previewPane .dbs-previewName{flex:none;max-width:60%;font-size:13px;line-height:18px}
+.dbs-previewPane .dbs-previewPath{flex:1;min-width:0}
+.dbs-previewPane .dbs-previewPdf{min-height:0}
+.dbs-previewClose[aria-pressed="true"]{color:var(--dsw-alias-state-business-primary)}
+@keyframes dbs-pane-in{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.dbs-previewPane{animation:none}}
 .dbs-rowMore{display:none;border:none;background:transparent;cursor:pointer;color:var(--dsw-alias-label-tertiary);flex:none;justify-content:center;align-items:center;width:24px;height:24px;border-radius:6px;padding:0}
 .dbs-rowMore:hover,.dbs-rowMore:focus-visible{color:var(--dsw-alias-label-primary);background:transparent}
-.dbs-srow:hover .dbs-rowMore,.dbs-rowMore:focus-visible,.dbs-srow[data-menu="true"] .dbs-rowMore{display:inline-flex}
+.dbs-srow:hover .dbs-rowMore,.dbs-srow:focus-within .dbs-rowMore,.dbs-srow[data-menu="true"] .dbs-rowMore{display:inline-flex}
 .dbs-srow{position:relative}
 .dbs-rowMenu{position:absolute;top:calc(100% - 2px);right:4px;z-index:40}
 .dbs-rowMenu.dbs-flipUp{top:auto;bottom:calc(100% + 2px)}
 /* Same quiet-hover contract for the section-header action buttons. */
 .dbs-secHead .dbs-rowActions button:hover,.dbs-secHead .dbs-rowActions button:focus-visible{background:transparent}
-/* Trigger menu (@ list), matching the shipped MenuView: specific-menu
+/* Trigger menu (@ / list), matching the shipped MenuView: specific-menu
    surface with an elevation stroke, 20px radius, 320px cap, 40px rows, a
-   tertiary description column and a Tab drill hint on the active row. */
-.dbs-mention{z-index:100;background:var(--dsw-specific-menu,var(--dsw-alias-bg-overlay,var(--dsw-specific-input-major,var(--dsw-alias-bg-layer-1))));--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);max-height:320px;box-shadow:var(--dsw-elevation-prominent,var(--dsw-shadow-lv2));border:0;border-radius:20px;flex-direction:column;padding:4px;display:flex;position:absolute;bottom:calc(100% + 4px);left:0;right:0;overflow:hidden}
+   tertiary description column and a Tab drill hint on the active row.
+   Every plugin popover (this, the model menu, row menus, routines) paints
+   the specific-menu tint over the opaque base: the token is translucent
+   (f0 alpha) and the native MenuSurface blurs what lies behind it, so
+   without that blur the transcript read through the menu (user report). */
+.dbs-mention{z-index:100;background:linear-gradient(var(--dsw-specific-menu,transparent),var(--dsw-specific-menu,transparent)),var(--dsw-alias-bg-base,#fff);--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);max-height:400px;box-shadow:var(--dsw-elevation-prominent,var(--dsw-shadow-lv2));border:0;border-radius:20px;flex-direction:column;padding:4px;display:flex;position:absolute;bottom:calc(100% + 4px);left:0;right:0;overflow:hidden}
+/* 定时任务 form: the command menu's place and surface, a compact form. */
+.dbs-schedule{z-index:100;position:absolute;bottom:calc(100% + 4px);left:0;right:0;box-sizing:border-box;display:flex;flex-direction:column;gap:10px;padding:12px 14px;background:linear-gradient(var(--dsw-specific-menu,transparent),var(--dsw-specific-menu,transparent)),var(--dsw-alias-bg-base,#fff);--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent,var(--dsw-shadow-lv2));border:0;border-radius:20px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);cursor:default}
+.dbs-scheduleHead{display:flex;align-items:center;justify-content:space-between;margin:-4px -6px -2px 0}
+.dbs-scheduleTitle{font-size:14px;line-height:22px;font-weight:500}
+.dbs-scheduleInput{box-sizing:border-box;width:100%;resize:none;border:.5px solid var(--dsw-alias-border-l2);border-radius:12px;padding:8px 10px;font:inherit;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major,var(--dsw-alias-bg-layer-1,#fff));outline:none}
+.dbs-scheduleInput:focus,.dbs-scheduleTime:focus{border-color:var(--dsw-alias-state-business-primary)}
+.dbs-scheduleRow{display:flex;align-items:center;flex-wrap:wrap;gap:10px 16px}
+.dbs-scheduleField{display:inline-flex;align-items:center;gap:8px;color:var(--dsw-alias-label-secondary)}
+.dbs-scheduleTime{height:30px;box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l2);border-radius:8px;padding:0 8px;font:inherit;font-size:13px;color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major,var(--dsw-alias-bg-layer-1,#fff));outline:none}
+.dbs-scheduleRepeat{display:inline-flex;gap:2px;padding:2px;border-radius:10px;background:var(--dsw-alias-interactive-bg-hover)}
+.dbs-scheduleChip{border:0;background:transparent;border-radius:8px;padding:3px 10px;font:inherit;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);cursor:pointer}
+.dbs-scheduleChip[aria-checked="true"]{background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.dbs-scheduleFoot{display:flex;align-items:center;gap:8px}
+.dbs-scheduleStatus{flex:1;min-width:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
+.dbs-scheduleStatus[data-warn="true"]{color:var(--dsw-alias-state-error-primary,#f85149)}
+.dbs-composerNotice{align-self:center;margin:0 0 6px;padding:3px 12px;border-radius:999px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
 .dbs-mentionViewport{flex-direction:column;min-height:0;overflow-y:auto;display:flex}
-.dbs-mentionRow{cursor:pointer;width:100%;min-height:40px;color:var(--dsw-alias-label-primary);text-align:left;background:0 0;border:none;border-radius:10px;align-items:center;gap:8px;padding:8px 10px;font-size:14px;line-height:22px;display:flex}
+.dbs-mentionRow{cursor:pointer;box-sizing:border-box;width:100%;min-height:34px;color:var(--dsw-alias-label-primary);text-align:left;background:0 0;border:none;border-radius:10px;align-items:center;gap:8px;padding:6px 8px;font-size:13px;line-height:20px;display:flex}
 .dbs-mentionRow[data-active="true"],.dbs-mentionRow:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dbs-mentionIcon{width:16px;height:16px;color:var(--dsw-alias-label-tertiary);flex:none;justify-content:center;align-items:center;display:inline-flex}
-.dbs-mentionName{text-overflow:ellipsis;white-space:nowrap;flex:none;max-width:40%;overflow:hidden}
+.dbs-mentionName{text-overflow:ellipsis;white-space:nowrap;flex:none;max-width:55%;overflow:hidden}
 .dbs-mentionDesc{text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--dsw-alias-label-tertiary);flex:1;overflow:hidden}
 .dbs-mentionHint{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-caption);border-radius:4px;padding:0 5px;font-family:inherit;font-size:11px;line-height:18px;flex:none;margin-left:auto;display:none}
 .dbs-mentionRow[data-active="true"] .dbs-mentionHint{display:inline-flex}
@@ -643,14 +765,24 @@
  * DeepSeek shimmer label carries the elapsed clock INLINE ("深度求索中，
  * 用时 12秒 ···") exactly like the native row, and a still whale SVG
  * takes over under reduced motion / no mask-mode support. */
-.dbs-running{--dsw-alias-label-shimmer:var(--dsw-alias-label-deep-diving-shimmer);color:var(--dsw-alias-label-deep-diving);font-size:calc(var(--dsh-content-font-size,14px) - 2px);line-height:calc(22px + var(--dsh-content-font-delta,0px));flex-direction:column;align-items:flex-start;display:flex}
+/* position:relative pins the sr-only live-status child's containing block to
+ * this row: absolute with no coordinates keeps its static position (the
+ * transcript tail), and the previous containing block — .dbs-scrollArea —
+ * sits OUTSIDE .dbs-scrollBody's overflow clip, so the 1×1 box silently
+ * extended the panel container's scrollable area to the transcript height
+ * and focus scrolling could strand the whole panel mid-scroll. */
+.dbs-running{--dsw-alias-label-shimmer:var(--dsw-alias-label-deep-diving-shimmer);color:var(--dsw-alias-label-deep-diving);font-size:calc(var(--dsh-content-font-size,14px) - 2px);line-height:calc(22px + var(--dsh-content-font-delta,0px));flex-direction:column;align-items:flex-start;display:flex;position:relative}
 /* The native running divider: a .5px hairline between the last settled flow
  * item and the live run block (user feedback: the transcript had no divider
  * at all). */
 .dbs-runningDivider{width:100%;height:.5px;margin:8px 0 10px;background:color-mix(in srgb,var(--dsw-alias-border-l1) 75%,var(--dsw-alias-border-l2));pointer-events:none;flex:none}
 .dbs-runningContent{align-items:center;gap:6px;min-width:0;display:inline-flex}
+.dbs-runningWho{font-size:var(--dsh-content-font-size-secondary,13px);line-height:20px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .dbs-runningText{font-variant-numeric:tabular-nums;min-width:0}
-.dbs-srOnly{clip:rect(0 0 0 0);white-space:nowrap;width:1px;height:1px;position:absolute;overflow:hidden}
+/* Anchored (never coordinate-less): an abspos box without top/left keeps its
+ * static flow position, which for a screen-reader row at the transcript tail
+ * lands outside every clip that isn't its containing block. */
+.dbs-srOnly{clip:rect(0 0 0 0);white-space:nowrap;width:1px;height:1px;position:absolute;top:0;left:0;overflow:hidden}
 .dbs-runningIcon{width:calc(14px + var(--dsh-content-font-delta,0px));height:calc(14px + var(--dsh-content-font-delta,0px));contain:strict;flex:none;display:inline-flex;position:relative;overflow:hidden}
 .dbs-runningWhaleAnimated{display:none;position:absolute;inset:0}
 .dbs-runningWhaleStill{display:initial}
@@ -696,6 +828,14 @@
 .dbs-sethead .dbs-title{margin:0}
 .dbs-setrow{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:14px;line-height:22px;color:var(--dsw-alias-label-secondary);min-width:0;overflow-wrap:anywhere}
 .dbs-setrow b{color:var(--dsw-alias-label-primary);font-weight:500;word-break:break-word}
+/* Card footnotes wrap: .dbs-meta is a one-line ellipsis, which cut the
+   model hints off mid-sentence in the settings column. */
+.dbs-setnote{padding:0 2px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);overflow-wrap:anywhere}
+/* Overview capability list: what Bots does, two columns when they fit. */
+.dbs-features{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:4px 20px}
+.dbs-feature{display:flex;flex-direction:column;gap:2px;padding:4px 0;min-width:0}
+.dbs-featureName{font-size:14px;line-height:22px;font-weight:500;color:var(--dsw-alias-label-primary)}
+.dbs-featureDesc{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
 .dbs-setcard>.dbs-setrow+.dbs-setrow{border-top:.5px solid var(--dsw-alias-border-l2);padding-top:9px}
 .dbs-settings .dbs-select{height:32px;margin-left:auto;border-color:var(--dsw-alias-border-l4);border-radius:8px}
 .dbs-settings textarea{box-sizing:border-box}
@@ -716,20 +856,22 @@
       const NS = 'bots'
 
       const zh: Record<string, string> = {
-        'goal.chooseBot': '从侧栏选择一个 Bot，开始对话或创建目标。',
-        'goal.loading': '正在读取目标…',
-        'group.tasks': '任务规划',
-        'group.tasks.hint': '成员在对话里就能创建例行任务或目标（如「每天早上把日报发到群里」）；下面是群里各成员正在执行的规划。',
-        'group.tasks.empty': '还没有成员在执行规划——在对话里请某位成员创建一个例行任务试试。',
-        'goal.next': '下次计划：{time}',
-        'goal.scheduled': '等待下一轮',
-        'goal.running': '正在推进',
-        'goal.paused': '已暂停',
-        'goal.blocked': '需要处理阻塞',
-        'goal.review': '等待验收',
-        'goal.completed': '已验收完成',
-        'goal.cancelled': '已结束',
-        'goal.attention': '需要检查',
+        'main.chooseBot': '从侧栏选择一个 Bot 开始对话。',
+        'routines.trigger': '例行任务',
+        'routines.triggerCount': '{count} 个例行任务',
+        'routines.aria': '例行任务列表',
+        'routines.nextRun': '下次运行',
+        'routines.lastFailed': '上次运行失败',
+        'routines.error': '无法读取例行任务',
+        'routines.retry': '重试',
+        'routines.relative.now': '现在到期',
+        'routines.relative.future': '{value}{unit}后',
+        'routines.relative.overdue': '已逾期 {value}{unit}',
+        'routines.unit.day': '天',
+        'routines.unit.hour': '小时',
+        'routines.unit.minute': '分钟',
+        'routines.unit.second': '秒',
+        'time.locale': 'zh-CN',
         'nav.workspaces': '工作区',
         'nav.bots': 'Bots',
         'nav.bots.aria': 'Bots',
@@ -737,13 +879,18 @@
         'delegate.loading': '加载中…',
         'delegate.unavailable': '工作区视图不可用，请刷新页面。',
         'delegate.failed': '工作区视图加载失败，Bots 不受影响。',
-        'gateway.online': '网关在线 :{port}',
-        'gateway.offline': '网关未连接',
-        'gateway.offlineTitle': 'Bots 引擎未连接',
-        'gateway.offlineBody': '引擎没有运行或网关不可达。重新连接会自动拉起未加载的引擎，并等待其恢复健康。',
+        'gateway.online': 'Bots 服务运行中',
+        'gateway.offline': 'Bots 服务未连接',
+        'gateway.offlineTitle': 'Bots 服务未连接',
+        'host.staleTitle': '插件已更新 · 重启 dsh web',
+        'chat.older': '加载更早',
+        'chat.membersReplying': '{names} 正在回复',
+        'chat.olderLoading': '加载中…',
+        'host.staleBody': '插件已更新，部分新功能需要重启 dsh web 后才会生效。',
+        'gateway.offlineBody': 'Bots 服务没有运行或暂时无法访问。重新连接会自动启动服务，并在就绪后恢复。',
         'gateway.reconnect': '重新连接',
         'gateway.reconnecting': '正在连接…',
-        'gateway.reconnectFailed': '重连失败——请检查引擎是否已安装（sdk-bots host）。',
+        'gateway.reconnectFailed': '重新连接失败——请稍后重试；如果持续失败，请重启 dsh。',
         'bot.new': '新建 Bot',
         'group.new': '新建群聊',
         'bot.namePlaceholder': 'Bot 名称',
@@ -771,7 +918,7 @@
         'chat.settings.rootPh': '留空 = 不启用',
         'chat.settings.paths': '额外可写路径（逗号分隔）',
         'chat.settings.pathsPh': '/tmp/xxx, /Users/you/shared',
-        'chat.settings.hint': '写入被沙盒限制在工作区（含额外路径）内，读取不受限；同 slug 的 Bot 共享同一目录。',
+        'chat.settings.hint': '写入被限制在工作区（含额外路径）内，读取不受限；同名的 Bot 共享同一目录。',
         'settings.group.title': '群聊',
         'settings.group.cap': '成员上限',
         'settings.group.capHint': '全局生效：新建群与编辑群名单时使用（1–16）。已有群的现有名单不会被改动。',
@@ -815,8 +962,8 @@
         'chat.queuedSend': '排队发送',
         'duration.seconds': '{seconds}秒',
         'duration.minutes': '{minutes}分{seconds}秒',
-        'chat.placeholder.group': '@名字 可定向，默认全员',
-        'chat.placeholder.single': '给 {name} 发消息…',
+        'chat.placeholder.group': '@ 指定成员（默认全员），/ 使用技能',
+        'chat.placeholder.single': '给 {name} 发消息，/ 使用技能',
         'chat.placeholder.busy': '生成中… 发送将排队，当前回合结束后送达',
         'chat.attach': '添加图片',
         'chat.attach.remove': '移除图片',
@@ -826,54 +973,86 @@
         'time.date': '{m} 月 {d} 日',
         'time.dateFull': '{y} 年 {m} 月 {d} 日',
         'tool.fallbackName': '工具',
-        'settings.summary': '多 Bot 工作台，桥接 sdk-bots 编排网关。',
+        'settings.summary': '创建属于你的 AI 助手：一对一深入对话，或拉进群聊分工协作；为它们配上技能、工具和模型，让日常工作自动推进。',
         'settings.tab.overview': '概览',
         'settings.tab.models': '模型',
         'settings.tab.workspace': '工作区',
         'settings.tab.mcp': 'MCP',
         'settings.tab.skills': '技能',
         'settings.tabs': 'Bots 设置页签',
-        'settings.probing': '检测中…',
-        'settings.address': '地址：',
-        'settings.pid': 'PID：',
-        'settings.busy': '忙',
-        'settings.idle': '闲',
-        'settings.auth': '鉴权：',
-        'settings.auth.token': 'token（自动携带）',
-        'settings.auth.none': '无（loopback 免鉴权）',
-        'settings.reason': '原因：',
-        'settings.reason.unknown': '未知',
-        'settings.dataDir': '数据目录：',
+        'time.tomorrow': '明天',
+        'chat.command.schedule': '定时任务',
+        'chat.command.scheduleDesc': '在指定时间让 Bot 做一件事，也可以按天或按周重复',
+        'schedule.what': '要做什么',
+        'schedule.promptPh': '要做什么，例如：整理一份今天的行业新闻报告',
+        'schedule.promptPh.group': '要群里做什么，例如：大家各自汇报今天的进展',
+        'schedule.when': '时间',
+        'schedule.repeat': '重复',
+        'schedule.repeat.once': '仅一次',
+        'schedule.repeat.daily': '每天',
+        'schedule.repeat.weekdays': '工作日',
+        'schedule.repeat.weekly': '每周',
+        'schedule.creating': '创建中…',
+        'schedule.past': '这个时间已经过去了，请选择将来的时间',
+        'schedule.summary.once': '将在 {when} 运行一次',
+        'schedule.summary.daily': '每天 {time} 运行',
+        'schedule.summary.weekdays': '工作日每天 {time} 运行',
+        'schedule.summary.weekly': '每{weekday} {time} 运行',
+        'schedule.created': '已创建定时任务：{summary}',
+        'routines.once': '仅一次',
+        'routines.cancel': '取消',
+        'routines.cancelConfirm': '确认取消？',
+        'settings.features': '能做什么',
+        'settings.feature.chat': '单聊',
+        'settings.feature.chatDesc': '为每个 Bot 设定名称和人设，各自保留完整的对话记录。',
+        'settings.feature.group': '群聊协作',
+        'settings.feature.groupDesc': '把多个 Bot 拉进同一个群，@ 点名分工，或 @所有人 接力回复。',
+        'settings.feature.skills': '技能',
+        'settings.feature.skillsDesc': '把常用做法沉淀为技能，在输入框输入 / 或 @ 即可调用，所有 Bot 共享。',
+        'settings.feature.tools': '工具扩展（MCP）',
+        'settings.feature.toolsDesc': '接入 MCP 服务器，为所有 Bot 增加搜索、数据库、代码托管等外部工具。',
+        'settings.feature.models': '模型选择',
+        'settings.feature.modelsDesc': '设置全局默认模型，也可以在对话输入框里为单个 Bot 单独切换。',
+        'settings.feature.workspace': '工作区隔离',
+        'settings.feature.workspaceDesc': '让 Bot 只能写入自己的工作目录，文件改动边界清晰。',
+        'settings.feature.routines': '例行任务',
+        'settings.feature.routinesDesc': 'Bot 可以按计划定时执行任务，对话标题栏的时钟里能看到下次运行。',
+        'settings.feature.files': '文件预览',
+        'settings.feature.filesDesc': 'Bot 生成的文档、代码和图片在对话旁直接预览，不用离开当前对话。',
+        'settings.model.autoCaption': '按可用性自动选择模型，出错时自动切换',
+        'model.currentGroup': '当前',
+        'model.menuModel': '模型',
+        'model.back': '返回',
+        'model.retry': '重试',
+        'model.noMatch': '没有匹配的模型',
+        'chat.commands': '添加图片或使用技能',
+        'chat.command.imageDesc': '从本机选择图片，也可以直接粘贴截图',
+        'preview.expand': '全屏查看',
+        'preview.collapse': '退出全屏',
+        'settings.probing': '正在检查服务状态…',
         'settings.reading': '读取中…',
-        'settings.events': '实时事件：',
-        'settings.events.on': '已连接 · 缓冲 {n} 条',
-        'settings.events.off': '未连接',
-        'settings.entry': '入口：',
-        'settings.entry.value': '左侧边栏「工作区 ｜ Bots」折叠导航',
-        'settings.model.title': '模型配置',
-        'settings.model.current': '当前模型',
-        'settings.model.auto': 'auto（freeroute 默认）',
-        'settings.model.engineDefault': '引擎默认（未设置）',
-        'settings.model.freeroute': 'freeroute 自动路由（默认）',
-        'settings.model.pick': '选择模型',
-        'settings.model.provider': '提供方',
-        'settings.model.hint': '引擎只在启动时读取模型环境变量，所以选择模型后要点「应用并重启引擎」才会真正生效（重启会中断正在进行的回合）。左侧「当前模型」是引擎下次启动将使用的值。',
-        'settings.model.offline': 'freeroute 不可达——已回退当前默认模型',
+        'settings.model.title': '模型',
+        'settings.model.current': '全局默认模型',
+        'settings.model.auto': '自动路由',
+        'settings.model.engineDefault': '默认模型（未设置）',
+        'settings.model.freeroute': '自动路由（推荐）',
+        'settings.model.hint': '全局默认模型在 Bots 服务启动时加载，修改后点「应用并重启服务」才会生效（会中断正在进行的回复）。单个 Bot 可以在对话输入框里单独切换模型，下条消息起生效，无需重启。',
+        'settings.model.offline': '自动路由暂不可用，已使用默认模型',
         'settings.model.saving': '保存中…',
-        'settings.model.engine': '引擎实际模型',
-        'settings.model.engineUnset': '未设置（环境变量缺省）',
-        'settings.model.engineApply': '应用并重启引擎',
-        'settings.model.engineUnhealthy': '引擎已重启但 {waited}s 内未恢复健康——请检查模型 id 是否有效，或查看引擎日志。',
-        'settings.model.healthy': '引擎已就绪（{waited}s）',
+        'settings.model.engine': '当前生效',
+        'settings.model.engineUnset': '未设置',
+        'settings.model.engineApply': '应用并重启服务',
+        'settings.model.engineUnhealthy': '服务已重启，但 {waited} 秒内没有就绪——请确认所选模型可用。',
+        'settings.model.healthy': '已生效（用时 {waited} 秒）',
         'composer.model.title': '选择模型',
-        'composer.model.hint': '对这台 Bot 生效（下条消息起，无需重启）；引擎全局模型在 设置 → 模型 里修改',
+        'composer.model.hint': '仅对当前 Bot 生效，下条消息起使用；全局默认模型在 设置 → Bots → 模型 中修改',
         'composer.model.defaultPrefix': '默认 · ',
-        'composer.model.auto': 'auto · freeroute',
+        'composer.model.auto': '自动路由',
         'settings.model.engineApplying': '重启中…',
         'settings.model.engineRestarted': '已重启并生效',
-        'settings.model.applyFailed': '应用失败——引擎没有重启成功，模型选择未生效：',
+        'settings.model.applyFailed': '应用失败——服务没有重启成功，模型选择未生效：',
         'settings.skills': '技能',
-        'settings.skills.summary': '技能是可复用的指令库（SKILL.md，与 DSH 同格式）。Bot 在系统提示里看到技能库路径并自行读取；消息里 @技能名 会把该技能正文注入上下文。集成技能与新安装技能供所有 Bot 和群聊共用；自建技能可按 Bot 启停。',
+        'settings.skills.summary': '技能是可复用的做法说明（SKILL.md，与 DSH 同格式）。Bot 会按需查阅技能库；在输入框输入 / 或 @技能名 可以直接调用。共享技能对所有 Bot 和群聊可用，自建技能可按 Bot 启停。',
         'settings.skills.empty': '暂无技能——新建一个，或粘贴 markdown 导入',
         'settings.skills.add': '新建技能',
         'settings.skills.import': '导入 markdown',
@@ -883,8 +1062,8 @@
         'settings.skills.installing': '安装中…',
         'settings.skills.installHint': '保留脚本、参考文档和资源，安装后所有 Bot 和群聊都可使用。',
         'settings.skills.namePlaceholder': '技能名，例如 weekly-report',
-        'settings.skills.descPlaceholder': '一句话说明何时使用（会随库路径提示给 Bot）',
-        'settings.skills.bodyPlaceholder': '技能正文（Markdown）。可粘贴带 frontmatter 的 SKILL.md，引擎会解析 name/description。',
+        'settings.skills.descPlaceholder': '一句话说明何时使用',
+        'settings.skills.bodyPlaceholder': '技能正文（Markdown）。可直接粘贴带 frontmatter 的 SKILL.md，会自动读取 name/description。',
         'settings.skills.save': '保存技能',
         'settings.skills.saving': '保存中…',
         'settings.skills.cancel': '取消',
@@ -902,29 +1081,32 @@
         'settings.skills.lockedHint': '由插件/托管提供，不能单独停用',
         'settings.skills.agent': '作用 Bot：',
         'settings.skills.failed': '技能操作失败：',
-        'settings.skills.bridge': 'DSH 技能桥',
-        'settings.skills.bridge.summary': '把本机技能（~/.dsh/skills、~/.agents/skills、~/.codex/skills）与内置技能以「活指针」供给所有 Bot：DSH 侧修改即时生效，无需复制。新安装技能自动共享；取消勾选并保存可排除技能。',
+        'settings.skills.bridge': 'DSH 技能共享',
+        'settings.skills.bridge.summary': '把本机已安装的技能（~/.dsh/skills、~/.agents/skills、~/.codex/skills）共享给所有 Bot 和群聊，修改原技能即时生效，无需复制。共享的技能会成为每个 Bot 的指令，所以新发现的技能要你确认后才会共享；插件内置技能默认共享。',
+        'settings.skills.bridge.pending': '发现 {n} 个新技能，确认前不会共享给任何 Bot——勾选要共享的技能后保存，未勾选的视为不共享。',
+        'settings.skills.bridge.new': '新发现',
+        'settings.skills.bridge.changed': '共享后内容已变更',
+        'settings.skills.bridge.bundled': '内置',
         'settings.skills.bridge.empty': '本机未发现 DSH 技能',
-        'settings.skills.bridge.apply': '保存桥接',
+        'settings.skills.bridge.apply': '保存共享设置',
         'settings.skills.bridge.applying': '保存中…',
-        'model.followEngine': '跟随引擎默认',
-        'model.engineUnset': '引擎默认（未设置）',
+        'model.followEngine': '跟随全局默认',
+        'model.engineUnset': '未设置',
         'model.searchPlaceholder': '搜索模型…',
-        'errors.gatewayDown': 'Bots 引擎未运行——watchdog 会自动拉起；若持续报错请检查 com.sdk-bots.host launchd 任务',
-        'errors.gatewayAuth': '网关需要鉴权——请在引擎侧配置 token 或改回 loopback 绑定',
+        'errors.gatewayDown': 'Bots 服务未运行，正在自动恢复；如果持续出现，请在 设置 → Bots 中重新连接。',
+        'errors.gatewayAuth': 'Bots 服务拒绝了访问，请重启 dsh 后重试。',
         'settings.model.deepseek': 'DeepSeek',
         'settings.model.native': 'DSH 默认模型（与其他会话一致）',
         'settings.model.nativeDefault': '当前默认：{provider} / {model}',
         'settings.model.nativeMissing': '未读取到 DSH 模型目录',
-        'settings.workspaceRoot': '工作区根目录：',
         'settings.jail.title': 'Bot 工作区隔离',
-        'settings.jail.summary': '开启后，该 Bot 的每条 Shell 命令被 macOS Seatbelt 包裹：只允许写入自己的工作目录（工作区根/<名字>）与系统临时目录，越界写入被内核拒绝；读取不受限（共享黑板仍可读）。下次对话生效，无需重启。注意：同一名字的多个 Bot 会共享同一目录。',
+        'settings.jail.summary': '开启后，该 Bot 只能写入自己的工作目录（工作区根/<名字>）和系统临时目录，越界写入会被系统拒绝；读取不受限制。下次对话生效，无需重启。注意：同名的 Bot 会共享同一个目录。',
         'settings.jail.count': '已隔离：',
         'settings.jail.on': '开启隔离',
         'settings.jail.off': '解除',
         'settings.jail.offConfirm': '确认解除？',
         'settings.mcp': 'MCP 服务器',
-        'settings.mcp.summary': 'Bot 的工具扩展总线：服务器由 sdk-bots 引擎托管，所有 Bot 共享。',
+        'settings.mcp.summary': '为 Bot 接入外部工具：这里添加的 MCP 服务器由所有 Bot 共享。',
         'settings.mcp.empty': '未安装任何 MCP 服务器',
         'settings.mcp.tools': '可用工具：',
         'settings.mcp.add': '添加服务器',
@@ -946,20 +1128,22 @@
       }
 
       const en: Record<string, string> = {
-        'goal.chooseBot': 'Choose a bot in the sidebar to chat or create a goal.',
-        'goal.loading': 'Loading goals…',
-        'group.tasks': 'Task planning',
-        'group.tasks.hint': 'Members create routines and goals right in the conversation (e.g. “post the daily report here every morning”); what each member is running shows below.',
-        'group.tasks.empty': 'No member is running a plan yet — ask one in the conversation to create a routine.',
-        'goal.scheduled': 'Scheduled',
-        'goal.running': 'Running',
-        'goal.paused': 'Paused',
-        'goal.blocked': 'Blocked',
-        'goal.review': 'Awaiting review',
-        'goal.completed': 'Accepted',
-        'goal.cancelled': 'Ended',
-        'goal.attention': 'Needs attention',
-        'goal.next': 'Next scheduled run: {time}',
+        'main.chooseBot': 'Choose a bot in the sidebar to start chatting.',
+        'routines.trigger': 'Routines',
+        'routines.triggerCount': '{count} routines',
+        'routines.aria': 'Routines',
+        'routines.nextRun': 'Next run',
+        'routines.lastFailed': 'Last run failed',
+        'routines.error': 'Couldn’t load routines',
+        'routines.retry': 'Retry',
+        'routines.relative.now': 'Due now',
+        'routines.relative.future': 'in {value} {unit}',
+        'routines.relative.overdue': '{value} {unit} overdue',
+        'routines.unit.day': 'days',
+        'routines.unit.hour': 'hours',
+        'routines.unit.minute': 'minutes',
+        'routines.unit.second': 'seconds',
+        'time.locale': 'en-US',
         'nav.workspaces': 'Workspaces',
         'nav.bots': 'Bots',
         'nav.bots.aria': 'Bots',
@@ -967,13 +1151,18 @@
         'delegate.loading': 'Loading…',
         'delegate.unavailable': 'Workspace view unavailable — reload the page.',
         'delegate.failed': 'Workspace view failed to render; Bots is unaffected.',
-        'gateway.online': 'Gateway online :{port}',
-        'gateway.offline': 'Gateway not connected',
-        'gateway.offlineTitle': 'Bots engine not connected',
-        'gateway.offlineBody': 'The engine is not running or the gateway is unreachable. Reconnecting also boots an unloaded engine and waits for health.',
+        'gateway.online': 'Bots service is running',
+        'gateway.offline': 'Bots service not connected',
+        'gateway.offlineTitle': 'Bots service not connected',
+        'host.staleTitle': 'Plugin updated · restart dsh web',
+        'chat.older': 'Load earlier',
+        'chat.membersReplying': '{names} replying',
+        'chat.olderLoading': 'Loading…',
+        'host.staleBody': 'The plugin was updated; some new features take effect after restarting dsh web.',
+        'gateway.offlineBody': 'The Bots service is not running or cannot be reached. Reconnecting starts it and resumes once it is ready.',
         'gateway.reconnect': 'Reconnect',
         'gateway.reconnecting': 'Reconnecting…',
-        'gateway.reconnectFailed': 'Reconnect failed — check that the engine (sdk-bots host) is installed.',
+        'gateway.reconnectFailed': 'Reconnect failed — try again shortly; if it keeps failing, restart dsh.',
         'bot.new': 'New bot',
         'group.new': 'New group chat',
         'bot.namePlaceholder': 'Bot name',
@@ -1001,7 +1190,7 @@
         'chat.settings.rootPh': 'Empty = disabled',
         'chat.settings.paths': 'Extra writable paths (comma-separated)',
         'chat.settings.pathsPh': '/tmp/xxx, /Users/you/shared',
-        'chat.settings.hint': 'Writes are sandboxed to the workspace (plus extra paths); reads stay unrestricted. Bots sharing a slug share one directory.',
+        'chat.settings.hint': 'Writes stay inside the workspace (plus extra paths); reads are unrestricted. Bots with the same name share one directory.',
         'settings.group.title': 'Groups',
         'settings.group.cap': 'Member cap',
         'settings.group.capHint': 'Global: applied to new groups and roster edits (1–16). Existing rosters are left untouched.',
@@ -1045,8 +1234,8 @@
         'chat.queuedSend': 'Queue message',
         'duration.seconds': '{seconds}s',
         'duration.minutes': '{minutes}m {seconds}s',
-        'chat.placeholder.group': 'Use @name to direct a turn; everyone by default',
-        'chat.placeholder.single': 'Message {name}…',
+        'chat.placeholder.group': '@ a member to direct the turn (everyone by default), / for skills',
+        'chat.placeholder.single': 'Message {name} — / for skills',
         'chat.placeholder.busy': 'Generating… sends will queue and land after the current turn',
         'chat.attach': 'Add images',
         'chat.attach.remove': 'Remove image',
@@ -1056,54 +1245,86 @@
         'time.date': '{m}/{d}',
         'time.dateFull': '{y}/{m}/{d}',
         'tool.fallbackName': 'Tool',
-        'settings.summary': 'Multi-bot workbench, bridged to the sdk-bots orchestration gateway.',
+        'settings.summary': 'Create your own AI assistants: chat with one in depth, or bring several into a group to split the work. Give them skills, tools and models, and let routine work move on its own.',
         'settings.tab.overview': 'Overview',
         'settings.tab.models': 'Models',
         'settings.tab.workspace': 'Workspace',
         'settings.tab.mcp': 'MCP',
         'settings.tab.skills': 'Skills',
         'settings.tabs': 'Bots settings tabs',
-        'settings.probing': 'Probing…',
-        'settings.address': 'Address: ',
-        'settings.pid': 'PID: ',
-        'settings.busy': 'busy',
-        'settings.idle': 'idle',
-        'settings.auth': 'Auth: ',
-        'settings.auth.token': 'token (sent automatically)',
-        'settings.auth.none': 'none (loopback, unauthenticated)',
-        'settings.reason': 'Reason: ',
-        'settings.reason.unknown': 'unknown',
-        'settings.dataDir': 'Data directory: ',
+        'time.tomorrow': 'Tomorrow',
+        'chat.command.schedule': 'Scheduled task',
+        'chat.command.scheduleDesc': 'Have the bot do something at a set time, once or on repeat',
+        'schedule.what': 'What to do',
+        'schedule.promptPh': 'What to do, e.g. put together a report on today’s industry news',
+        'schedule.promptPh.group': 'What the group should do, e.g. everyone reports today’s progress',
+        'schedule.when': 'When',
+        'schedule.repeat': 'Repeat',
+        'schedule.repeat.once': 'Once',
+        'schedule.repeat.daily': 'Daily',
+        'schedule.repeat.weekdays': 'Weekdays',
+        'schedule.repeat.weekly': 'Weekly',
+        'schedule.creating': 'Creating…',
+        'schedule.past': 'That time has passed — pick one ahead',
+        'schedule.summary.once': 'Runs once, {when}',
+        'schedule.summary.daily': 'Runs every day at {time}',
+        'schedule.summary.weekdays': 'Runs on weekdays at {time}',
+        'schedule.summary.weekly': 'Runs every {weekday} at {time}',
+        'schedule.created': 'Scheduled — {summary}',
+        'routines.once': 'Once',
+        'routines.cancel': 'Cancel',
+        'routines.cancelConfirm': 'Cancel it?',
+        'settings.features': 'What Bots can do',
+        'settings.feature.chat': 'One-on-one chats',
+        'settings.feature.chatDesc': 'Give each bot a name and persona; every bot keeps its own conversation history.',
+        'settings.feature.group': 'Group collaboration',
+        'settings.feature.groupDesc': 'Put several bots in one group: @mention one to hand off a task, or @everyone to have them reply in turn.',
+        'settings.feature.skills': 'Skills',
+        'settings.feature.skillsDesc': 'Capture how work gets done as skills; type / or @ in the composer to use one. Shared by every bot.',
+        'settings.feature.tools': 'Tools (MCP)',
+        'settings.feature.toolsDesc': 'Connect MCP servers to give every bot external tools such as search, databases or code hosting.',
+        'settings.feature.models': 'Models',
+        'settings.feature.modelsDesc': 'Set a global default model, or switch a single bot from its composer.',
+        'settings.feature.workspace': 'Workspace isolation',
+        'settings.feature.workspaceDesc': 'Keep each bot writing only inside its own working directory, so file changes stay contained.',
+        'settings.feature.routines': 'Routines',
+        'settings.feature.routinesDesc': 'Bots can run tasks on a schedule; the clock in the chat header shows what runs next.',
+        'settings.feature.files': 'File preview',
+        'settings.feature.filesDesc': 'Documents, code and images bots produce open beside the conversation, without leaving it.',
+        'settings.model.autoCaption': 'Picks an available model automatically and fails over on errors',
+        'model.currentGroup': 'Current',
+        'model.menuModel': 'Model',
+        'model.back': 'Back',
+        'model.retry': 'Retry',
+        'model.noMatch': 'No matching models',
+        'chat.commands': 'Add images or use a skill',
+        'chat.command.imageDesc': 'Pick images from this computer, or paste a screenshot',
+        'preview.expand': 'Expand',
+        'preview.collapse': 'Exit full view',
+        'settings.probing': 'Checking service status…',
         'settings.reading': 'reading…',
-        'settings.events': 'Live events: ',
-        'settings.events.on': 'connected · {n} buffered',
-        'settings.events.off': 'not connected',
-        'settings.entry': 'Entry point: ',
-        'settings.entry.value': 'Sidebar “Workspaces | Bots” collapsible nav',
         'settings.model.title': 'Model',
-        'settings.model.current': 'Current model',
-        'settings.model.auto': 'auto (freeroute default)',
-        'settings.model.engineDefault': 'Engine default (unset)',
-        'settings.model.freeroute': 'freeroute auto routing (default)',
-        'settings.model.pick': 'Pick a model',
-        'settings.model.provider': 'Provider',
-        'settings.model.hint': 'The engine reads its model from an environment variable at startup, so a pick only takes effect after “Apply and restart engine” (a restart interrupts in-flight turns). “Engine model” is what the next start will use.',
-        'settings.model.offline': 'freeroute unreachable — using the current default model',
+        'settings.model.current': 'Global default model',
+        'settings.model.auto': 'Auto routing',
+        'settings.model.engineDefault': 'Default model (unset)',
+        'settings.model.freeroute': 'Auto routing (recommended)',
+        'settings.model.hint': 'The global default loads when the Bots service starts, so a change takes effect after “Apply and restart service” (this interrupts replies in progress). A single bot can switch models from its composer — effective from its next message, no restart.',
+        'settings.model.offline': 'Auto routing is unavailable — using the default model',
         'settings.model.saving': 'Saving…',
-        'settings.model.engine': 'Engine model',
-        'settings.model.engineUnset': 'unset (env default)',
-        'settings.model.engineApply': 'Apply and restart engine',
-        'settings.model.engineUnhealthy': 'The engine restarted but did not turn healthy within {waited}s — check the model id or the engine logs.',
-        'settings.model.healthy': 'Engine healthy ({waited}s)',
+        'settings.model.engine': 'In effect',
+        'settings.model.engineUnset': 'Not set',
+        'settings.model.engineApply': 'Apply and restart service',
+        'settings.model.engineUnhealthy': 'The service restarted but was not ready within {waited}s — check that the chosen model is available.',
+        'settings.model.healthy': 'Live ({waited}s)',
         'composer.model.title': 'Select model',
-        'composer.model.hint': 'Applies to this bot from its next turn — no restart. The engine-wide model lives in Settings → Models',
+        'composer.model.hint': 'Applies to this bot from its next message. Change the global default in Settings → Bots → Models',
         'composer.model.defaultPrefix': 'Default · ',
-        'composer.model.auto': 'auto · freeroute',
+        'composer.model.auto': 'auto routing',
         'settings.model.engineApplying': 'Restarting…',
         'settings.model.engineRestarted': 'Restarted and live',
-        'settings.model.applyFailed': 'Apply failed — the engine did not restart, the pick is NOT live:',
+        'settings.model.applyFailed': 'Apply failed — the service did not restart, so the choice is not live:',
         'settings.skills': 'Skills',
-        'settings.skills.summary': 'Skills are a reusable instruction library (SKILL.md, same format as DSH). Bots see the library path in their system prompt and read files themselves; @skillName in a message injects that skill body into context. Integrated and installed skills are shared across bots and groups; user skills can be enabled per bot.',
+        'settings.skills.summary': 'Skills are reusable how-tos (SKILL.md, the DSH format). Bots consult the library when relevant; type / or @skill in the composer to call one directly. Shared skills work for every bot and group; your own skills can be toggled per bot.',
         'settings.skills.empty': 'No skills yet — create one, or paste markdown to import',
         'settings.skills.add': 'New skill',
         'settings.skills.import': 'Import markdown',
@@ -1113,8 +1334,8 @@
         'settings.skills.installing': 'Installing…',
         'settings.skills.installHint': 'Preserves scripts, references and assets. Available to all bots and groups.',
         'settings.skills.namePlaceholder': 'Skill name, e.g. weekly-report',
-        'settings.skills.descPlaceholder': 'One line on when to use it (surfaced to the bot alongside the library path)',
-        'settings.skills.bodyPlaceholder': 'Skill body (Markdown). A pasted SKILL.md with frontmatter works — the engine parses name/description.',
+        'settings.skills.descPlaceholder': 'One line on when to use it',
+        'settings.skills.bodyPlaceholder': 'Skill body (Markdown). Paste a SKILL.md with frontmatter and its name/description are read automatically.',
         'settings.skills.save': 'Save skill',
         'settings.skills.saving': 'Saving…',
         'settings.skills.cancel': 'Cancel',
@@ -1132,29 +1353,32 @@
         'settings.skills.lockedHint': 'Provided by a plugin/managed feed — cannot be disabled per-bot',
         'settings.skills.agent': 'For bot:',
         'settings.skills.failed': 'Skill operation failed: ',
-        'settings.skills.bridge': 'DSH skill bridge',
-        'settings.skills.bridge.summary': 'Publish this machine\u2019s skills (~/.dsh/skills, ~/.agents/skills, ~/.codex/skills) and bundled skills to every bot as LIVE pointers: harness edits propagate, nothing is copied. New installations are shared automatically; uncheck and save to exclude a skill.',
+        'settings.skills.bridge': 'DSH skill sharing',
+        'settings.skills.bridge.summary': 'Share the skills installed on this machine (~/.dsh/skills, ~/.agents/skills, ~/.codex/skills) with every bot and group; edits to the originals apply immediately, nothing is copied. A shared skill becomes instructions for every bot, so newly found skills wait for your confirmation; bundled skills are shared by default.',
+        'settings.skills.bridge.pending': '{n} new skill(s) found — none reaches a bot until you decide. Check the ones to share and save; unchecked ones stay unshared.',
+        'settings.skills.bridge.new': 'New',
+        'settings.skills.bridge.changed': 'Changed since shared',
+        'settings.skills.bridge.bundled': 'Bundled',
         'settings.skills.bridge.empty': 'No DSH skills found on this machine',
-        'settings.skills.bridge.apply': 'Save bridge',
+        'settings.skills.bridge.apply': 'Save sharing',
         'settings.skills.bridge.applying': 'Saving…',
-        'model.followEngine': 'Follow engine default',
-        'model.engineUnset': 'Engine default (unset)',
+        'model.followEngine': 'Follow global default',
+        'model.engineUnset': 'Not set',
         'model.searchPlaceholder': 'Search models…',
-        'errors.gatewayDown': 'The bots engine is not running — the watchdog will restart it; if this persists, check the com.sdk-bots.host launchd job',
-        'errors.gatewayAuth': 'The gateway requires auth — configure a token on the engine or switch back to loopback binding',
+        'errors.gatewayDown': 'The Bots service is not running and is being restarted automatically; if this persists, reconnect from Settings → Bots.',
+        'errors.gatewayAuth': 'The Bots service refused access — restart dsh and try again.',
         'settings.model.deepseek': 'DeepSeek',
         'settings.model.native': 'DSH default model (same as other sessions)',
         'settings.model.nativeDefault': 'Default: {provider} / {model}',
         'settings.model.nativeMissing': 'DSH model catalog unavailable',
-        'settings.workspaceRoot': 'Workspace root: ',
-        'settings.jail.title': 'Bot workspace jail',
-        'settings.jail.summary': 'When enabled, every shell command of that bot is wrapped in a macOS Seatbelt profile: writes are confined to its own workspace directory (workspace root /<name>) and the OS temp dir — out-of-bounds writes are denied by the kernel. Reads stay unrestricted (shared blackboards remain readable). Takes effect on the bot’s next turn, no restart. Note: bots sharing a name share one directory.',
+        'settings.jail.title': 'Bot workspace isolation',
+        'settings.jail.summary': 'When on, the bot can only write inside its own working directory (workspace root/<name>) and the system temp directory; writes elsewhere are refused by the system, and reads are unrestricted. Takes effect from the next conversation, no restart. Bots with the same name share one directory.',
         'settings.jail.count': 'Jailed: ',
         'settings.jail.on': 'Enable jail',
         'settings.jail.off': 'Remove',
         'settings.jail.offConfirm': 'Confirm removal?',
         'settings.mcp': 'MCP servers',
-        'settings.mcp.summary': 'The tool-expansion bus for bots: servers are hosted by the sdk-bots engine and shared by every bot.',
+        'settings.mcp.summary': 'Connect external tools: MCP servers added here are shared by every bot.',
         'settings.mcp.empty': 'No MCP servers installed',
         'settings.mcp.tools': 'Available tools: ',
         'settings.mcp.add': 'Add server',
@@ -1215,6 +1439,18 @@
       let connectionSvc: any = null
       let slotsSvc: any = null
       let layoutSvc: any = null
+
+      /**
+       * The host fingerprint this client was built against (baked by
+       * scripts/bake-version.mjs; the host reports its own in gatewayInfo).
+       * dsh web loads the host half once at startup but re-reads this file on
+       * every page load, so a mismatch means the running host predates the
+       * build on disk — new RPCs would 404 until dsh web restarts.
+       */
+      const EXPECTED_HOST_BUILD = 'unbaked-host-build'
+      function hostIsStale(info: any): boolean {
+        return info !== undefined && info !== null && info.hostBuild !== EXPECTED_HOST_BUILD
+      }
 
       /** Cadence for draining the host's in-memory SSE ring (no gateway hop):
        * relaxed while nothing moves, tight while events are flowing, so a
@@ -1329,8 +1565,10 @@
         /** Manage-members dialog: group agentId | null (system modal). */
         manageMembers: null as string | null,
         settingsAgentId: null as string | null,
-        /** File preview overlay: the chip/mention path | null (host readText). */
+        /** File preview pane beside the chat: the chip/mention path | null. */
         previewPath: null as string | null,
+        /** The pane covers the whole workbench instead of sharing it. */
+        previewExpanded: false,
         sectionMenu: null as string | null,
         rowMenu: null as string | null,
         /** Last row's menu may not fit below — flipped above the row when the
@@ -1339,6 +1577,9 @@
         sectionsOpen: null as Record<string, boolean> | null,
         /** Bumped on a language switch so module-scope `t` output re-renders. */
         localeRev: 0,
+        /** Bumped when a routine is created or cancelled here, so the chat
+         * header's routines entry re-reads. */
+        routinesRev: 0,
       }
       const stateSubs = new Set<() => void>()
       function patch(next: any): void {
@@ -1355,11 +1596,35 @@
         return state
       }
 
-      /** Per-agent composer drafts, kept in memory for the plugin lifetime so
-       *  leaving a chat and coming back restores what was being typed — the
-       *  native persisted-draft contract, minus the Host round-trip. Cleared
-       *  on a successful send; a failed send keeps the draft for retry. */
-      const draftMemory = new Map<string, string>()
+      /** Per-agent composer drafts: leaving a chat and coming back — or
+       *  reloading the page — restores what was being typed, the native
+       *  persisted-draft contract. Mirrored to this browser's localStorage
+       *  (best effort: private windows and blocked storage just fall back to
+       *  memory). Cleared on a successful send; a failed send keeps it. */
+      const DRAFTS_KEY = 'dsh-bots.drafts.v1'
+      const draftMemory = (() => {
+        const map = new Map<string, string>()
+        try {
+          const saved = JSON.parse(window.localStorage.getItem(DRAFTS_KEY) ?? '{}')
+          if (saved !== null && typeof saved === 'object') {
+            for (const [id, text] of Object.entries(saved)) if (typeof text === 'string' && text !== '') map.set(id, text)
+          }
+        } catch { /* storage unavailable or corrupt: start empty */ }
+        let timer: any = null
+        const persist = (): void => {
+          if (timer !== null) return
+          // Coalesced: typing writes the map, storage catches up once.
+          timer = setTimeout(() => {
+            timer = null
+            try { window.localStorage.setItem(DRAFTS_KEY, JSON.stringify(Object.fromEntries(map))) } catch { /* memory-only */ }
+          }, 400)
+        }
+        return {
+          get: (id: string): string | undefined => map.get(id),
+          set: (id: string, text: string): void => { if (text === '') map.delete(id); else map.set(id, text); persist() },
+          delete: (id: string): void => { map.delete(id); persist() },
+        }
+      })()
       // Native RunningStatus ties the elapsed clock to the real Turn start
       // time, so the number survives view switches while the run continues.
       // Use the engine's runStartedAt across switches and reloads. Older
@@ -1376,20 +1641,34 @@
       /** Same cap as the host (4 images per message) and the gateway engine. */
       const SEND_IMAGE_LIMIT = 4
 
-      async function refreshAgents(): Promise<void> {
-        try {
-          const list: any = await botsCall('list')
-          const agents = Array.isArray(list) ? list : []
-          for (const agent of agents) {
-            if (agent.isRunning === true || agent.isComposingMessage === true) {
-              if (Number.isFinite(agent.runStartedAt) && agent.runStartedAt > 0) runStartMemory.set(agent.id, agent.runStartedAt)
-              else if (!runStartMemory.has(agent.id)) runStartMemory.set(agent.id, Date.now())
-            } else runStartMemory.delete(agent.id)
-          }
-          patch({ agents, agentsLoaded: true, error: null })
-        } catch (err: any) {
-          patch({ agentsLoaded: true, error: String(err?.message ?? err) })
-        }
+      /** Roster reads are single-flight: agent events burst while bots run,
+       * and overlapping `list` calls could land out of order (an older
+       * roster overwriting a newer one). A burst collapses into one re-read
+       * after the current one; callers awaiting get the fresh roster. */
+      let agentsRead: Promise<void> | null = null
+      let agentsAgain = false
+      function refreshAgents(): Promise<void> {
+        if (agentsRead !== null) { agentsAgain = true; return agentsRead }
+        agentsRead = (async () => {
+          do {
+            agentsAgain = false
+            try {
+              const list: any = await botsCall('list')
+              const agents = Array.isArray(list) ? list : []
+              for (const agent of agents) {
+                if (agent.isRunning === true || agent.isComposingMessage === true) {
+                  if (Number.isFinite(agent.runStartedAt) && agent.runStartedAt > 0) runStartMemory.set(agent.id, agent.runStartedAt)
+                  else if (!runStartMemory.has(agent.id)) runStartMemory.set(agent.id, Date.now())
+                } else runStartMemory.delete(agent.id)
+              }
+              patch({ agents, agentsLoaded: true, error: null })
+            } catch (err: any) {
+              patch({ agentsLoaded: true, error: String(err?.message ?? err) })
+            }
+          } while (agentsAgain)
+          agentsRead = null
+        })()
+        return agentsRead
       }
       /** Load the pinned-conversation list (置顶会话) from plugin prefs. */
       async function refreshPins(): Promise<void> {
@@ -1422,7 +1701,9 @@
 
       function openChat(id: string): void {
         layoutSvc.selectPanel('dsh-bots')
-        patch({ chatAgentId: id, unreadCounts: { ...state.unreadCounts, [id]: 0 } })
+        // A preview belongs to the conversation that mentioned the file.
+        const leaving = state.chatAgentId !== id ? { previewPath: null, previewExpanded: false } : {}
+        patch({ chatAgentId: id, unreadCounts: { ...state.unreadCounts, [id]: 0 }, ...leaving })
         // Clear the badge at the source; the gateway owns unread state.
         void botsCall('markRead', { id, atMs: Date.now() }).then(refreshAgents).catch(() => {})
       }
@@ -4573,18 +4854,53 @@ class BotEngine {
        * The loop stops itself when the last avatar unregisters; rAF also parks
        * itself while the tab is hidden.
        */
-      const bloubTicks = new Set<(now: number) => void>()
+      const bloubTicks = new Set<(now: number, frame: number) => void>()
       let bloubRaf = 0
       let bloubLast = 0
+      let bloubFrame = 0
       function bloubLoop(ms: number): void {
         bloubRaf = 0
         if (bloubTicks.size === 0) return
         if (ms - bloubLast >= 32) {
           bloubLast = ms
+          bloubFrame += 1
           const t = ms / 1000
-          for (const tick of bloubTicks) tick(t)
+          for (const tick of bloubTicks) tick(t, bloubFrame)
         }
         bloubRaf = requestAnimationFrame(bloubLoop)
+      }
+
+      /**
+       * Frame budget for living avatars. A full sidebar is dozens of SVG
+       * rebuilds per frame, so: avatars scrolled out of view (or inside a
+       * hidden panel) skip their frames entirely; resting avatars breathe at
+       * a reduced rate — ~10 fps at row size, ~15 fps when large (welcome
+       * hero), where slow drift and blinks still read as alive; only busy ones
+       * (thinking / tool / retry) get the full ~30 fps; and glyph-sized ones
+       * (menus, task rows) draw one still per state. Measured on 30 sidebar
+       * bots: idle main-thread time per 5s went 817ms → ~210ms.
+       */
+      const avatarOnscreen = new WeakMap<Element, boolean>()
+      const avatarObserver: any = typeof IntersectionObserver === 'function'
+        ? new IntersectionObserver((entries: any[]) => {
+            for (const entry of entries) avatarOnscreen.set(entry.target, entry.isIntersecting === true)
+          }, { rootMargin: '64px' })
+        : null
+      function watchAvatar(el: Element): () => void {
+        if (avatarObserver === null) return () => {}
+        avatarObserver.observe(el)
+        return () => { avatarObserver.unobserve(el); avatarOnscreen.delete(el) }
+      }
+      /** Unknown (no observer reading yet) counts as visible. */
+      function avatarDue(el: Element | null, mode: AvatarMode, frame: number, size: number): boolean {
+        if (el === null || avatarOnscreen.get(el) === false) return false
+        if (mode === 'thinking' || mode === 'working' || mode === 'retrying') return true
+        return frame % (size >= 48 ? 2 : 3) === 0
+      }
+      /** Below this size motion is imperceptible: draw stills. */
+      const AVATAR_STILL_BELOW = 24
+      function prefersReducedMotion(): boolean {
+        return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
       }
       function bloubEnsureClock(): void {
         if (bloubRaf === 0) bloubRaf = requestAnimationFrame(bloubLoop)
@@ -4594,6 +4910,7 @@ class BotEngine {
         const ref = React.useRef(null)
         const poseRef = React.useRef(p.mode)
         poseRef.current = p.mode
+        const still = prefersReducedMotion() || p.size < AVATAR_STILL_BELOW
         React.useEffect(() => {
           const el = ref.current
           if (el === null) return
@@ -4607,15 +4924,19 @@ class BotEngine {
           const ink = BLOUB_INKS[(hue * 7 + 3) % BLOUB_INKS.length]
           const uid = `b${hue.toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`
           const phase = (hue % 97) * 0.61 // desynchronise blinking across bots
-          const reduce = typeof window.matchMedia === 'function' &&
-            window.matchMedia('(prefers-reduced-motion: reduce)').matches
           let disposed = false
+          let last = ''
           const draw = (now: number) => {
-            if (!disposed && ref.current !== null) ref.current.innerHTML = bloubFrameSvg(engine, now, ink, uid, world)
+            if (disposed || ref.current === null) return
+            const svg = bloubFrameSvg(engine, now, ink, uid, world)
+            // Identical frames (a held pose between blinks) cost no DOM work.
+            if (svg !== last) { last = svg; ref.current.innerHTML = svg }
           }
           draw(performance.now() / 1000 + phase)
-          if (reduce) { engine.setState(AVATAR_POSES[p.mode], 0); draw(1); return () => { disposed = true } }
-          const tick = (t: number) => {
+          if (still) { engine.setState(AVATAR_POSES[p.mode], 0); draw(1); return () => { disposed = true } }
+          const unwatch = watchAvatar(el)
+          const tick = (t: number, frame: number) => {
+            if (!avatarDue(ref.current, poseRef.current as AvatarMode, frame, p.size)) return
             const now = t + phase
             const next = poseRef.current as AvatarMode
             if (next !== mode) {
@@ -4631,8 +4952,8 @@ class BotEngine {
           }
           bloubTicks.add(tick)
           bloubEnsureClock()
-          return () => { disposed = true; bloubTicks.delete(tick) }
-        }, [p.seed, typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? p.mode : null])
+          return () => { disposed = true; bloubTicks.delete(tick); unwatch() }
+        }, [p.seed, still, still ? p.mode : null])
         return e('span', {
           className: 'dbs-avatar dbs-avatarBlob',
           'data-avatar-state': p.mode,
@@ -4660,8 +4981,7 @@ class BotEngine {
         React.useEffect(() => {
           const el = ref.current
           if (el === null) return
-          const reduce = typeof window.matchMedia === 'function' &&
-            window.matchMedia('(prefers-reduced-motion: reduce)').matches
+          const still = prefersReducedMotion() || p.size < AVATAR_STILL_BELOW
           let disposed = false
           const apply = (t: number) => {
             const node = ref.current
@@ -4678,11 +4998,12 @@ class BotEngine {
               `perspective(${Math.max(160, p.size * 6)}px) translate(${dx.toFixed(2)}px,${dy.toFixed(2)}px) rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg) rotate(${rz.toFixed(2)}deg) scale(${life.breath.toFixed(4)})`
           }
           apply(0.35)
-          if (reduce) return () => { disposed = true }
-          const tick = (t: number) => apply(t)
+          if (still) return () => { disposed = true }
+          const unwatch = watchAvatar(el)
+          const tick = (t: number, frame: number) => { if (avatarDue(ref.current, p.mode, frame, p.size)) apply(t) }
           bloubTicks.add(tick)
           bloubEnsureClock()
-          return () => { disposed = true; bloubTicks.delete(tick) }
+          return () => { disposed = true; bloubTicks.delete(tick); unwatch() }
         }, [p.src, p.mode, p.size])
         return e('span', { className: 'dbs-avatar dbs-avatarLive' + (p.shape ?? ' dbs-avatarRound'), 'data-avatar-state': p.mode, style: { width: p.size, height: p.size } },
           e('img', { src: p.src, alt: p.alt ?? '', ref }))
@@ -4690,29 +5011,56 @@ class BotEngine {
 
       function Avatar(p: { agent: any; size?: number; round?: boolean }) {
         const a = p.agent
-        const size = p.size ?? 32
+        const size = p.size ?? 24
         const mode = avatarMode(a)
-        const style: any = { width: size, height: size }
         // Conversation avatars are round (native chat look); the sidebar keeps
         // the native squircle via the base class.
-        const shape = p.round === true || a.isGroup === true ? ' dbs-avatarRound' : (a.isGroup ? ' dbs-group' : '')
+        const shape = p.round === true || a.isGroup === true ? ' dbs-avatarRound' : ''
         // Bots without a custom avatar live-render the bloub blob (merged
         // engine above); custom avatars get the living-photo treatment; groups
-        // keep the initials fallback.
+        // show their members (GroupAvatar).
         if (typeof a.avatarDataUrl === 'string' && a.avatarDataUrl !== '') {
           return e(LiveAvatar, { src: a.avatarDataUrl, size, shape, mode })
         }
-        if (a.isGroup !== true) {
-          return e(BloubAvatar, { seed: String(a.id ?? a.name ?? 'bot'), size, mode })
+        if (a.isGroup === true) return e(GroupAvatar, { group: a, size })
+        return e(BloubAvatar, { seed: String(a.id ?? a.name ?? 'bot'), size, mode })
+      }
+
+      /** Member slots of a group avatar, as fractions of its size: one
+       * centered blob, two on the diagonal, three in a triangle. */
+      const GROUP_AVATAR_LAYOUT: Array<{ scale: number; at: Array<[number, number]> }> = [
+        { scale: 0.8, at: [[0.1, 0.1]] },
+        { scale: 0.64, at: [[0, 0], [0.36, 0.36]] },
+        { scale: 0.56, at: [[0.22, 0], [0, 0.44], [0.44, 0.44]] },
+      ]
+
+      /**
+       * A group is its members: the avatar is a small cluster of the first
+       * three members' own avatars (same seed, so the same blobs as in the
+       * single chats), each in its member's live state — a member at work
+       * shows it here too, and a roster edit redraws the cluster. A group
+       * with nobody in it falls back to its own blob.
+       */
+      function GroupAvatar(p: { group: any; size: number }) {
+        const members = (Array.isArray(p.group.memberIds) ? p.group.memberIds : [])
+          .map((id: string) => agentById(id))
+          .filter((m: any) => m !== null && m !== undefined)
+          .slice(0, 3)
+        if (members.length === 0) {
+          return e(BloubAvatar, { seed: String(p.group.id ?? p.group.name ?? 'group'), size: p.size, mode: avatarMode(p.group) })
         }
-        style.background = typeof a.avatarColor === 'string' && a.avatarColor !== ''
-          ? a.avatarColor
-          : `hsl(${String(hueOf(a.id))} 52% 46%)`
-        if (size >= 24) style.fontSize = '13px'
-        const initial = (a.name ?? '').trim().slice(0, 1) || '·'
+        const layout = GROUP_AVATAR_LAYOUT[members.length - 1]
+        const inner = Math.round(p.size * layout.scale)
         return e('span', {
-          className: 'dbs-avatar' + shape, style, 'aria-hidden': true,
-        }, initial)
+          className: 'dbs-avatar dbs-avatarGroup',
+          'data-members': members.length,
+          style: { width: p.size, height: p.size },
+          'aria-hidden': true,
+        }, members.map((m: any, i: number) => e('span', {
+          key: m.id,
+          className: 'dbs-avatarGroupSeat',
+          style: { left: Math.round(p.size * layout.at[i][0]), top: Math.round(p.size * layout.at[i][1]) },
+        }, e(Avatar, { agent: { ...m, isGroup: false }, size: inner, round: true }))))
       }
 
       /** Chevron matching the shipped project row (fills in if the icon moves). */
@@ -4766,6 +5114,13 @@ class BotEngine {
         const groups = visible.filter((a) => a.isGroup)
         const singles = visible.filter((a) => !a.isGroup)
         const connected = s.info?.ok === true
+        // Known-offline takes two shapes: the probe answered down, or
+        // gatewayInfo never arrived while the roster read failed too (the
+        // host bridge itself answers nothing — reconnect is the only
+        // meaningful action, and the list error card alone would understate
+        // the outage).
+        const offline = s.info?.ok === false
+          || (s.info === undefined && s.agentsLoaded && s.error !== null)
 
         function row(a: any) {
           const busy = a.isComposingMessage === true || a.isRunning === true
@@ -4783,7 +5138,7 @@ class BotEngine {
             onKeyDown: (ev: any) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openChat(a.id) } },
             title: a.description !== '' ? a.name + ' — ' + a.description : a.name,
           },
-            e(Avatar, { agent: a }),
+            e(Avatar, { agent: a, size: 24 }),
             e('span', { className: 'dbs-title' }, a.name),
             pinned.has(a.id)
               ? e('span', { className: 'dbs-rowPin', title: t('action.pin') }, PinGlyph({ size: 11 }))
@@ -4828,10 +5183,11 @@ class BotEngine {
         }
 
         /**
-         * Section header + rows. The header always renders (even when the
-         * section is empty) so the far-right + is reachable from where you
-         * are: creating the first bot or group never requires a trip to the
-         * footer. `addAction` opens the same system-style modal as before.
+         * Section header + rows. The header always renders while the engine
+         * is connected (even when the section is empty) so the far-right +
+         * is reachable from where you are: creating the first bot or group
+         * never requires a trip to the footer. `addAction` opens the same
+         * system-style modal as before.
          */
         function sectionRows(label: string, list: any[], addAction: { title: string; onClick: () => void }, menuKind: string, menuItems: Array<{ label: string; onClick: () => void }>, icon: any) {
           const menuOpen = s.sectionMenu === menuKind
@@ -4845,6 +5201,9 @@ class BotEngine {
             e('div', {
               className: 'dbs-navBodyErr dbs-secHead', role: 'button', tabIndex: 0, 'aria-expanded': isOpen,
               'data-menu': menuOpen ? 'true' : 'false',
+              // An empty section shows its + without a hover: creating the
+              // first bot or group must not depend on discovering a hover.
+              'data-empty': list.length === 0 ? 'true' : 'false',
               // Native sectionHeader outdent: label at x=16 (12 sidebar
               // padding + 4), aligned with the group headers. The previous
               // 12px here pushed section labels 8px right of the native
@@ -4892,9 +5251,9 @@ class BotEngine {
         // hover tooltip (0.2.8) — see SidebarNav's StateDot `title`.
         return e('div', { className: 'dbs-navBody dbs-botsBody' },
           s.error !== null
-            ? e('div', { className: 'dbs-error', onClick: () => patch({ error: null }) }, s.error)
+            ? e('div', { className: 'dbs-error', onClick: () => patch({ error: null }) }, errText(s.error))
             : null,
-          s.info?.ok === false
+          offline
             // Engine unreachable: the reconnect card LEADS — an eternal
             // loading spinner (the list RPC can't answer) or a stale list
             // would both hide the outage.
@@ -4915,7 +5274,11 @@ class BotEngine {
                     ? null // truly zero agents: the section headers' ＋ speaks for itself
                     : e(OfflineCard, { compact: true })
                 : null,
-          s.agentsLoaded
+          // 群聊/单聊 render only against a live engine (`list` sets
+          // agentsLoaded even on failure, so the flag alone would keep a
+          // stale roster visible under the reconnect card — rows the user
+          // could click into a dead engine).
+          s.agentsLoaded && connected
             ? sectionRows(t('section.groups'), groups, {
                 title: t('group.new'),
                 onClick: () => patch({ create: 'group', createName: '', createMembers: {}, createWorking: false, error: null }),
@@ -4924,7 +5287,7 @@ class BotEngine {
                 { label: t('list.refresh'), onClick: () => { void refreshAgents() } },
               ], e(PeopleGlyph, null))
             : null,
-          s.agentsLoaded
+          s.agentsLoaded && connected
             ? sectionRows(t('section.singles'), singles, {
                 title: t('bot.new'),
                 onClick: () => patch({ create: 'bot', createName: '', createDesc: '', createWorking: false, error: null }),
@@ -5017,7 +5380,7 @@ class BotEngine {
           group('bots', t('nav.bots'), 'IconAgentPresetOutline16', e(BotsGroup, null),
             StateDot !== null
               ? e('span', {
-                  title: s.info?.ok === true ? t('gateway.online', { port: s.info.port }) : t('gateway.offline'),
+                  title: s.info?.ok === true ? t('gateway.online') : t('gateway.offline'),
                   style: { display: 'inline-flex', alignItems: 'center', flex: 'none' },
                 }, e(StateDot, { state: s.info?.ok === true ? 'done' : 'failed', size: 8 }))
               : null))
@@ -5053,6 +5416,7 @@ class BotEngine {
         const day = dayIndexOf(ms)
         if (day === today) return t('time.today')
         if (day === today - 1) return t('time.yesterday')
+        if (day === today + 1) return t('time.tomorrow')
         const d = new Date(ms)
         const params = { y: d.getFullYear(), m: d.getMonth() + 1, d: d.getDate() }
         return d.getFullYear() === new Date().getFullYear() ? t('time.date', params) : t('time.dateFull', params)
@@ -5089,24 +5453,31 @@ class BotEngine {
 
       // ---- Media references: bot-written local files in message text. ----
       // Images render inline (host readImage → data URL, session-cached);
-      // documents/media render as a click-to-preview chip (FilePreviewModal
+      // documents/media render as a click-to-preview chip (FilePreview pane
       // → host readText/readBytes, or revealFile for exotic formats). The
       // host enforces the real boundary — gateway data dir allowlist — so
       // the client regexes are UX filters, not trust.
       const MEDIA_IMG_RE = /\.(png|jpe?g|gif|webp|bmp|svg)$/i
-      const MEDIA_FILE_RE = /\.(pdf|mp3|wav|m4a|mp4|mov|zip|csv|xlsx|docx|pptx|md|txt|json)$/i
+      // Every type the preview pane can show, plus media/archives that at
+      // least reveal in the file manager.
+      const MEDIA_FILE_RE = /\.(pdf|mp3|wav|m4a|mp4|mov|zip|csv|tsv|xlsx?|docx?|pptx?|md|markdown|txt|log|json|ya?ml|toml|ini|xml|html?|css|js|mjs|cjs|ts|tsx|jsx|py|rb|go|rs|java|sh|sql)$/i
       // A path needs at least one directory separator and an extension. The
       // leading slash is optional: bots write workspace-relative paths
       // (`risk/09999_risk_opinion_20261009.md`) far more often than absolute
       // ones, and the old leading-slash requirement truncated those chips to
       // just the basename — a path the allowlist then rightly rejected.
-      const MEDIA_PATH_RE = /\/?(?:[\w.\-]+\/)+[\w.\-]+\.[A-Za-z0-9]{1,8}/g
+      // Segments may be CJK (workspaces are named 「AI股票交易台」; an ASCII-only
+      // class cut such paths down to a bogus `/risk/…` tail). Guards: an
+      // absolute path's slash may not follow a letter, `:` or `/` (URL and
+      // mid-word fragments), and a relative path starts on an ASCII segment
+      // so CJK prose glued to it (「保存到risk/x.md」) stays prose.
+      const MEDIA_PATH_RE = /(?:(?<![\p{L}\p{N}_.\-:\/~])~?\/|(?<![\w.\-\/:])[\w.\-]+\/)(?:[\p{L}\p{N}_.\-]+\/)*[\p{L}\p{N}_.\-]+\.[A-Za-z0-9]{1,8}/gu
       const MEDIA_MAX_REFS = 6
       const mediaUrlCache = new Map<string, string>()
 
       /** Sticky variant of MEDIA_PATH_RE: matches a file path starting
        * exactly at the cursor, for in-place substitution while scanning. */
-      const MEDIA_FILE_AT_RE = new RegExp(MEDIA_PATH_RE.source, 'y')
+      const MEDIA_FILE_AT_RE = new RegExp(MEDIA_PATH_RE.source, 'yu')
 
       /** Split message text into segments where FILE references become
        * inline FileChips at their original position (images keep the preview
@@ -5147,8 +5518,8 @@ class BotEngine {
         const base = p.path.slice(p.path.lastIndexOf('/') + 1) || p.path
         return e('span', {
           className: 'dbs-fileChip', title: p.path, role: 'button', tabIndex: 0,
-          onClick: () => patch({ previewPath: p.path }),
-          onKeyDown: (ev: any) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); patch({ previewPath: p.path }) } },
+          onClick: () => openFilePreview(p.path),
+          onKeyDown: (ev: any) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openFilePreview(p.path) } },
         },
           Ico('IconFolderClose16', { size: 12 }),
           e('span', { className: 'dbs-fileChipName' }, base))
@@ -5173,7 +5544,7 @@ class BotEngine {
         if (url !== null) {
           return e('img', {
             className: 'dbs-mediaImg', src: url, alt: p.path, title: p.path,
-            onClick: () => patch({ previewPath: p.path }),
+            onClick: () => openFilePreview(p.path),
           })
         }
         if (err === true) return e(FileChip, { path: p.path })
@@ -5566,80 +5937,227 @@ class BotEngine {
       }
 
 
-      /** Group task-planning panel (in-conversation, no separate module):
-       * each member's standing orders (routines) and persistent goals, read
-       * only. Members plan in conversation itself — the engine's sand-state
-       * routine.create/workflow.write tools are how "someone" takes a plan;
-       * this surface just makes who-plans-what visible to the room. */
-      function goalStatusLabel(status: string): string {
-        const labels: Record<string, string> = {
-          scheduled: t('goal.scheduled'), running: t('goal.running'), paused: t('goal.paused'),
-          blocked: t('goal.blocked'), review: t('goal.review'), completed: t('goal.completed'),
-          cancelled: t('goal.cancelled'), attention: t('goal.attention'),
-        }
-        return labels[status] ?? status
+      /** Clock glyph: the shipped IconClockOutlineRegular when present. */
+      function ClockGlyph(): any {
+        const C = NATIVE.IconClockOutlineRegular
+        if (C !== undefined) return e(C, { size: 16 })
+        return e('svg', { viewBox: '0 0 16 16', width: '16', height: '16', fill: 'none', 'aria-hidden': true },
+          e('circle', { cx: 8, cy: 8, r: 6.25, stroke: 'currentColor', strokeWidth: 1.2 }),
+          e('path', { d: 'M8 4.75V8l2.25 1.5', stroke: 'currentColor', strokeWidth: 1.2, strokeLinecap: 'round', strokeLinejoin: 'round' }))
       }
 
-      function GroupTasksPanel(p: { agentId: string; members: any[] }) {
-        const [rows, setRows] = React.useState(null as Array<{ member: any; routines: any[]; goals: any[] }> | null)
-        const [err, setErr] = React.useState(null as string | null)
-        const memberKey = p.members.map((m) => String(m.id ?? '')).join(',')
-        React.useEffect(() => {
-          let cancelled = false
-          setRows(null); setErr(null)
+      /** Native schedule next-run text (dsh-client-ui-schedule
+       * formatScheduleAbsolute / formatScheduleRelative): a short local
+       * stamp and the distance in the largest natural unit. */
+      function routineNextRun(at: number, now: number): { absolute: string; relative: string } {
+        let absolute = ''
+        try {
+          absolute = new Intl.DateTimeFormat(t('time.locale'), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(at)
+        } catch { absolute = new Date(at).toLocaleString() }
+        const difference = at - now
+        if (difference === 0) return { absolute, relative: '(' + t('routines.relative.now') + ')' }
+        const seconds = Math.abs(difference) / 1000
+        const units: Array<[string, number]> = [['day', 86400], ['hour', 3600], ['minute', 60], ['second', 1]]
+        const [unit, size] = units.find(([, n]) => seconds >= n) ?? ['second', 1]
+        const value = Math.max(1, difference > 0 ? Math.ceil(seconds / size) : Math.floor(seconds / size))
+        const unitText = unit === 'day' ? t('routines.unit.day', { count: value })
+          : unit === 'hour' ? t('routines.unit.hour', { count: value })
+          : unit === 'minute' ? t('routines.unit.minute', { count: value })
+          : t('routines.unit.second', { count: value })
+        return {
+          absolute,
+          relative: '(' + (difference > 0
+            ? t('routines.relative.future', { value, unit: unitText })
+            : t('routines.relative.overdue', { value, unit: unitText })) + ')',
+        }
+      }
+
+      /**
+       * The conversation's standing orders, in the native header seat: the
+       * shell's own session-reminder entry (dsh-client-ui-schedule
+       * ScheduleCatalogAction) — an icon-only clock that exists only while
+       * there is something to show, opening a 336px anchored popover of
+       * rows (title, frequency, next run). A goal is just what the user asks
+       * for in the conversation; bots turn it into routines with the
+       * engine's tools, and this is where those routines are visible: the
+       * bot's own in a single chat, every member's in a group (each row
+       * names its member). Read only — the bots manage their routines.
+       */
+      function RoutinesAction(p: { members: any[]; attribute: boolean; refreshKey: string }) {
+        const [rows, setRows] = React.useState(null as Array<{ member: any; routine: any }> | null)
+        const [failed, setFailed] = React.useState(false)
+        const [open, setOpen] = React.useState(false)
+        const [now, setNow] = React.useState(() => Date.now())
+        const [position, setPosition] = React.useState(null as any)
+        // Cancel is two clicks: the first arms the row, the second deletes.
+        const [confirming, setConfirming] = React.useState(null as string | null)
+        const rootRef = React.useRef(null)
+        const triggerRef = React.useRef(null)
+        const menuRef = React.useRef(null)
+        const memberKey = p.members.map((m: any) => String(m?.id ?? '')).join(',')
+        function load(): void {
+          let alive = true
           Promise.all(p.members.map(async (m: any) => {
-            const id = String(m.id ?? '')
-            const [routines, goals] = await Promise.all([
-              botsCall<any[]>('automationsList', { agentId: id }).catch(() => []),
-              botsCall<any[]>('goals', { agentId: id }).catch(() => []),
-            ])
-            return {
-              member: m,
-              routines: (Array.isArray(routines) ? routines : []).filter((a: any) => a.isEnabled !== false),
-              goals: (Array.isArray(goals) ? goals : []).filter((g: any) => g.status !== 'cancelled'),
-            }
-          })).then(rs => { if (!cancelled) setRows(rs) })
-            .catch(e2 => { if (!cancelled) setErr(errText(e2)) })
-          return () => { cancelled = true }
+            const list = await botsCall<any[]>('automationsList', { agentId: String(m.id ?? '') })
+            return (Array.isArray(list) ? list : []).filter((a: any) => a.isEnabled !== false).map((routine: any) => ({ member: m, routine }))
+          })).then((all) => { if (alive) { setRows(all.flat()); setFailed(false) } })
+            .catch(() => { if (alive) setFailed(true) })
+          cancelLoad.current = () => { alive = false }
+        }
+        const cancelLoad = React.useRef(() => {})
+        React.useEffect(() => {
+          load()
+          return () => cancelLoad.current()
           // eslint-disable-next-line react-hooks/exhaustive-deps
-        }, [p.agentId, memberKey])
-        const active = (rows ?? []).some((r: { routines: any[]; goals: any[] }) => r.routines.length > 0 || r.goals.length > 0)
-        return e('div', { className: 'dbs-taskPanel' },
-          e('div', { className: 'dbs-taskHint' }, t('group.tasks.hint')),
-          err !== null ? e('div', { className: 'dbs-error' }, err) : null,
-          rows === null
-            ? e('div', { className: 'dbs-meta dbs-taskLoading' }, t('goal.loading'))
-            : active === false
-              ? e('div', { className: 'dbs-meta dbs-taskLoading' }, t('group.tasks.empty'))
-              : rows.map((r: { member: any; routines: any[]; goals: any[] }) => (r.routines.length === 0 && r.goals.length === 0) ? null : e('div', { key: r.member.id, className: 'dbs-taskMember' },
-                  e('div', { className: 'dbs-taskMemberHead' },
-                    e(Avatar, { agent: r.member, size: 20, round: true }),
-                    e('span', { className: 'dbs-taskMemberName' }, r.member.name)),
-                  r.routines.map((a: any) => e('div', { key: a.id, className: 'dbs-taskRow' },
-                    e('span', { className: 'dbs-taskDot' + (a.isEnabled === false ? ' dbs-taskDotOff' : '') }),
-                    e('span', { className: 'dbs-taskName' }, a.name),
-                    e('span', { className: 'dbs-taskMeta' },
-                      a.triggerDescription !== '' ? a.triggerDescription : a.schedule,
-                      typeof a.nextRunAt === 'number' ? ' · ' + t('goal.next', { time: new Date(a.nextRunAt).toLocaleString() }) : ''))),
-                  r.goals.map((g: any) => e('div', { key: g.id, className: 'dbs-taskRow' },
-                    e('span', { className: 'dbs-taskDot dbs-taskDotGoal' }),
-                    e('span', { className: 'dbs-taskName' }, g.objective),
-                    e('span', { className: 'dbs-taskMeta' }, goalStatusLabel(String(g.status ?? '')))))))
-        )
+        }, [memberKey, p.refreshKey])
+        // Native: re-read while open is cheap; the clock ticks each second.
+        React.useEffect(() => {
+          if (!open) return undefined
+          setNow(Date.now())
+          const timer = setInterval(() => setNow(Date.now()), 1000)
+          return () => clearInterval(timer)
+        }, [open])
+        // Anchor below the trigger, left-aligned, 5px gap, 16px viewport
+        // margin (the native useAnchoredPosition({ side:'bottom', gap:5,
+        // margin:16 }) contract), re-measured on resize.
+        React.useLayoutEffect(() => {
+          if (!open) { setPosition(null); return undefined }
+          const place = (): void => {
+            const trigger: any = triggerRef.current
+            if (trigger === null) return
+            const rect = trigger.getBoundingClientRect()
+            const width = Math.min(336, window.innerWidth - 32)
+            const left = Math.max(16, Math.min(rect.left, window.innerWidth - 16 - width))
+            setPosition({ top: rect.bottom + 5, left })
+          }
+          place()
+          window.addEventListener('resize', place)
+          return () => window.removeEventListener('resize', place)
+        }, [open])
+        // Outside pointer dismisses (native useDismissOnOutsidePointer).
+        React.useEffect(() => {
+          if (!open) return undefined
+          const onDown = (ev: any): void => {
+            const target = ev.target
+            if ((rootRef.current as any)?.contains(target) || (menuRef.current as any)?.contains(target)) return
+            setOpen(false)
+          }
+          document.addEventListener('pointerdown', onDown, true)
+          return () => document.removeEventListener('pointerdown', onDown, true)
+        }, [open])
+        // Escape dismisses wherever focus sits: the popover is a portaled
+        // list with no focusable rows, so a handler on the list itself is
+        // unreachable — the listener has to sit at the document.
+        React.useEffect(() => {
+          if (!open) return undefined
+          const onKey = (ev: any): void => {
+            if (ev.key !== 'Escape') return
+            ev.preventDefault(); ev.stopPropagation()
+            setOpen(false)
+            ;(triggerRef.current as any)?.focus()
+          }
+          document.addEventListener('keydown', onKey, true)
+          return () => document.removeEventListener('keydown', onKey, true)
+        }, [open])
+
+        // Native rule: nothing before the first read, nothing when there are
+        // no routines; a failed read keeps the entry with its retry.
+        if (rows === null && !failed) return null
+        if ((rows ?? []).length === 0 && !failed) return null
+        const list = (rows ?? []).slice().sort((a: any, b: any) =>
+          Number(a.routine.nextRunAt ?? Number.MAX_SAFE_INTEGER) - Number(b.routine.nextRunAt ?? Number.MAX_SAFE_INTEGER))
+        const count = list.length
+        const label = count === 0 ? t('routines.trigger') : t('routines.triggerCount', { count })
+        const showMember = p.attribute
+        async function cancel(member: any, routine: any): Promise<void> {
+          const key = String(member.id) + ':' + String(routine.id)
+          if (confirming !== key) { setConfirming(key); return }
+          setConfirming(null)
+          try {
+            await botsCall('routineDelete', { agentId: String(member.id), routineId: String(routine.id) })
+          } catch { /* the re-read below shows whatever is still there */ }
+          load()
+        }
+        const menu = open ? (ReactDOM !== null ? ReactDOM.createPortal : (node: any) => node)(e('ul', {
+          ref: menuRef, className: 'dbs-routinesMenu', 'aria-label': t('routines.aria'),
+          style: position ?? { visibility: 'hidden', top: 0, left: 0 },
+        },
+          failed ? e('li', { className: 'dbs-routinesRow' },
+            e('span', { role: 'alert' }, t('routines.error')),
+            e('button', { type: 'button', className: 'dbs-routinesRetry', onClick: () => load() }, t('routines.retry'))) : null,
+          list.map(({ member, routine }: { member: any; routine: any }) => {
+            const lastFailed = routine.lastStatus === 'error' || routine.lastStatus === 'failed'
+            const next = typeof routine.nextRunAt === 'number' ? routineNextRun(routine.nextRunAt, now) : null
+            const key = String(member.id) + ':' + String(routine.id)
+            // One-shot routines ("@at …") read as 仅一次; the next-run line
+            // below already says when.
+            const cadence = /^@at\b/i.test(String(routine.schedule ?? '')) ? t('routines.once')
+              : routine.triggerDescription !== '' ? routine.triggerDescription : routine.schedule
+            return e('li', { key, className: 'dbs-routinesRow' + (lastFailed ? ' dbs-routinesRowWarn' : '') },
+              e('span', { className: 'dbs-routinesBody' },
+                e('span', { className: 'dbs-routinesTitle' }, routine.name),
+                e('span', { className: 'dbs-routinesMeta' + (lastFailed ? ' dbs-routinesMetaWarn' : '') },
+                  showMember ? e('span', null, member.name) : null,
+                  e('span', null, cadence),
+                  lastFailed ? e('span', null, t('routines.lastFailed')) : null),
+                next !== null ? e('span', { className: 'dbs-routinesMeta' },
+                  e('span', null, t('routines.nextRun') + ' '),
+                  e('time', { dateTime: new Date(routine.nextRunAt).toISOString() }, next.absolute),
+                  e('span', null, next.relative)) : null),
+              e('button', {
+                type: 'button', className: 'dbs-routinesCancel', 'data-armed': confirming === key ? 'true' : 'false',
+                'aria-label': t('routines.cancel') + ' ' + String(routine.name),
+                onClick: () => { void cancel(member, routine) },
+              }, confirming === key ? t('routines.cancelConfirm') : t('routines.cancel')))
+          })), document.body) : null
+        return e('div', { className: 'dbs-routines', ref: rootRef },
+          e('button', {
+            ref: triggerRef, type: 'button', className: 'dbs-routinesTrigger',
+            'aria-expanded': open, 'aria-label': label, title: label,
+            onClick: () => { if (!open) load(); setNow(Date.now()); setConfirming(null); setOpen(!open) },
+          }, e(ClockGlyph, null)),
+          menu)
       }
 
       /** Model catalog cache shared by the composer picker: modelConfig probes
        * freeroute (seconds); a 60s TTL keeps the chip snappy while staying
        * fresh enough for a change made on the settings page. */
-      const modelCatalog = { at: 0, agentId: null as string | null, cfg: null as any }
+      const modelCatalog = { at: 0, agentId: null as string | null, cfg: null as any, sequence: 0 }
       async function fetchModelCatalog(force = false, agentId: string | null = null): Promise<any> {
         const now = Date.now()
         if (force !== true && modelCatalog.cfg !== null && modelCatalog.agentId === agentId && now - modelCatalog.at < 60_000) return modelCatalog.cfg
+        const sequence = ++modelCatalog.sequence
         const cfg = await botsCall('modelConfig', { agentId: agentId ?? undefined })
-        modelCatalog.at = now
-        modelCatalog.agentId = agentId
-        modelCatalog.cfg = cfg
+        if (sequence === modelCatalog.sequence) {
+          modelCatalog.at = now
+          modelCatalog.agentId = agentId
+          modelCatalog.cfg = cfg
+        }
         return cfg
+      }
+
+      /**
+       * Stale host half (see EXPECTED_HOST_BUILD): the plugin on disk was
+       * rebuilt or upgraded after dsh web started. Presented the way the
+       * shell presents its own pending update — the settings-general
+       * DesktopUpdateIndicator: a brand-blue 28px pill in the sidebar footer
+       * with the detail in a top Tooltip, hidden while the sidebar is a
+       * rail. A status, not a button: the restart is nothing this page can do.
+       */
+      function HostUpdateIndicator(p: { wide?: boolean }): any {
+        const s = useStore()
+        if (p.wide === false || !hostIsStale(s.info)) return null
+        const Icon = NATIVE.IconRefreshOutlineRegular ?? NATIVE.IconDownloadOutlineRegular
+        const pill = e('span', {
+          className: 'dbs-hostUpdate', role: 'status', tabIndex: 0,
+          'aria-label': t('host.staleTitle') + '。' + t('host.staleBody'),
+          title: NATIVE.Tooltip === undefined ? t('host.staleBody') : undefined,
+        },
+          e('span', { className: 'dbs-hostUpdateIcon', 'aria-hidden': true },
+            Icon !== undefined ? e(Icon, { size: 14 }) : e('span', { className: 'dbs-hostUpdateDot' })),
+          e('span', null, t('host.staleTitle')))
+        return e('div', { className: 'dbs-hostUpdateSeat' },
+          NATIVE.Tooltip !== undefined ? e(NATIVE.Tooltip, { label: t('host.staleBody'), side: 'top' }, pill) : pill)
       }
 
       /** The gateway-offline state, as an actionable card rather than a dead
@@ -5649,8 +6167,11 @@ class BotEngine {
       function OfflineCard(p: { compact?: boolean }): any {
         const [busy, setBusy] = React.useState(false)
         const [failed, setFailed] = React.useState(false)
+        // The host reports WHY the ladder failed (health-failed, no launchd
+        // job, …) — surfacing it turns "点击没反应" into a readable diagnosis.
+        const [failReason, setFailReason] = React.useState(null as string | null)
         async function reconnect() {
-          setBusy(true); setFailed(false)
+          setBusy(true); setFailed(false); setFailReason(null)
           try {
             const r: any = await botsCall('reconnect', {})
             if (r?.ok === true) {
@@ -5658,6 +6179,7 @@ class BotEngine {
               void refreshAgents()
             } else {
               setFailed(true)
+              setFailReason(typeof r?.reason === 'string' && r.reason !== '' ? r.reason : null)
             }
           } catch { setFailed(true) }
           setBusy(false)
@@ -5669,77 +6191,141 @@ class BotEngine {
             type: 'button', className: 'dbs-btn', disabled: busy,
             onClick: () => { void reconnect() },
           }, busy === true ? t('gateway.reconnecting') : t('gateway.reconnect')),
-          failed === true ? e('div', { className: 'dbs-meta' }, t('gateway.reconnectFailed')) : null)
+          failed === true ? e('div', { className: 'dbs-meta' }, t('gateway.reconnectFailed') + (failReason !== null ? '（' + failReason + '）' : '')) : null)
       }
 
-      /** Composer model seat on the native InputBar pattern: a compact chip
-       * in the control row naming THIS bot's model, opening a provider-
-       * grouped popover above the composer. Picking writes the per-agent
-       * settings.json modelId — effective on the bot's next turn, no
-       * restart — and the "follow engine default" row clears the override.
-       * The account-wide engine model stays in the settings card (that path
-       * needs a launchd restart); the chip's default row captions it. */
-      function ComposerModelPicker(p: { agentId?: string }) {
-        const [open, setOpen] = React.useState(false)
-        const [cfg, setCfg] = React.useState(null)
-        const [busy, setBusy] = React.useState(false)
-        const [err, setErr] = React.useState(null)
-        const [search, setSearch] = React.useState('')
-        const agentId = typeof p.agentId === 'string' && p.agentId !== '' ? p.agentId : null
-        async function load(force = false) {
-          try { setCfg(await fetchModelCatalog(force, agentId)) } catch (e2: any) { setErr(errText(e2)) }
-        }
-        React.useEffect(() => { void load() }, [agentId])
-        async function pick(modelId: string | null) {
-          if (busy === true || agentId === null) return
-          setBusy(true); setErr(null)
-          try {
-            await botsCall('setAgentModel', { agentId, modelId })
-            await load(true)
-            setOpen(false)
-          } catch (e2: any) { setErr(errText(e2)) }
-          setBusy(false)
-        }
-        const current = typeof cfg?.agentModelId === 'string' && cfg.agentModelId !== '' ? cfg.agentModelId : null
-        const engineModel = typeof cfg?.engine?.modelId === 'string' && cfg.engine.modelId !== ''
-          ? cfg.engine.modelId : null
-        const engineDefault = typeof cfg?.agentDefaultModel === 'string' && cfg.agentDefaultModel !== ''
-          ? cfg.agentDefaultModel : engineModel
-        const chipLabel = current !== null
-          ? current
-          : `${t('composer.model.defaultPrefix')}${engineDefault ?? t('composer.model.auto')}`
-        if (open !== true) {
-          return e('button', {
-            type: 'button', className: 'dbs-modelChip', disabled: busy === true,
-            title: `${t('composer.model.title')}: ${chipLabel}`, 'aria-label': `${t('composer.model.title')}: ${chipLabel}`,
-            'aria-haspopup': 'menu', 'aria-expanded': 'false',
-            onClick: () => { setOpen(true); void load() },
-          }, e('span', { className: 'dbs-modelChipLabel' }, chipLabel))
-        }
-        // Same bucketing as the settings card (DeepSeek lifted out of
-        // freeroute's aggregator, DSH providers appended) so the two
-        // surfaces read alike.
+      /** Provider buckets both model pickers list, in the same order: the
+       * engine's DeepSeek ids lifted out of freeroute's aggregator bucket
+       * (which hid them inside `orcarouter`), freeroute's upstream groups,
+       * then the DSH catalog (llm service) — the providers the native model
+       * page offers. */
+      function modelProviders(cfg: any): Array<{ key: string; label: string; models: string[] }> {
         const groups: any[] = Array.isArray(cfg?.groups) ? cfg.groups : []
         const deepseekModels: string[] = Array.isArray(cfg?.deepseek) ? cfg.deepseek : []
         const nativeProviders: any[] = Array.isArray(cfg?.native?.providers) ? cfg.native.providers : []
-        const providers: any[] = [
+        return [
           ...(deepseekModels.length > 0
             ? [{ key: '__deepseek', label: t('settings.model.deepseek'), models: deepseekModels }]
             : []),
-          ...groups.map((g: any) => ({ key: g.provider, label: String(g.provider ?? ''), models: Array.isArray(g.models) ? g.models : [] })),
+          // Listed once: an id already in the DeepSeek bucket leaves its
+          // aggregator group (the flat menu showed it twice, both checked).
+          ...groups.map((g: any) => ({
+            key: String(g.provider ?? ''), label: String(g.provider ?? ''),
+            models: (Array.isArray(g.models) ? g.models : []).map(String).filter((m: string) => !deepseekModels.includes(m)),
+          })),
           ...nativeProviders.map((pv: any) => ({
             key: 'dsh:' + pv.id, label: `DSH · ${pv.name}`,
             models: (Array.isArray(pv.models) ? pv.models : []).map((m: any) => pv.id + '/' + m.id),
           })),
-        ].filter((g: any) => g.models.length > 0)
-        // Lead with the override-clearing row, then the catalog; a needle
-        // filters (subsequence match, like the native picker's search).
+        ].filter((g) => g.models.length > 0)
+      }
+
+      /**
+       * The native composer sequence is root → provider-grouped model list.
+       * Settings opens the list directly. Both use the native fixed portal,
+       * viewport margins, neutral radio rows and keyboard navigation. A
+       * current model missing from the catalog remains selectable.
+       */
+      function ModelMenu(p: {
+        cfg: any
+        current: string | null
+        busy: boolean
+        err: string | null
+        lead: { label: string; caption: string | null }
+        side: 'top' | 'bottom'
+        anchorRef: any
+        menuId?: string
+        composerLabel?: string
+        loading?: boolean
+        pending?: { modelId: string | null } | null
+        onRetry?: () => void
+        onPick: (modelId: string | null) => void
+        onClose: () => void
+      }) {
+        const [search, setSearch] = React.useState('')
+        const [pane, setPane] = React.useState(p.composerLabel === undefined ? 'model' : 'root')
+        const [position, setPosition] = React.useState(null as any)
+        const menuRef = React.useRef(null)
+        const menuId = React.useId()
+        const closeRef = React.useRef(p.onClose)
+        closeRef.current = p.onClose
+        function close(restoreFocus = false) {
+          closeRef.current()
+          if (restoreFocus) queueMicrotask(() => p.anchorRef.current?.focus())
+        }
+        function back() { setSearch(''); setPane('root') }
+        // Match the native model seat: outside clicks reach their target,
+        // Escape first returns to the root menu, then restores the trigger.
+        React.useEffect(() => {
+          const onKey = (ev: any): void => {
+            if (ev.key === 'Escape') {
+              ev.preventDefault(); ev.stopPropagation()
+              if (p.composerLabel !== undefined && pane !== 'root') back()
+              else close(true)
+              return
+            }
+            if (ev.key !== 'ArrowDown' && ev.key !== 'ArrowUp' && ev.key !== 'Home' && ev.key !== 'End') return
+            if (ev.target instanceof HTMLInputElement && ev.key !== 'ArrowDown' && ev.key !== 'ArrowUp') return
+            if (!menuRef.current?.contains(ev.target) && ev.target !== p.anchorRef.current) return
+            const items = Array.from(menuRef.current?.querySelectorAll('[role^="menuitem"]:not(:disabled)') ?? []) as any[]
+            if (!items.length) return
+            ev.preventDefault(); ev.stopPropagation()
+            const index = items.indexOf(document.activeElement)
+            const next = ev.key === 'Home' ? 0 : ev.key === 'End' ? items.length - 1
+              : index < 0 ? (ev.key === 'ArrowDown' ? 0 : items.length - 1)
+                : (index + (ev.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+            items[next]?.focus()
+          }
+          const outside = (ev: any) => {
+            if (p.anchorRef.current?.contains(ev.target) || menuRef.current?.contains(ev.target)) return
+            close()
+          }
+          document.addEventListener('keydown', onKey, true)
+          document.addEventListener('mousedown', outside)
+          document.addEventListener('focusin', outside)
+          return () => {
+            document.removeEventListener('keydown', onKey, true)
+            document.removeEventListener('mousedown', outside)
+            document.removeEventListener('focusin', outside)
+          }
+        }, [pane, p.composerLabel !== undefined])
+        React.useLayoutEffect(() => {
+          const place = () => {
+            const anchor = p.anchorRef.current?.getBoundingClientRect()
+            const menu = menuRef.current
+            if (!anchor || !menu) return
+            const margin = 12, width = menu.offsetWidth, height = menu.offsetHeight
+            const left = Math.max(margin, Math.min(anchor.right - width, window.innerWidth - width - margin))
+            const top = Math.max(margin, Math.min(p.side === 'top' ? anchor.top - 8 - height : anchor.bottom + 6,
+              window.innerHeight - height - margin))
+            setPosition((previous: any) => previous?.left === left && previous?.top === top ? previous : { left, top })
+          }
+          place()
+          const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(place) : null
+          if (menuRef.current) observer?.observe(menuRef.current)
+          if (p.anchorRef.current) observer?.observe(p.anchorRef.current)
+          window.addEventListener('resize', place)
+          window.addEventListener('scroll', place, true)
+          return () => { observer?.disconnect(); window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true) }
+        }, [pane, p.cfg, p.err, search, p.side, p.loading])
+        const previousPane = React.useRef(pane)
+        React.useEffect(() => {
+          if (previousPane.current === pane) return
+          previousPane.current = pane
+          const target = pane === 'root' ? menuRef.current?.querySelector('.dbs-modelCell')
+            : menuRef.current?.querySelector('input') ?? menuRef.current?.querySelector('[data-current="true"]')
+              ?? menuRef.current?.querySelector('[role="menuitemradio"]')
+          target?.focus()
+        }, [pane])
         const rows: Array<{ modelId: string | null; label: string; caption: string | null; group: string }> = [
-          { modelId: null, label: t('model.followEngine'), caption: engineDefault ?? t('model.engineUnset'), group: '' },
-          ...providers.flatMap((g: any) => (g.models as string[]).map((m: string) => ({
-            modelId: m, label: m, caption: null, group: g.label as string,
+          { modelId: null, label: p.lead.label, caption: p.lead.caption, group: '' },
+          ...modelProviders(p.cfg).flatMap((g) => g.models.map((m: string) => ({
+            modelId: m, label: m, caption: null, group: g.label,
           }))),
         ]
+        if (p.current !== null && !rows.some((r) => r.modelId === p.current)) {
+          rows.splice(1, 0, { modelId: p.current, label: p.current, caption: null, group: t('model.currentGroup') })
+        }
         const needle = search.trim().toLowerCase()
         const visible = needle === ''
           ? rows
@@ -5748,39 +6334,273 @@ class BotEngine {
               for (const ch of `${r.label} ${r.group}`.toLowerCase()) if (ch === needle[i]) i++
               return i >= needle.length
             })
-        return e('span', { className: 'dbs-modelSeat' },
-          e('button', {
-            type: 'button', className: 'dbs-modelChip dbs-modelChipActive', disabled: busy === true,
-            'aria-haspopup': 'menu', 'aria-expanded': 'true',
-            onClick: () => setOpen(false),
-          }, e('span', { className: 'dbs-modelChipLabel' }, chipLabel)),
-          e('div', { style: { position: 'fixed', inset: 0, zIndex: 59 }, onClick: () => setOpen(false) }),
-          e('div', { className: 'dbs-modelMenu', role: 'menu' },
-            visible.length > 6 ? e('input', {
+        const menu = e('div', {
+          ref: menuRef, id: p.menuId ?? menuId, className: 'dbs-modelMenu', role: 'menu', 'data-side': p.side, 'data-pane': pane,
+          'aria-label': t('composer.model.title'), 'aria-busy': p.loading || p.busy,
+          style: position ?? { visibility: 'hidden', top: 0, left: 0 },
+          onBlur: (ev: any) => {
+            if (!(ev.relatedTarget instanceof Node)) return
+            if (menuRef.current?.contains(ev.relatedTarget) || p.anchorRef.current?.contains(ev.relatedTarget)) return
+            close()
+          },
+        },
+          pane === 'root' ? e('button', {
+            className: 'dbs-modelCell', type: 'button', role: 'menuitem', 'aria-haspopup': 'menu',
+            onClick: () => setPane('model'),
+          }, e('span', null, t('model.menuModel')),
+            e('span', { className: 'dbs-modelCellValue' }, p.composerLabel), e(ModelChevron, { right: true })) : null,
+          pane === 'model' ? e(React.Fragment, null,
+            p.composerLabel !== undefined ? e('button', { className: 'dbs-modelBack', type: 'button', onClick: back },
+              e(ModelChevron, { left: true }), t('model.back')) : null,
+            p.loading ? e('div', { className: 'dbs-modelStatus', role: 'status' }, t('settings.reading')) : null,
+            p.err !== null ? e('div', { className: 'dbs-modelErrorStrip', role: 'alert' },
+              e('span', null, p.err), p.onRetry ? e('button', { type: 'button', className: 'dbs-modelRetry', onClick: p.onRetry }, t('model.retry')) : null) : null,
+            // Keyed on the full list, not the filtered one: filtering down
+            // to a handful of rows must not take the field away mid-typing.
+            rows.length > 5 ? e('input', {
               className: 'dbs-modelSearch', value: search, autoFocus: true, spellCheck: false,
-              placeholder: t('model.searchPlaceholder'),
+              placeholder: t('model.searchPlaceholder'), 'aria-label': t('model.searchPlaceholder'),
               onChange: (ev: any) => setSearch(ev.target.value),
-              onKeyDown: (ev: any) => { if (ev.key === 'Escape') { ev.stopPropagation(); setOpen(false) } },
             }) : null,
-            visible.map((r, index) => {
-              const active = r.modelId === null ? current === null : current === r.modelId
+            visible.length === 0 ? e('div', { className: 'dbs-modelEmpty' }, t('model.noMatch')) : null,
+            e('div', { className: 'dbs-modelGroups' }, visible.map((r, index) => {
+              const active = p.cfg != null && (r.modelId === null ? p.current === null : p.current === r.modelId)
               const header = r.group !== '' && (index === 0 || visible[index - 1].group !== r.group)
                 ? e('div', { className: 'dbs-modelGroup' }, r.group) : null
               const row = e('button', {
                 key: (r.modelId ?? '__default') + index, type: 'button', className: 'dbs-modelRow',
                 role: 'menuitemradio', 'aria-checked': active ? 'true' : 'false',
                 'data-current': active ? 'true' : 'false',
-                disabled: busy === true,
-                onClick: () => { void pick(r.modelId) },
+                title: r.label, disabled: p.busy || p.cfg == null,
+                onClick: () => { p.onPick(r.modelId) },
               },
-                e('span', { className: 'dbs-modelCheck' }, active ? '✓' : ''),
                 e('span', { className: 'dbs-modelName' },
                   r.label,
-                  r.caption !== null ? e('span', { className: 'dbs-modelCaption' }, r.caption) : null))
+                  r.caption !== null ? e('span', { className: 'dbs-modelCaption' }, r.caption) : null),
+                e('span', { className: 'dbs-modelCheck' }, p.busy && p.pending?.modelId === r.modelId
+                  ? e('span', { className: 'dbs-modelSpinner', role: 'status', 'aria-label': t('action.saving') }) : active ? '✓' : ''))
               return header === null ? row : e(React.Fragment, { key: 'h' + index }, header, row)
-            }),
-            err !== null ? e('div', { className: 'dbs-modelErr' }, err) : null,
-            e('div', { className: 'dbs-modelHint' }, t('composer.model.hint'))))
+            }))) : null)
+        return ReactDOM !== null ? ReactDOM.createPortal(menu, document.body) : menu
+      }
+
+      function ModelChevron(p: { right?: boolean; left?: boolean }) {
+        return e('svg', { width: 14, height: 14, viewBox: '0 0 14 14', className: 'dbs-modelChevron', 'aria-hidden': true },
+          e('path', { d: p.right ? 'M5 3l4 4-4 4' : p.left ? 'M9 3L5 7l4 4' : 'M3 5l4 4 4-4', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round' }))
+      }
+
+      /** Composer model seat on the native InputBar pattern: a compact chip
+       * in the control row naming THIS bot's model, opening the provider-
+       * root menu, then the grouped ModelMenu above the composer. Picking writes the per-agent
+       * settings.json modelId — effective on the bot's next turn, no
+       * restart — and the "follow the global default" row clears the
+       * override. The global default stays in the settings card (that path
+       * restarts the service); the chip's default row captions it. */
+      function ComposerModelPicker(p: { agentId?: string }) {
+        const [open, setOpen] = React.useState(false)
+        const [cfg, setCfg] = React.useState(null)
+        const [busy, setBusy] = React.useState(false)
+        const [loading, setLoading] = React.useState(false)
+        const [pending, setPending] = React.useState(null as { modelId: string | null } | null)
+        const [err, setErr] = React.useState(null)
+        const triggerRef = React.useRef(null)
+        const menuId = React.useId()
+        const requestSeq = React.useRef(0)
+        const selecting = React.useRef(false)
+        const lastAttempt = React.useRef(null as { modelId: string | null } | null)
+        const agentId = typeof p.agentId === 'string' && p.agentId !== '' ? p.agentId : null
+        const agentRef = React.useRef(agentId)
+        agentRef.current = agentId
+        async function load(force = false) {
+          const sequence = ++requestSeq.current
+          setLoading(true); setErr(null); lastAttempt.current = null
+          try {
+            const result = await fetchModelCatalog(force, agentId)
+            if (agentRef.current === agentId && sequence === requestSeq.current) setCfg(result)
+          } catch (e2: any) {
+            if (agentRef.current === agentId && sequence === requestSeq.current) setErr(errText(e2))
+          } finally {
+            if (agentRef.current === agentId && sequence === requestSeq.current) setLoading(false)
+          }
+        }
+        React.useEffect(() => {
+          setOpen(false); setCfg(null); setBusy(false); setPending(null); selecting.current = false
+          void load()
+          return () => { requestSeq.current++ }
+        }, [agentId])
+        async function pick(modelId: string | null) {
+          if (selecting.current || agentId === null) return
+          if (modelId === (cfg?.agentModelId ?? null)) {
+            setOpen(false); triggerRef.current?.focus(); return
+          }
+          selecting.current = true
+          lastAttempt.current = { modelId }
+          setBusy(true); setPending({ modelId }); setErr(null)
+          try {
+            await botsCall('setAgentModel', { agentId, modelId })
+            if (agentRef.current !== agentId) return
+            requestSeq.current++
+            modelCatalog.sequence++
+            const next = { ...cfg, agentModelId: modelId }
+            setCfg(next); setLoading(false)
+            if (modelCatalog.agentId === agentId) { modelCatalog.cfg = next; modelCatalog.at = Date.now() }
+            setOpen(false)
+            queueMicrotask(() => triggerRef.current?.focus())
+          } catch (e2: any) {
+            if (agentRef.current === agentId) setErr(errText(e2))
+          } finally {
+            if (agentRef.current === agentId) { selecting.current = false; setBusy(false); setPending(null) }
+          }
+        }
+        const current = typeof cfg?.agentModelId === 'string' && cfg.agentModelId !== '' ? cfg.agentModelId : null
+        const engineModel = typeof cfg?.engine?.modelId === 'string' && cfg.engine.modelId !== ''
+          ? cfg.engine.modelId : null
+        const engineDefault = typeof cfg?.agentDefaultModel === 'string' && cfg.agentDefaultModel !== ''
+          ? cfg.agentDefaultModel : engineModel
+        const chipLabel = cfg === null ? t('composer.model.title') : current !== null
+          ? current
+          : `${t('composer.model.defaultPrefix')}${engineDefault ?? t('composer.model.auto')}`
+        return e('span', { className: 'dbs-modelSeat' },
+          e('button', {
+            ref: triggerRef,
+            type: 'button', className: 'dbs-modelChip' + (open ? ' dbs-modelChipActive' : ''), disabled: busy === true,
+            title: `${t('composer.model.title')}: ${chipLabel}\n${t('composer.model.hint')}`, 'aria-label': `${t('composer.model.title')}: ${chipLabel}`,
+            'aria-haspopup': 'menu', 'aria-expanded': open ? 'true' : 'false',
+            'aria-controls': open ? menuId : undefined,
+            onClick: () => { if (open) { setOpen(false); return } setOpen(true); void load() },
+          },
+            e('span', { className: 'dbs-modelCompactIcon', 'aria-hidden': true }, Ico('IconDataOutline16', { size: 16 }) ?? e('svg', { width: 16, height: 16, viewBox: '0 0 16 16' },
+              e('path', { d: 'M3 3h10v10H3zM6 3v10M10 3v10M3 6h10M3 10h10', fill: 'none', stroke: 'currentColor', strokeWidth: 1 }))),
+            e('span', { className: 'dbs-modelChipLabel' }, cfg === null && loading ? t('settings.reading') : chipLabel),
+            busy ? e('span', { className: 'dbs-modelSpinner', role: 'status', 'aria-label': t('action.saving') }) : e(ModelChevron, null)),
+          open
+            ? e(ModelMenu, {
+                cfg, current, busy: busy === true, err, side: 'top', anchorRef: triggerRef, menuId,
+                composerLabel: cfg === null && loading ? t('settings.reading') : chipLabel, loading, pending,
+                lead: { label: t('model.followEngine'), caption: engineDefault ?? t('model.engineUnset') },
+                onRetry: () => { if (lastAttempt.current !== null) void pick(lastAttempt.current.modelId); else void load(true) },
+                onPick: (modelId: string | null) => { void pick(modelId) },
+                onClose: () => setOpen(false),
+              })
+            : null)
+      }
+
+      // =========================================================
+      // 定时任务: schedule a prompt from the composer.
+      // =========================================================
+      /** The form's repeat choice → a schedule the engine reads in the user's
+       * local time: a one-shot "@at" (the engine retires it after its run)
+       * or a 5-field cron. */
+      function routineSchedule(at: Date, repeat: string): string {
+        const p2 = (n: number): string => String(n).padStart(2, '0')
+        const minute = at.getMinutes()
+        const hour = at.getHours()
+        if (repeat === 'daily') return `${minute} ${hour} * * *`
+        if (repeat === 'weekdays') return `${minute} ${hour} * * 1-5`
+        if (repeat === 'weekly') return `${minute} ${hour} * * ${at.getDay()}`
+        return `@at ${at.getFullYear()}-${p2(at.getMonth() + 1)}-${p2(at.getDate())} ${p2(hour)}:${p2(minute)}`
+      }
+      /** A datetime-local value: local wall time to the minute. */
+      function localInputValue(d: Date): string {
+        const p2 = (n: number): string => String(n).padStart(2, '0')
+        return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}`
+      }
+      /** What the schedule will do, in words: "将在 明天 10:00 运行一次". */
+      function routineSummary(at: Date, repeat: string): string {
+        const ms = at.getTime()
+        if (repeat === 'daily') return t('schedule.summary.daily', { time: clockOf(ms) })
+        if (repeat === 'weekdays') return t('schedule.summary.weekdays', { time: clockOf(ms) })
+        if (repeat === 'weekly') {
+          let weekday = ''
+          try { weekday = at.toLocaleDateString(t('time.locale'), { weekday: 'short' }) } catch { weekday = String(at.getDay()) }
+          return t('schedule.summary.weekly', { weekday, time: clockOf(ms) })
+        }
+        return t('schedule.summary.once', { when: stampOf(ms) })
+      }
+
+      /**
+       * The composer's 定时任务 form, opened from the + / `/` command menu:
+       * what to do (the draft carries over), when, and whether it repeats.
+       * It sits where the command menu sat, on the same opaque menu surface,
+       * and creates the routine on THIS conversation — a bot's own, or the
+       * group's (a group routine wakes the room). Escape cancels.
+       */
+      function ScheduleForm(p: { agentId: string; isGroup: boolean; initialPrompt: string; onCancel: () => void; onCreated: (summary: string) => void }) {
+        const [prompt, setPrompt] = React.useState(p.initialPrompt)
+        const [when, setWhen] = React.useState(() => {
+          const d = new Date()
+          d.setDate(d.getDate() + 1)
+          d.setHours(9, 0, 0, 0)
+          return localInputValue(d)
+        })
+        const [repeat, setRepeat] = React.useState('once')
+        const [busy, setBusy] = React.useState(false)
+        const [err, setErr] = React.useState(null as string | null)
+        const cancelRef = React.useRef(p.onCancel)
+        cancelRef.current = p.onCancel
+        React.useEffect(() => {
+          const onKey = (ev: any): void => {
+            if (ev.key !== 'Escape') return
+            ev.preventDefault(); ev.stopPropagation()
+            cancelRef.current()
+          }
+          document.addEventListener('keydown', onKey, true)
+          return () => document.removeEventListener('keydown', onKey, true)
+        }, [])
+        // datetime-local values parse as local wall time.
+        const at = new Date(when)
+        const timeOk = !Number.isNaN(at.getTime())
+        const past = timeOk && repeat === 'once' && at.getTime() <= Date.now()
+        const valid = prompt.trim() !== '' && timeOk && !past
+        async function create(): Promise<void> {
+          if (!valid || busy) return
+          setBusy(true); setErr(null)
+          try {
+            await botsCall('routineCreate', { agentId: p.agentId, prompt: prompt.trim(), schedule: routineSchedule(at, repeat) })
+            p.onCreated(routineSummary(at, repeat))
+          } catch (e2: any) { setErr(errText(e2)); setBusy(false) }
+        }
+        const repeats: Array<[string, string]> = [
+          ['once', t('schedule.repeat.once')],
+          ['daily', t('schedule.repeat.daily')],
+          ['weekdays', t('schedule.repeat.weekdays')],
+          ['weekly', t('schedule.repeat.weekly')],
+        ]
+        const status = err ?? (past ? t('schedule.past') : timeOk ? routineSummary(at, repeat) : '')
+        return e('div', { className: 'dbs-schedule', role: 'dialog', 'aria-label': t('chat.command.schedule') },
+          e('div', { className: 'dbs-scheduleHead' },
+            e('span', { className: 'dbs-scheduleTitle' }, t('chat.command.schedule')),
+            e('button', {
+              type: 'button', className: 'dbs-previewClose', title: t('action.cancel'), 'aria-label': t('action.cancel'),
+              onClick: () => p.onCancel(),
+            }, Ico('IconCloseOutline16', { size: 16 }) ?? '×')),
+          e('textarea', {
+            className: 'dbs-scheduleInput', rows: 2, value: prompt, autoFocus: true,
+            placeholder: p.isGroup ? t('schedule.promptPh.group') : t('schedule.promptPh'),
+            'aria-label': t('schedule.what'),
+            onChange: (ev: any) => setPrompt(ev.target.value),
+            onKeyDown: (ev: any) => {
+              if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); void create() }
+            },
+          }),
+          e('div', { className: 'dbs-scheduleRow' },
+            e('label', { className: 'dbs-scheduleField' },
+              e('span', null, t('schedule.when')),
+              e('input', {
+                type: 'datetime-local', className: 'dbs-scheduleTime', value: when,
+                onChange: (ev: any) => setWhen(ev.target.value),
+              })),
+            e('div', { className: 'dbs-scheduleRepeat', role: 'radiogroup', 'aria-label': t('schedule.repeat') },
+              repeats.map(([id, label]) => e('button', {
+                key: id, type: 'button', role: 'radio', className: 'dbs-scheduleChip',
+                'aria-checked': repeat === id ? 'true' : 'false',
+                onClick: () => setRepeat(id),
+              }, label)))),
+          e('div', { className: 'dbs-scheduleFoot' },
+            e('span', { className: 'dbs-scheduleStatus', 'data-warn': err !== null || past ? 'true' : 'false', role: 'status' }, status),
+            e(Button, { variant: 'ghost', size: 'sm', disabled: busy, onClick: () => p.onCancel() }, t('action.cancel')),
+            e(Button, { variant: 'primary', size: 'sm', disabled: !valid || busy, onClick: () => { void create() } },
+              busy ? t('schedule.creating') : t('action.create'))))
       }
 
       function ChatView(p: { agentId: string }) {
@@ -5789,13 +6609,22 @@ class BotEngine {
         // Live turn-process outline (thinking/tool rows for the running turn),
         // from the engine's outline channel — see OutlineRows.
         const [outline, setOutline] = React.useState([] as any[])
-        const [taskPanel, setTaskPanel] = React.useState(false)
         const [input, setInput] = React.useState('')
         const [sending, setSending] = React.useState(false)
         const [stopping, setStopping] = React.useState(false)
         const [error, setError] = React.useState(null)
-        const [mention, setMention] = React.useState(null) // {query, index} | null
+        const [mention, setMention] = React.useState(null) // {kind, query, index, typed, value?} | null
         const [chatSkills, setChatSkills] = React.useState([] as any[])
+        // The 定时任务 form in place of the command menu; `restore` is the
+        // draft it took over, put back if the form is cancelled.
+        const [scheduling, setScheduling] = React.useState(null as null | { prompt: string; restore: string })
+        // A short confirmation above the composer (e.g. the routine created).
+        const [notice, setNotice] = React.useState(null as string | null)
+        React.useEffect(() => {
+          if (notice === null) return undefined
+          const timer = setTimeout(() => setNotice(null), 5000)
+          return () => clearTimeout(timer)
+        }, [notice])
         // Pending image attachments (multimodal): read to base64 the moment
         // they are picked or pasted so the preview is byte-exact what gets
         // sent; cleared on a successful send. Not part of draftMemory — a
@@ -5832,11 +6661,109 @@ class BotEngine {
           ? t('chat.composingFor', { duration: formatRunDuration(Math.max(1000, elapsedMs)) })
           : t('chat.composing')
 
-        async function loadTranscript() {
+        // Transcript window. The first read takes the newest page; after that
+        // live rows merge straight in from the event ring (the host ships
+        // them in display shape), and the tail is re-read only to reconcile —
+        // a few rows, coalesced, never two reads in flight. Older history
+        // pages in on demand through the engine's own `beforeSeq` cursor.
+        const entriesRef = React.useRef(null as any[] | null)
+        const [olderCursor, setOlderCursor] = React.useState(null as number | null)
+        const [loadingOlder, setLoadingOlder] = React.useState(false)
+        const syncRef = React.useRef({ inFlight: false, again: false, full: false })
+        function putEntries(next: any[] | null): void {
+          entriesRef.current = next
+          setEntries(next)
+        }
+        /** Fold a fresh tail into the list: known rows replaced in place, new
+         * rows appended. No overlap at all means rows were missed → null. */
+        function mergeTail(prev: any[], tail: any[]): any[] | null {
+          if (tail.length === 0) return prev
+          const at = new Map<string, number>()
+          prev.forEach((row: any, i: number) => { if (row?.id) at.set(row.id, i) })
+          if (prev.length > 0 && !tail.some((row: any) => at.has(row?.id))) return null
+          const next = prev.slice()
+          for (const row of tail) {
+            const i = at.get(row?.id)
+            if (i === undefined) next.push(row)
+            else next[i] = row
+          }
+          return next
+        }
+        /** Re-read the tail. `full` replaces the window (first load, engine
+         * snapshot, detected gap); otherwise a short tail is merged. */
+        async function loadTranscript(full = false): Promise<void> {
+          const box = syncRef.current
+          if (full) box.full = true
+          if (box.inFlight) { box.again = true; return }
+          box.inFlight = true
           try {
-            const r: any = await botsCall('transcriptTail', { id: p.agentId, limit: 80 })
-            setEntries(Array.isArray(r?.entries) ? r.entries : [])
-          } catch (err: any) { setError(String(err?.message ?? err)) }
+            do {
+              box.again = false
+              const current = entriesRef.current
+              const wantFull = box.full || current === null
+              box.full = false
+              const limit = wantFull ? Math.min(500, Math.max(80, (current?.length ?? 0) + 20)) : 24
+              const r: any = await botsCall('transcriptTail', { id: p.agentId, limit })
+              const tail = Array.isArray(r?.entries) ? r.entries : []
+              if (wantFull) {
+                putEntries(tail)
+                setOlderCursor(typeof r?.nextBeforeSeq === 'number' ? r.nextBeforeSeq : null)
+              } else {
+                const merged = mergeTail(entriesRef.current ?? [], tail)
+                if (merged === null) { box.full = true; box.again = true } else putEntries(merged)
+              }
+            } while (box.again)
+          } catch (err: any) { setError(errText(err)) } finally { box.inFlight = false }
+        }
+        /** Apply one live transcript event for this chat; false = could not
+         * apply it locally (no display row, unknown id) → caller re-reads. */
+        function applyLive(payload: any): boolean {
+          const row = payload?.view
+          if (row === null || typeof row !== 'object' || typeof row.id !== 'string' || row.id === '') return false
+          const current = entriesRef.current
+          if (current === null) return false
+          const i = current.findIndex((x: any) => x?.id === row.id)
+          if (payload.type === 'updated' && i < 0) return false
+          const next = current.slice()
+          if (i < 0) next.push(row)
+          else next[i] = row
+          putEntries(next)
+          return true
+        }
+        /** Page one screen of older history in above the current rows,
+         * keeping the reader's viewport where it was. */
+        const olderBusyRef = React.useRef(false)
+        // Distance from the bottom to restore once the older page commits.
+        // Restored in a layout effect — before paint and before any scroll
+        // event — because a frame-late restore left the view at the top for
+        // one scroll tick, and the infinite-scroll check paged a second
+        // screen in behind a single "加载更早" click.
+        const olderRestoreRef = React.useRef(null as number | null)
+        React.useLayoutEffect(() => {
+          const fromBottom = olderRestoreRef.current
+          if (fromBottom === null) return
+          olderRestoreRef.current = null
+          const node: any = scrollRef.current
+          if (node !== null && node !== undefined) node.scrollTop = node.scrollHeight - fromBottom
+        }, [entries])
+        async function loadOlder(): Promise<void> {
+          // Ref, not state: a scroll tick and a click in the same frame both
+          // see the pre-render `loadingOlder`, and must not fetch twice.
+          if (olderCursor === null || olderBusyRef.current) return
+          olderBusyRef.current = true
+          setLoadingOlder(true)
+          const el: any = scrollRef.current
+          const fromBottom = el !== null && el !== undefined ? el.scrollHeight - el.scrollTop : 0
+          try {
+            const r: any = await botsCall('transcriptTail', { id: p.agentId, limit: 80, beforeSeq: olderCursor })
+            const page = Array.isArray(r?.entries) ? r.entries : []
+            const current = entriesRef.current ?? []
+            const known = new Set(current.map((x: any) => x?.id))
+            stickRef.current = false
+            olderRestoreRef.current = fromBottom
+            putEntries([...page.filter((x: any) => !known.has(x?.id)), ...current])
+            setOlderCursor(typeof r?.nextBeforeSeq === 'number' ? r.nextBeforeSeq : null)
+          } catch (err: any) { setError(errText(err)) } finally { olderBusyRef.current = false; setLoadingOlder(false) }
         }
 
         React.useEffect(() => {
@@ -5855,7 +6782,9 @@ class BotEngine {
         }, [p.agentId])
 
         React.useEffect(() => {
-          setEntries(null); setError(null); setMention(null)
+          putEntries(null); setError(null); setMention(null); setScheduling(null); setNotice(null)
+          setOlderCursor(null)
+          syncRef.current = { inFlight: false, again: false, full: false }
           // Picked-but-unsent images belong to the chat they were picked in;
           // switching conversations discards them (the text draft persists).
           setPendingImages([])
@@ -5863,7 +6792,7 @@ class BotEngine {
           // the unsent draft (kept in memory for the plugin lifetime); a
           // fresh conversation starts empty.
           setInput(draftMemory.get(p.agentId) ?? '')
-          void loadTranscript()
+          void loadTranscript(true)
           // While this conversation is open it is being read: arrivals for it
           // must not leave a badge on the row the user is looking at. The
           // host bump lands first, our debounced markRead cancels it out.
@@ -5877,7 +6806,24 @@ class BotEngine {
             }, 1200)
           }
           const unsub = ring.subscribe((channels, events) => {
-            if (channels.has('transcript') || channels.has('client-side-tool-v2')) void loadTranscript()
+            if (channels.has('transcript') && Array.isArray(events)) {
+              // Live rows merge in place; only what can't be applied locally
+              // (engine snapshot/clear, an update for a row we never saw, an
+              // old host without display rows) falls back to a tail re-read.
+              let reread = false
+              let full = false
+              for (const ev of events) {
+                if (ev?.channel !== 'transcript') continue
+                const payload = ev?.data
+                const owner = String(payload?.agentId ?? payload?.activeAgentId ?? '')
+                if (owner !== '' && owner !== p.agentId) continue
+                if (payload?.type === 'snapshot' || payload?.type === 'cleared') { full = true; continue }
+                if ((payload?.type === 'appended' || payload?.type === 'updated') && applyLive(payload)) continue
+                reread = true
+              }
+              if (full || reread) void loadTranscript(full)
+            }
+            if (channels.has('client-side-tool-v2')) void loadTranscript()
             if (channels.has('outline') && Array.isArray(events)) {
               for (const ev of events) {
                 const payload = ev?.data
@@ -5913,6 +6859,15 @@ class BotEngine {
           }
           // eslint-disable-next-line react-hooks/exhaustive-deps
         }, [p.agentId])
+
+        // A run settling is the one moment live rows may have raced their
+        // final state (stream tail, tool result): reconcile the tail once.
+        const wasComposingRef = React.useRef(composing)
+        React.useEffect(() => {
+          if (wasComposingRef.current && !composing) void loadTranscript()
+          wasComposingRef.current = composing
+          // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, [composing])
 
         // Elapsed clock for the active turn — mirrors the native RunningStatus:
         // the label shows the clock from the first second (native floors to
@@ -5975,6 +6930,8 @@ class BotEngine {
           stickRef.current = distance < 80
           const next = distance > 240
           setShowJump((prev: boolean) => (prev === next ? prev : next))
+          // Reaching the top pages older history in (native infinite scroll).
+          if (el.scrollTop < 160 && olderCursor !== null && !loadingOlder) void loadOlder()
           // The active turn tick tracks the reading position (native rail).
           // Coalesced to one rAF: measuring every anchor per scroll event
           // would read layout dozens of times a frame for nothing.
@@ -6006,6 +6963,12 @@ class BotEngine {
           if (el === null || el === undefined) return
           if (stickRef.current) el.scrollTo({ top: el.scrollHeight, behavior: 'auto' })
         }, [entries, composing])
+
+        // Members whose own run is active inside this room turn.
+        const replyingMembers = isGroup
+          ? (agent?.memberIds ?? []).map((id: string) => agentById(id))
+              .filter((m: any) => m !== null && (m.isRunning === true || m.isComposingMessage === true))
+          : []
 
         const memberNames = React.useMemo(() => {
           if (!isGroup) return []
@@ -6041,20 +7004,31 @@ class BotEngine {
         }
 
         /**
-         * `@` completion for directed group turns, driven by the caret rather
-         * than by the keystroke: moving the caret back into a half-typed
-         * mention re-opens the menu, and moving out of it closes the menu.
+         * Trigger menus, driven by the caret rather than by the keystroke:
+         * `@` completes members (and skills) for directed turns, `/` at the
+         * start of a word opens the command menu — add an image, or call a
+         * skill — like the native composer's slash commands. Moving the caret
+         * back into a half-typed token re-opens its menu, and moving out of
+         * it closes the menu. The `+` button opens the same command menu
+         * without a typed token (`typed: false`).
          */
         function syncMention(node: any): void {
           if (node === null || node === undefined) { setMention(null); return }
           const value = String(node.value)
           const upto = value.slice(0, node.selectionStart ?? value.length)
-          const m = /@([^\s@]*)$/.exec(upto)
+          const at = /@([^\s@]*)$/.exec(upto)
+          const slash = at === null ? /(?:^|\s)\/([^\s/]*)$/.exec(upto) : null
+          const kind = at !== null ? '@' : slash !== null ? '/' : null
+          const query = at !== null ? at[1] : slash !== null ? slash[1] : ''
           // Identity-stable when nothing changed, so a caret sweep does not
           // re-render the menu (and does not reset the highlighted row).
           setMention((prev: any) => {
-            if (m === null) return null
-            return prev !== null && prev.query === m[1] ? prev : { query: m[1], index: 0 }
+            // The + button's menu has no token to track: it survives caret
+            // moves (focusing the draft moves the caret) and closes on an edit.
+            if (kind === null) return prev !== null && prev.typed === false && prev.value === value ? prev : null
+            return prev !== null && prev.typed === true && prev.kind === kind && prev.query === query
+              ? prev
+              : { kind, query, index: 0, typed: true }
           })
         }
 
@@ -6078,16 +7052,33 @@ class BotEngine {
          */
         const EVERYONE_MENTION = { id: '__everyone__', name: '所有人', isGroup: true, everyone: true }
         const EVERYONE_ALIASES = ['所有人', '全员', '大家', 'all', 'everyone']
+        // Command menu head: the image picker the paperclip used to own.
+        const IMAGE_COMMAND = { id: '__image__', name: t('chat.attach'), description: t('chat.command.imageDesc'), command: 'image' }
+        const IMAGE_ALIASES = [t('chat.attach'), '图片', 'image', 'file']
+        const SCHEDULE_COMMAND = { id: '__schedule__', name: t('chat.command.schedule'), description: t('chat.command.scheduleDesc'), command: 'schedule' }
+        const SCHEDULE_ALIASES = [t('chat.command.schedule'), '定时', '提醒', 'schedule', 'routine', 'remind']
+        const skillHits = (query: string): any[] => chatSkills
+          .filter((skill: any) => `${skill.name} ${skill.id}`.toLowerCase().includes(query.toLowerCase()))
+          .slice(0, 12).map((skill: any) => ({ ...skill, id: 'skill:' + skill.id, workflowId: skill.id, skill: true }))
         const mentionHits = mention === null
           ? []
-          : [
-              ...(isGroup && (mention.query === '' || EVERYONE_ALIASES.some((h) => h.startsWith(mention.query.toLowerCase())))
-                ? [EVERYONE_MENTION]
-                : []),
-              ...memberNames.filter((a: any) => a.name.toLowerCase().startsWith(mention.query.toLowerCase())).slice(0, 8),
-              ...chatSkills.filter((skill: any) => String(skill.name).toLowerCase().includes(mention.query.toLowerCase()))
-                .slice(0, 12).map((skill: any) => ({ ...skill, id: 'skill:' + skill.id, workflowId: skill.id, skill: true })),
-            ]
+          : mention.kind === '/'
+            ? [
+                ...(mention.query === '' || IMAGE_ALIASES.some((h) => h.toLowerCase().startsWith(mention.query.toLowerCase()))
+                  ? [IMAGE_COMMAND]
+                  : []),
+                ...(mention.query === '' || SCHEDULE_ALIASES.some((h) => h.toLowerCase().startsWith(mention.query.toLowerCase()))
+                  ? [SCHEDULE_COMMAND]
+                  : []),
+                ...skillHits(mention.query),
+              ]
+            : [
+                ...(isGroup && (mention.query === '' || EVERYONE_ALIASES.some((h) => h.startsWith(mention.query.toLowerCase())))
+                  ? [EVERYONE_MENTION]
+                  : []),
+                ...memberNames.filter((a: any) => a.name.toLowerCase().startsWith(mention.query.toLowerCase())).slice(0, 8),
+                ...skillHits(mention.query),
+              ]
 
         // Keyboard selection scrolls the active row into view — the native
         // menu keeps the highlighted item visible however long the list is.
@@ -6105,8 +7096,34 @@ class BotEngine {
         function applyMention(a: any) {
           const node = inputRef.current
           const caret = node?.selectionStart ?? input.length
+          // The typed trigger token (`@que` / `/que`) is what the pick
+          // replaces; a menu the + button opened has none, so the pick is
+          // inserted at the caret instead.
+          let head = input.slice(0, caret)
+          if (mention?.typed === true) {
+            head = mention.kind === '/' ? head.replace(/\/([^\s/]*)$/, '') : head.replace(/@([^\s@]*)$/, '')
+          }
+          if (a.command === 'schedule') {
+            // The draft (minus the trigger token) becomes what to do; the
+            // composer empties while the form is open.
+            const rest = (head + input.slice(caret)).trim()
+            setScheduling({ prompt: rest, restore: input })
+            setInput('')
+            draftMemory.set(p.agentId, '')
+            setMention(null)
+            return
+          }
+          if (a.command === 'image') {
+            const next = head + input.slice(caret)
+            setInput(next)
+            draftMemory.set(p.agentId, next)
+            setMention(null)
+            const picker: any = fileRef.current
+            if (picker !== null && picker !== undefined) picker.click()
+            return
+          }
           const handle = a.skill === true ? 'sand-workflow:' + a.workflowId : '@' + a.name
-          const before = input.slice(0, caret).replace(/@([^\s@]*)$/, handle + ' ')
+          const before = head + (head !== '' && !/\s$/.test(head) ? ' ' : '') + handle + ' '
           const next = before + input.slice(caret)
           setInput(next)
           draftMemory.set(p.agentId, next)
@@ -6132,7 +7149,7 @@ class BotEngine {
             if (r?.hadActiveRun !== true) setError(t('chat.stop.noop'))
             await refreshAgents()
             await loadTranscript()
-          } catch (err: any) { setError(String(err?.message ?? err)) }
+          } catch (err: any) { setError(errText(err)) }
           setStopping(false)
         }
 
@@ -6191,7 +7208,7 @@ class BotEngine {
             setShowJump(false)
             await refreshAgents()
             await loadTranscript()
-          } catch (err: any) { setError(String(err?.message ?? err)) }
+          } catch (err: any) { setError(errText(err)) }
           setSending(false)
           // The caret stays in the composer after a send, as in every native
           // thread: the next turn is typed without reaching for the mouse.
@@ -6281,16 +7298,19 @@ class BotEngine {
             // Group task planning lives IN the conversation (user feedback: no
             // standalone goals module) — a header toggle reveals the room's
             // who-plans-what panel; single chats have no planning surface.
-            isGroup ? e(Button, {
-              variant: 'ghost', size: 'sm', 'aria-pressed': taskPanel,
-              title: t('group.tasks'), 'aria-label': t('group.tasks'),
-              onClick: () => setTaskPanel(!taskPanel),
-            }, t('group.tasks')) : null,
+            // Native session-header utilities are icon-only 28px seats:
+            // the routines clock (schedule's reminder entry) and members.
+            agent !== null
+              // A group's own routines (created from its composer) list
+              // first, then each member's.
+              ? e(RoutinesAction, { members: isGroup ? [agent, ...memberNames] : [agent], attribute: isGroup, refreshKey: p.agentId + ':' + String(composing) + ':' + String(s.routinesRev) })
+              : null,
             isGroup
-              ? e(Button, {
-                  variant: 'ghost', size: 'sm', title: t('chat.members.manage'), 'aria-label': t('chat.members.manage'),
+              ? e('button', {
+                  className: 'dbs-railBtn', type: 'button',
+                  title: t('chat.members.manage'), 'aria-label': t('chat.members.manage'),
                   onClick: () => patch({ manageMembers: p.agentId }),
-                }, t('chat.members.manage'))
+                }, e(PeopleGlyph, null))
               : null,
             e('button', {
               className: 'dbs-railBtn', type: 'button',
@@ -6309,14 +7329,24 @@ class BotEngine {
             ? e(OfflineCard, {})
             : null,
 
-          taskPanel && isGroup ? e(GroupTasksPanel, { agentId: p.agentId, members: memberNames, key: p.agentId }) : null,
-          e('div', { className: 'dbs-scrollArea', style: taskPanel ? { display: 'none' } : undefined },
+          e('div', { className: 'dbs-scrollArea' },
             turnMarks.length > 1
               ? e(TurnRail, { marks: turnMarks, activeId: activeTurn, busy: composing, onGo: goToTurn })
               : null,
             e('div', { className: 'dbs-scrollBody', ref: scrollRef, onScroll: onScrollBody },
               e('div', { className: 'dbs-scroll' },
                 e('div', { className: 'dbs-column' },
+                  // Older history pages in when the reader reaches the top;
+                  // the row is the visible affordance (and keyboard path).
+                  // The native ChatView's own control: a centered row holding
+                  // one small filled button (dsh-client-ui-chat `.older`).
+                  entries !== null && olderCursor !== null
+                    ? e('div', { className: 'dbs-older' },
+                        e('button', {
+                          type: 'button', disabled: loadingOlder,
+                          onClick: () => { void loadOlder() },
+                        }, loadingOlder ? t('chat.olderLoading') : t('chat.older')))
+                    : null,
                   entries === null
                     ? e('div', { className: 'dbs-skeleton' },
                         e('div', { className: 'dbs-skelRow', style: { width: '42%' } }),
@@ -6346,7 +7376,13 @@ class BotEngine {
                               e('path', { d: WHALE_REST_PATH, stroke: 'currentColor', strokeWidth: 1 }))),
                           NATIVE.TextShimmer !== undefined
                             ? e(NATIVE.TextShimmer, { active: true, className: 'dbs-turnStatus dbs-runningText' }, composingLabel)
-                            : e('span', { className: 'dbs-turnStatus dbs-runningText' }, composingLabel)))
+                            : e('span', { className: 'dbs-turnStatus dbs-runningText' }, composingLabel),
+                          // A room turn is several bots: say who is on it now,
+                          // so a quiet member reads as "not picked", not "stuck".
+                          replyingMembers.length > 0
+                            ? e('span', { className: 'dbs-runningWho' },
+                                t('chat.membersReplying', { names: replyingMembers.map((m: any) => m.name).join('、') }))
+                            : null))
                     : null))),
             e('button', {
               type: 'button', className: 'dbs-jump', 'data-show': showJump ? 'true' : 'false',
@@ -6354,8 +7390,9 @@ class BotEngine {
               onClick: jumpToLatest,
             }, Ico('IconChevronDownOutline14', { size: 16 }))),
 
-          e('div', { className: 'dbs-composerSeat', style: taskPanel ? { display: 'none' } : undefined },
+          e('div', { className: 'dbs-composerSeat' },
             e('div', { className: 'dbs-composer' },
+              notice !== null ? e('div', { className: 'dbs-composerNotice', role: 'status' }, notice) : null,
               e('div', {
                 className: 'dbs-composerCard',
                 // The whole card is the input's hit area natively — clicking
@@ -6365,19 +7402,39 @@ class BotEngine {
                   const node = inputRef.current
                   if (node === null || node === undefined || node === ev.target) return
                   if (typeof ev.target?.closest === 'function'
-                    && ev.target.closest('button, textarea, input, .dbs-mention') !== null) return
+                    && ev.target.closest('button, textarea, input, .dbs-mention, .dbs-schedule') !== null) return
                   ev.preventDefault()
                   node.focus()
                 },
               },
-                mentionHits.length > 0
+                scheduling !== null
+                  ? e(ScheduleForm, {
+                      agentId: p.agentId, isGroup, initialPrompt: scheduling.prompt,
+                      onCancel: () => {
+                        const back = scheduling.restore
+                        setScheduling(null)
+                        setInput(back)
+                        draftMemory.set(p.agentId, back)
+                        inputRef.current?.focus()
+                      },
+                      onCreated: (summary: string) => {
+                        setScheduling(null)
+                        setNotice(t('schedule.created', { summary }))
+                        patch({ routinesRev: state.routinesRev + 1 })
+                        inputRef.current?.focus()
+                      },
+                    })
+                : mentionHits.length > 0
                   ? e('div', { className: 'dbs-mention' },
                       e('div', { className: 'dbs-mentionViewport', ref: mentionRef }, mentionHits.map((a: any, i: number) => e('div', {
                         key: a.id, className: 'dbs-mentionRow', 'data-active': i === (mention?.index ?? 0),
                         onMouseDown: (ev: any) => { ev.preventDefault(); applyMention(a) },
                       },
                         e('span', { className: 'dbs-mentionIcon' },
-                          a.skill === true ? e('span', { 'aria-hidden': true }, '#') : a.everyone === true ? e(PeopleGlyph, null) : e(Avatar, { agent: a, size: 16 })),
+                          a.command === 'image' ? (Ico('IconPaperclipOutline16', { size: 14 }) ?? e(PaperclipGlyph, null))
+                            : a.command === 'schedule' ? e(ClockGlyph, null)
+                            : a.skill === true ? (Ico('IconSkillOutline14', { size: 14 }) ?? e('span', { 'aria-hidden': true }, '#'))
+                              : a.everyone === true ? e(PeopleGlyph, null) : e(Avatar, { agent: a, size: 16 })),
                         e('span', { className: 'dbs-mentionName' }, a.name),
                         e('span', { className: 'dbs-mentionDesc' }, String(a.description ?? '').split('\n')[0]),
                         // The native menu advertises its keyboard drill on the
@@ -6479,14 +7536,26 @@ class BotEngine {
                   // Native InputBar geometry: a LEFT tools group (the 28px
                   // round add buttons) and a RIGHT trailing group (send/stop).
                   e('div', { className: 'dbs-composerTools' },
+                    // The native InputBar's + ("添加文件或调用指令"): it opens
+                    // the same command menu typing `/` does — add an image,
+                    // or call a skill — rather than owning one action.
                     e('button', {
                       type: 'button', className: 'dbs-attachBtn',
-                      title: t('chat.attach'), 'aria-label': t('chat.attach'),
-                      onClick: () => { const node: any = fileRef.current; if (node !== null && node !== undefined) node.click() },
+                      title: t('chat.commands'), 'aria-label': t('chat.commands'),
+                      'aria-haspopup': 'listbox',
+                      'aria-expanded': mention !== null && mention.typed === false ? 'true' : 'false',
+                      // Keep the caret in the draft: the menu runs off its keys.
+                      onMouseDown: (ev: any) => { ev.preventDefault() },
+                      onClick: () => {
+                        if (mention !== null && mention.typed === false) { setMention(null); return }
+                        const node: any = inputRef.current
+                        if (node !== null && node !== undefined) node.focus()
+                        setMention({ kind: '/', query: '', index: 0, typed: false, value: input })
+                      },
                     // Element, not component: nat() hands back the raw export,
                     // and a function child renders nothing — the exact way the
                     // paperclip vanished.
-                    }, Ico('IconPaperclipOutline16', { size: 14 }) ?? e(PaperclipGlyph, null))),
+                    }, Ico('IconPlusOutline16', { size: 14 }) ?? e(PlusGlyph, null))),
                   e('div', { className: 'dbs-composerTrailing' },
                     // Per-bot model seat — the native InputBar's right-cluster
                     // model picker (compact chip → grouped popover above),
@@ -6640,6 +7709,11 @@ class BotEngine {
        * managed rows are always-on (the engine refuses per-agent disable for
        * those sources), and rows with a trigger are scheduled routines.
        */
+      /** Settings-card order for bridge rows: undecided, edited, the rest. */
+      function bridgeRank(row: any): number {
+        return row?.status === 'pending' ? 0 : row?.changed === true ? 1 : 2
+      }
+
       function SkillsCard() {
         const [agents, setAgents] = React.useState(null as any[] | null)
         const [agentId, setAgentId] = React.useState('')
@@ -6855,8 +7929,14 @@ class BotEngine {
                 onClick: () => void applyBridge(),
               }, bridgeBusy ? t('settings.skills.bridge.applying') : t('settings.skills.bridge.apply'))),
             e('div', { className: 'dbs-setrow' }, t('settings.skills.bridge.summary')),
-            bridgeRows.map((row: any) => e('label', {
-              key: row.id, className: 'dbs-setrow', style: { alignItems: 'center', cursor: 'pointer' },
+            bridgeRows.some((row: any) => row.status === 'pending')
+              ? e('div', { className: 'dbs-bridgeNotice', role: 'status' },
+                  t('settings.skills.bridge.pending', { n: bridgeRows.filter((row: any) => row.status === 'pending').length }))
+              : null,
+            // Undecided first, then edited-since-shared, then the rest: the
+            // rows that need a decision are the ones on top.
+            bridgeRows.slice().sort((a: any, b: any) => bridgeRank(a) - bridgeRank(b)).map((row: any) => e('label', {
+              key: row.id, className: 'dbs-bridgeRow', 'data-status': row.status ?? (row.bridged ? 'shared' : 'pending'),
             },
               e('input', {
                 type: 'checkbox', checked: (bridgePicked ?? []).includes(row.id), disabled: bridgeBusy,
@@ -6866,8 +7946,17 @@ class BotEngine {
                   setBridgePicked([...picked])
                 },
               }),
-              e('b', null, row.name),
-              e('span', { className: 'dbs-meta' }, row.description ? ' · ' + String(row.description).split('\n')[0].slice(0, 100) : ''))))
+              e('span', { className: 'dbs-bridgeText' },
+                e('span', { className: 'dbs-bridgeHead' },
+                  e('b', null, row.name),
+                  row.status === 'pending' ? e('span', { className: 'dbs-bridgeBadge', 'data-tone': 'new' }, t('settings.skills.bridge.new')) : null,
+                  row.changed === true ? e('span', { className: 'dbs-bridgeBadge', 'data-tone': 'changed' }, t('settings.skills.bridge.changed')) : null,
+                  row.bundled === true ? e('span', { className: 'dbs-bridgeBadge' }, t('settings.skills.bridge.bundled')) : null),
+                row.description ? e('span', { className: 'dbs-meta' }, String(row.description).split('\n')[0].slice(0, 140)) : null,
+                // Where the instructions come from and which bytes were
+                // vouched for — what a reviewer needs before sharing.
+                e('span', { className: 'dbs-bridgePath', title: row.path },
+                  String(row.path ?? ''), typeof row.sha256 === 'string' ? ' · sha256 ' + row.sha256.slice(0, 12) : '')))))
           : bridgeRows !== null
             // Loaded but nothing to bridge: say so instead of vanishing.
             ? e('div', { className: 'dbs-setcard', style: { margin: '6px 0' } },
@@ -6946,17 +8035,18 @@ class BotEngine {
           err !== null ? e('div', { className: 'dbs-setrow' }, t('settings.mcp.failed'), err) : null)
       }
 
-      /** Model configuration card: freeroute availability + the engine's
-       * account-level default model (getHostSettings/setHostSettings). Two
-       * stages: pick a provider (grouped by freeroute's owned_by), then a
-       * model within it. Provider '' = freeroute auto-routing (no override);
-       * freeroute down = the account default. */
+      /** Model configuration card: the account-level default model every bot
+       * follows unless its composer seat overrides it (getHostSettings /
+       * setHostSettings), picked through the same ModelMenu as the composer
+       * — one trigger, providers as group headers, search — instead of a
+       * provider select feeding a model select. The lead row (null) is
+       * freeroute auto-routing; freeroute down = the account default. */
       function ModelCard() {
+        const triggerRef = React.useRef(null)
         const [cfg, setCfg] = React.useState(undefined)
         const [working, setWorking] = React.useState(false)
         const [err, setErr] = React.useState(null as string | null)
-        // null = untouched (derive from the current model); '' = auto chosen.
-        const [provRaw, setProv] = React.useState(null as string | null)
+        const [open, setOpen] = React.useState(false)
         const [rebooted, setRebooted] = React.useState(false)
         // Seconds the engine took to answer /health after the restart — the
         // confirmation line under the apply button.
@@ -6971,6 +8061,8 @@ class BotEngine {
           ? current
           : (cfg?.freerouteReachable === true ? t('settings.model.auto') : t('settings.model.engineDefault'))
         async function save(modelId: string | null) {
+          setOpen(false)
+          if (modelId === current) return
           setWorking(true); setErr(null); setRebooted(false)
           try {
             await botsCall('setModelConfig', { modelId })
@@ -7003,69 +8095,31 @@ class BotEngine {
           } catch (e2: any) { setErr(errText(e2)) }
           setWorking(false)
         }
-        // Provider rows. freeroute groups by upstream aggregator, which hides
-        // DeepSeek inside `orcarouter`; the engine's DeepSeek ids are lifted
-        // into their own bucket so the provider list reads like DSH's. The DSH
-        // catalog (llm service) is appended as `<id>` rows so the same
-        // providers/models the native model page offers are visible here too.
-        const groups: any[] = Array.isArray(cfg?.groups) ? cfg.groups : []
-        const deepseekModels: string[] = Array.isArray(cfg?.deepseek) ? cfg.deepseek : []
         const nativeProviders: any[] = Array.isArray(cfg?.native?.providers) ? cfg.native.providers : []
         const engineModel: string | null = typeof cfg?.engine?.modelId === 'string' ? cfg.engine.modelId : null
-        const providers: any[] = [
-          ...(deepseekModels.length > 0
-            ? [{ key: '__deepseek', label: `${t('settings.model.deepseek')}（${deepseekModels.length}）`, models: deepseekModels }]
-            : []),
-          ...groups.map((g: any) => ({ key: g.provider, label: `${g.provider}（${g.models.length}）`, models: g.models })),
-          ...nativeProviders.map((p: any) => ({
-            key: 'dsh:' + p.id,
-            label: `DSH · ${p.name}（${p.models.length}）`,
-            models: p.models.map((m: any) => p.id + '/' + m.id),
-          })),
-        ]
-        const groupOf = current !== null
-          ? (groups.find((g: any) => g.models.indexOf(current) !== -1) ?? null)
-          : null
-        const prov = provRaw !== null ? provRaw : (groupOf !== null ? groupOf.provider : '')
-        const provModels = prov !== ''
-          ? ((providers.find((g: any) => g.key === prov)?.models ?? []) as string[])
-          : []
-        // A current model whose provider vanished from freeroute's list stays
-        // visible as a lone option so the card never renders a dead select.
-        const orphan = prov === '' && current !== null && groupOf === null
         return e('div', { className: 'dbs-setcard' },
           e('div', { className: 'dbs-sethead' },
             e('span', null, t('settings.model.title')),
             e('span', { style: { flex: 1 } }),
             working ? e('span', { className: 'dbs-meta' }, t('settings.model.saving')) : null),
-          e('div', { className: 'dbs-setrow' }, t('settings.model.current'), e('b', null, cfg === undefined ? t('settings.reading') : effLabel)),
-          e('div', { className: 'dbs-setrow' }, t('settings.model.provider'),
-            e('select', {
-              className: 'dbs-select', value: prov, disabled: working || cfg === undefined,
-              onChange: (ev: any) => {
-                const v = String(ev.target.value ?? '')
-                setProv(v)
-                if (v === '' && current !== null) void save(null)
+          e('div', { className: 'dbs-setrow' }, t('settings.model.current'),
+            e('span', { className: 'dbs-modelSeat dbs-modelSeatSettings' },
+              e('button', {
+                ref: triggerRef, type: 'button', className: 'dbs-modelSelect', disabled: working || cfg === undefined,
+                'aria-haspopup': 'menu', 'aria-expanded': open ? 'true' : 'false',
+                title: `${t('settings.model.current')}: ${effLabel}`,
+                onClick: () => setOpen(!open),
               },
-            },
-              e('option', { value: '' }, t('settings.model.freeroute')),
-              providers.map((g: any) => e('option', { key: g.key, value: g.key }, g.label)))),
-          e('div', { className: 'dbs-setrow' }, t('settings.model.pick'),
-            e('select', {
-              className: 'dbs-select',
-              value: prov !== '' && current !== null && provModels.indexOf(current) !== -1 ? current : '',
-              disabled: working || cfg === undefined || (prov === '' && !orphan),
-              onChange: (ev: any) => {
-                const v = String(ev.target.value ?? '')
-                if (v !== '') void save(v)
-              },
-            },
-              prov !== ''
-                ? e('option', { value: '' }, t('settings.model.pick'))
-                : null,
-              prov !== ''
-                ? provModels.map((m: string) => e('option', { key: m, value: m }, m))
-                : (orphan && current !== null ? [e('option', { key: current, value: current }, current)] : []))),
+                e('span', { className: 'dbs-modelChipLabel' }, cfg === undefined ? t('settings.reading') : effLabel),
+                Ico('IconChevronDownOutline14', { size: 14 })),
+              open
+                ? e(ModelMenu, {
+                    cfg, current, busy: working, err: null, side: 'bottom', anchorRef: triggerRef,
+                    lead: { label: t('settings.model.freeroute'), caption: t('settings.model.autoCaption') },
+                    onPick: (modelId: string | null) => { void save(modelId) },
+                    onClose: () => setOpen(false),
+                  })
+                : null)),
           // What the engine will ACTUALLY run: its launchd env, not the
           // account-default record — the two drifted silently before.
           e('div', { className: 'dbs-setrow' }, t('settings.model.engine'),
@@ -7080,20 +8134,20 @@ class BotEngine {
                   : working ? t('settings.model.engineApplying') : t('settings.model.engineApply')))
             : null,
           rebooted === true && healthyWait !== null
-            ? e('div', { className: 'dbs-meta', style: { padding: '0 2px' } },
+            ? e('div', { className: 'dbs-setnote' },
                 t('settings.model.healthy', { waited: healthyWait }))
             : null,
           cfg?.native !== null && cfg?.native !== undefined
-            ? e('div', { className: 'dbs-meta', style: { padding: '0 2px' } },
+            ? e('div', { className: 'dbs-setnote' },
                 (cfg.native.default !== null && cfg.native.default !== undefined
                   ? t('settings.model.nativeDefault', { provider: cfg.native.default.provider, model: cfg.native.default.model })
                   : t('settings.model.native')) + ' · '
                 + nativeProviders.map((p: any) => `${p.name}(${p.models.length})`).join('、'))
-            : e('div', { className: 'dbs-meta', style: { padding: '0 2px' } }, t('settings.model.nativeMissing')),
+            : e('div', { className: 'dbs-setnote' }, t('settings.model.nativeMissing')),
           cfg?.freerouteReachable === false
-            ? e('div', { className: 'dbs-meta', style: { padding: '0 2px' } }, t('settings.model.offline'))
+            ? e('div', { className: 'dbs-setnote' }, t('settings.model.offline'))
             : null,
-          e('div', { className: 'dbs-meta', style: { padding: '0 2px' } }, t('settings.model.hint')),
+          e('div', { className: 'dbs-setnote' }, t('settings.model.hint')),
           err !== null ? e('div', { className: 'dbs-setrow' }, err) : null)
       }
 
@@ -7140,13 +8194,22 @@ class BotEngine {
               variant: 'outline', size: 'sm', disabled: working || valid === false, title: t('action.save'),
               onClick: () => void save(),
             }, t('action.save'))),
-          e('div', { className: 'dbs-meta', style: { padding: '0 2px' } }, t('settings.group.capHint')),
+          e('div', { className: 'dbs-setnote' }, t('settings.group.capHint')),
           err !== null ? e('div', { className: 'dbs-setrow' }, err) : null)
       }
 
+      /**
+       * Settings → Bots. The overview speaks to the person using the product:
+       * whether the service is up and what Bots can do. Connection plumbing
+       * (gateway address, PID, token, data directory, event buffer) is not
+       * theirs to read; the offline state keeps its reconnect action.
+       */
       function BotsSettings() {
-        const [info, setInfo] = React.useState(undefined)
-        const [sse, setSse] = React.useState(null)
+        // The shared store's reading, so the sidebar dot, the offline card's
+        // reconnect and this page always agree.
+        const s = useStore()
+        const info = s.info
+        const [probing, setProbing] = React.useState(true)
         const [err, setErr] = React.useState(null)
         const [tab, setTab] = React.useState('overview')
         const tabs = ['overview', 'models', 'skills', 'workspace', 'mcp']
@@ -7155,12 +8218,20 @@ class BotEngine {
           skills: t('settings.tab.skills'),
           workspace: t('settings.tab.workspace'), mcp: t('settings.tab.mcp'),
         }
+        const features: Array<[string, string]> = [
+          [t('settings.feature.chat'), t('settings.feature.chatDesc')],
+          [t('settings.feature.group'), t('settings.feature.groupDesc')],
+          [t('settings.feature.skills'), t('settings.feature.skillsDesc')],
+          [t('settings.feature.tools'), t('settings.feature.toolsDesc')],
+          [t('settings.feature.models'), t('settings.feature.modelsDesc')],
+          [t('settings.feature.workspace'), t('settings.feature.workspaceDesc')],
+          [t('settings.feature.routines'), t('settings.feature.routinesDesc')],
+          [t('settings.feature.files'), t('settings.feature.filesDesc')],
+        ]
         async function refresh() {
-          setInfo(undefined); setErr(null)
-          try {
-            setInfo(await botsCall('gatewayInfo', {}))
-            setSse(await botsCall('sseState'))
-          } catch (e2: any) { setErr(errText(e2)) }
+          setProbing(true); setErr(null)
+          try { patch({ info: await botsCall('gatewayInfo', {}) }) } catch (e2: any) { setErr(errText(e2)) }
+          setProbing(false)
         }
         React.useEffect(() => { void refresh() }, [])
         const ok = info?.ok === true
@@ -7185,40 +8256,33 @@ class BotEngine {
             }, tabLabels[id]))),
           e('div', { id: 'dbs-settings-panel-overview', className: 'dbs-settingsPanel', role: 'tabpanel',
             'aria-labelledby': 'dbs-settings-tab-overview', hidden: tab !== 'overview' },
+          info !== undefined && !ok && !probing
+            ? e(OfflineCard, {})
+            : e('div', { className: 'dbs-setcard' },
+                e('div', { className: 'dbs-sethead' },
+                  StateDot !== null ? e(StateDot, { state: ok && !probing ? 'done' : 'ongoing', size: 10 }) : null,
+                  ok && !probing ? t('gateway.online') : t('settings.probing'),
+                  e('span', { style: { flex: 1 } }),
+                  e(Button, { variant: 'outline', size: 'sm', onClick: () => void refresh() }, t('action.refresh'))),
+                err !== null ? e('div', { className: 'dbs-setrow' }, err) : null),
           e('div', { className: 'dbs-setcard' },
-            e('div', { className: 'dbs-sethead' },
-              StateDot !== null ? e(StateDot, { state: ok ? 'done' : 'failed', size: 10 }) : null,
-              info === undefined ? t('settings.probing') : ok ? t('gateway.online', { port: info.port }) : t('gateway.offline'),
-              e('span', { style: { flex: 1 } }),
-              e(Button, { variant: 'outline', size: 'sm', onClick: () => void refresh() }, t('action.refresh'))),
-            ok ? e('div', null,
-              e('div', { className: 'dbs-setrow' }, t('settings.address'), e('b', null, info.baseUrl)),
-              e('div', { className: 'dbs-setrow' }, t('settings.pid'), e('b', null, String(info.pid)), ' · ' + (info.health?.isBusy === true ? t('settings.busy') : t('settings.idle'))),
-              e('div', { className: 'dbs-setrow' }, t('settings.auth'), e('b', null, info.hasToken === true ? t('settings.auth.token') : t('settings.auth.none')))) : null,
-            info !== undefined && !ok ? e('div', { className: 'dbs-setrow' }, t('settings.reason'), e('b', null, info.reason ?? t('settings.reason.unknown'))) : null,
-            err !== null ? e('div', { className: 'dbs-setrow' }, err) : null),
-          e('div', { className: 'dbs-setcard' },
-            e('div', { className: 'dbs-setrow' }, t('settings.dataDir'), e('b', null, info?.dataDir ?? t('settings.reading'))),
-            info?.workspaceRoot
-              ? e('div', { className: 'dbs-setrow' }, t('settings.workspaceRoot'), e('b', null, info.workspaceRoot))
-              : null,
-            e('div', { className: 'dbs-setrow' }, t('settings.events'),
-              e('b', null, sse?.running === true ? t('settings.events.on', { n: sse.buffered ?? 0 }) : t('settings.events.off')),
-              sse?.lastError ? ' · ' + String(sse.lastError) : ''),
-            e('div', { className: 'dbs-setrow' }, t('settings.entry'), e('b', null, t('settings.entry.value')))),
-          info?.ok === true ? e(GroupCard) : null),
+            e('div', { className: 'dbs-sethead' }, t('settings.features')),
+            e('div', { className: 'dbs-features' }, features.map(([name, desc]) => e('div', { key: name, className: 'dbs-feature' },
+              e('div', { className: 'dbs-featureName' }, name),
+              e('div', { className: 'dbs-featureDesc' }, desc))))),
+          ok ? e(GroupCard) : null),
           e('div', { id: 'dbs-settings-panel-models', className: 'dbs-settingsPanel', role: 'tabpanel',
             'aria-labelledby': 'dbs-settings-tab-models', hidden: tab !== 'models' },
-            info?.ok === true ? e(ModelCard) : null),
+            ok ? e(ModelCard) : null),
           e('div', { id: 'dbs-settings-panel-skills', className: 'dbs-settingsPanel', role: 'tabpanel',
             'aria-labelledby': 'dbs-settings-tab-skills', hidden: tab !== 'skills' },
-            info?.ok === true ? e(SkillsCard) : null),
+            ok ? e(SkillsCard) : null),
           e('div', { id: 'dbs-settings-panel-workspace', className: 'dbs-settingsPanel', role: 'tabpanel',
             'aria-labelledby': 'dbs-settings-tab-workspace', hidden: tab !== 'workspace' },
-            info?.ok === true ? e(WorkspaceCard) : null),
+            ok ? e(WorkspaceCard) : null),
           e('div', { id: 'dbs-settings-panel-mcp', className: 'dbs-settingsPanel', role: 'tabpanel',
             'aria-labelledby': 'dbs-settings-tab-mcp', hidden: tab !== 'mcp' },
-            info?.ok === true ? e(McpCard) : null))
+            ok ? e(McpCard) : null))
       }
 
       // =========================================================
@@ -7588,19 +8652,29 @@ class BotEngine {
       }
 
       // =========================================================
-      // File preview: the native document preview, re-hosted.
+      // File preview: a pane docked beside the bot conversation.
       //
-      // Clicking a bot-written document used to call the host `openFile` RPC,
-      // which no longer exists — the chip silently did nothing. The shell's
-      // own preview (sidebarRight.openResource) can't serve it either: the
-      // workbench panel is a global panel, so no session surface is mounted,
-      // and the file lives under the gateway data dir, outside any session
-      // workspace. So the preview renders the SAME native renderers in a
-      // modal over the chat — MarkdownText for markdown, the native code
-      // token for text, data-URL embeds for images and PDFs — fed by the
-      // host's allowlisted readText/readBytes. Formats the modal can't show
-      // (office, archives, media) reveal in the system file manager instead.
+      // A file a bot mentions opens next to the chat, inside the workbench,
+      // so the reader never leaves the conversation. (Borrowing a dsh
+      // Session to reach the shell's right-sidebar preview switched the
+      // screen to that Session — it read as a jump into an unrelated
+      // ordinary chat.) The pane takes the native document preview's anatomy
+      // (38px header over the body) and its renderers: MarkdownText for
+      // markdown, CodeBlock for code and text, data-URL embeds for images
+      // and PDFs — fed by the host's allowlisted readText / readBytes /
+      // readImage. Formats it can't show (office, archives, media) reveal in
+      // the system file manager. In a narrow column, or expanded, the pane
+      // covers the chat instead of sharing the row with it.
       // =========================================================
+
+      /** Every file click in the workbench lands here. */
+      function openFilePreview(path: string): void {
+        patch({ previewPath: path, previewExpanded: false })
+      }
+      function closeFilePreview(): void {
+        patch({ previewPath: null, previewExpanded: false })
+      }
+
       const PREVIEW_TEXT_RE = /\.(txt|json|csv|log|ya?ml|ts|tsx|js|mjs|cjs|py|rb|go|rs|java|c|cpp|h|hpp|sh|html?|css|xml|ini|toml|sql)$/i
       const PREVIEW_MD_RE = /\.(md|markdown)$/i
       const PREVIEW_PDF_RE = /\.pdf$/i
@@ -7611,9 +8685,13 @@ class BotEngine {
         return (n / (1024 * 1024)).toFixed(1) + ' MB'
       }
 
-      function FilePreviewModal(p: { path: string }) {
-        type Load = { phase: 'loading' | 'text' | 'image' | 'pdf' | 'unsupported' | 'error'; text: string; nextOffset: number; eof: boolean; bytes: number; url: string | null; err: string | null }
-        const [st, setSt] = React.useState({ phase: 'loading', text: '', nextOffset: 0, eof: true, bytes: 0, url: null, err: null } as Load)
+      /** The preview itself: docked as the chat's side pane, or — with no
+       * conversation on screen to dock beside — as a modal. */
+      function FilePreview(p: { path: string; docked: boolean }) {
+        const s = useStore()
+        type Load = { phase: 'loading' | 'text' | 'image' | 'pdf' | 'unsupported' | 'error'; text: string; nextOffset: number; eof: boolean; bytes: number; url: string | null; err: string | null; where: string | null }
+        const blank: Load = { phase: 'loading', text: '', nextOffset: 0, eof: true, bytes: 0, url: null, err: null, where: null }
+        const [st, setSt] = React.useState(blank)
         const [revealed, setRevealed] = React.useState(false)
         const path = p.path
         const isImg = MEDIA_IMG_RE.test(path)
@@ -7621,25 +8699,26 @@ class BotEngine {
         const isMd = PREVIEW_MD_RE.test(path)
         React.useEffect(() => {
           let alive = true
-          setSt({ phase: 'loading', text: '', nextOffset: 0, eof: true, bytes: 0, url: null, err: null })
+          setSt(blank)
+          const fail = (e2: unknown): void => { if (alive) setSt({ ...blank, phase: 'error', err: errText(e2) }) }
           if (isImg) {
             botsCall<{ mime: string; dataBase64: string }>('readImage', { path })
-              .then((r) => { if (alive) setSt({ phase: 'image', text: '', nextOffset: 0, eof: true, bytes: 0, url: 'data:' + r.mime + ';base64,' + r.dataBase64, err: null }) })
-              .catch((e2) => { if (alive) setSt({ phase: 'error', text: '', nextOffset: 0, eof: true, bytes: 0, url: null, err: errText(e2) }) })
+              .then((r) => { if (alive) setSt({ ...blank, phase: 'image', url: 'data:' + r.mime + ';base64,' + r.dataBase64 }) })
+              .catch(fail)
           } else if (isPdf) {
-            botsCall<{ mime: string; dataBase64: string; sizeBytes: number }>('readBytes', { path })
-              .then((r) => { if (alive) setSt({ phase: 'pdf', text: '', nextOffset: 0, eof: true, bytes: r.sizeBytes, url: 'data:' + r.mime + ';base64,' + r.dataBase64, err: null }) })
-              .catch((e2) => { if (alive) setSt({ phase: 'error', text: '', nextOffset: 0, eof: true, bytes: 0, url: null, err: errText(e2) }) })
+            botsCall<{ path: string; mime: string; dataBase64: string; sizeBytes: number }>('readBytes', { path })
+              .then((r) => { if (alive) setSt({ ...blank, phase: 'pdf', bytes: r.sizeBytes, url: 'data:' + r.mime + ';base64,' + r.dataBase64, where: r.path ?? null }) })
+              .catch(fail)
           } else if (isMd || PREVIEW_TEXT_RE.test(path)) {
-            botsCall<{ text: string; nextOffset: number; eof: boolean; bytes: number }>('readText', { path, offset: 0 })
-              .then((r) => { if (alive) setSt({ phase: 'text', text: r.text, nextOffset: r.nextOffset, eof: r.eof, bytes: r.bytes, url: null, err: null }) })
+            botsCall<{ path: string; text: string; nextOffset: number; eof: boolean; bytes: number }>('readText', { path, offset: 0 })
+              .then((r) => { if (alive) setSt({ ...blank, phase: 'text', text: r.text, nextOffset: r.nextOffset, eof: r.eof, bytes: r.bytes, where: r.path ?? null }) })
               .catch((e2) => {
                 const msg = errText(e2)
                 // Binary files the text sniffer rejected: no renderer here.
-                if (alive) setSt({ phase: /not-text/.test(msg) ? 'unsupported' : 'error', text: '', nextOffset: 0, eof: true, bytes: 0, url: null, err: msg })
+                if (alive) setSt({ ...blank, phase: /not-text/.test(msg) ? 'unsupported' : 'error', err: msg })
               })
           } else {
-            setSt({ phase: 'unsupported', text: '', nextOffset: 0, eof: true, bytes: 0, url: null, err: null })
+            setSt({ ...blank, phase: 'unsupported' })
           }
           return () => { alive = false }
           // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -7659,32 +8738,66 @@ class BotEngine {
         }
 
         const base = path.slice(path.lastIndexOf('/') + 1) || path
-        const dir = path.slice(0, path.length - base.length)
+        // Where the file actually lives once the host resolved it (bots write
+        // workspace-relative paths); the mention's own directory until then.
+        const where = st.where ?? path
+        const dir = where.slice(0, where.length - (where.slice(where.lastIndexOf('/') + 1).length))
+        const expanded = p.docked && s.previewExpanded === true
         const head = e('div', { className: 'dbs-previewHead' },
           Ico('IconFolderClose16', { size: 14 }),
-          e('div', { className: 'dbs-previewTitles' },
+          e('div', { className: 'dbs-previewTitles', title: where },
             e('div', { className: 'dbs-previewName' }, base),
-            e('div', { className: 'dbs-previewPath' }, dir !== '' ? dir : base)),
+            // The path ellipsizes from the left (direction:rtl); the LRM
+            // keeps its trailing slash from flipping to the front.
+            dir !== '' ? e('div', { className: 'dbs-previewPath' }, dir + '\u200E') : null),
           st.bytes > 0 ? e('span', { className: 'dbs-previewMeta' }, fmtBytes(st.bytes)) : null,
           e(Button, { variant: 'ghost', size: 'sm', disabled: revealed, onClick: reveal }, t('preview.reveal')),
+          p.docked
+            ? e('button', {
+                type: 'button', className: 'dbs-previewClose',
+                title: expanded ? t('preview.collapse') : t('preview.expand'),
+                'aria-label': expanded ? t('preview.collapse') : t('preview.expand'),
+                'aria-pressed': expanded,
+                onClick: () => patch({ previewExpanded: !state.previewExpanded }),
+              }, Ico('IconFullscreenOutline14', { size: 14 }))
+            : null,
           e('button', {
-            type: 'button', className: 'dbs-previewClose', 'aria-label': t('action.close'),
-            onClick: () => patch({ previewPath: null }),
+            type: 'button', className: 'dbs-previewClose', title: t('action.close'), 'aria-label': t('action.close'),
+            onClick: closeFilePreview,
           }, Ico('IconCloseOutline16', { size: 16 })))
         let body: any
         if (st.phase === 'loading') body = e('div', { className: 'dbs-previewEmpty' }, Ico('IconLoadingOutline16', { size: 14 }))
-        else if (st.phase === 'image') body = e('img', { className: 'dbs-previewImg', src: st.url ?? '', alt: path })
+        else if (st.phase === 'image') body = e('div', { className: 'dbs-previewBody' }, e('img', { className: 'dbs-previewImg', src: st.url ?? '', alt: path }))
         else if (st.phase === 'pdf') body = e('embed', { className: 'dbs-previewPdf', src: st.url ?? '', type: 'application/pdf', title: base })
         else if (st.phase === 'text') body = e('div', { className: 'dbs-previewBody' },
-          isMd ? e('div', { className: 'dbs-previewMd' }, e(MarkdownText, { text: st.text }))
-               : e('pre', { className: 'dbs-previewPre' }, st.text),
+          isMd ? e('div', { className: 'dbs-previewMd' }, e(MarkdownText, { text: st.text, streaming: st.eof === false }))
+            // Code and text take the native document preview's own renderer:
+            // CodeBlock with line numbers, language from the path, streaming
+            // while pages remain (its CodeBody does exactly this).
+            : NATIVE.CodeBlock !== undefined
+              ? e('div', { className: 'dbs-previewCode' }, e(NATIVE.CodeBlock, {
+                  code: st.text,
+                  lang: typeof NATIVE.languageForPath === 'function' ? NATIVE.languageForPath(path) : undefined,
+                  streaming: st.eof === false,
+                  lineNumbers: true,
+                  copyLabel: t('md.codeCopy'),
+                  copiedLabel: t('md.codeCopied'),
+                  toolbarLabels: { codeLabel: t('md.codeBlockTitle'), wrapLabel: t('md.codeWrap'), unwrapLabel: t('md.codeUnwrap') },
+                }))
+              : e('pre', { className: 'dbs-previewPre' }, st.text),
           st.eof === false ? e('div', { className: 'dbs-previewFoot' },
             e(Button, { variant: 'ghost', size: 'sm', onClick: loadMore }, t('preview.loadMore'))) : null)
         else if (st.phase === 'unsupported') body = e('div', { className: 'dbs-previewEmpty' }, t('preview.unsupported'))
         else body = e('div', { className: 'dbs-previewEmpty dbs-error' }, st.err ?? t('media.openFailed'))
+        if (p.docked) {
+          return e('aside', {
+            className: 'dbs-previewPane', 'aria-label': base,
+            'data-expanded': expanded ? 'true' : 'false',
+          }, head, body)
+        }
         return e('div', {
           className: 'dbs-modalBackdrop',
-          onClick: () => patch({ previewPath: null }),
+          onClick: closeFilePreview,
         },
           e('div', {
             className: 'dbs-previewCard', role: 'dialog', 'aria-modal': true, 'aria-label': base,
@@ -7694,9 +8807,12 @@ class BotEngine {
 
       function BotsMain() {
         const s = useStore()
-        return s.chatAgentId === null
-          ? e('div', { className: 'dbs-welcome' }, t('goal.chooseBot'))
-          : e(ChatView, { agentId: s.chatAgentId, key: s.chatAgentId })
+        if (s.chatAgentId === null) return e('div', { className: 'dbs-welcome' }, t('main.chooseBot'))
+        return e('div', { className: 'dbs-workbench' },
+          e(ChatView, { agentId: s.chatAgentId, key: s.chatAgentId }),
+          s.previewPath !== null
+            ? e(FilePreview, { key: 'preview:' + s.previewPath, path: s.previewPath, docked: true })
+            : null)
       }
 
       function BotsLayer() {
@@ -7706,7 +8822,7 @@ class BotEngine {
             if (ev.key !== 'Escape') return
             // Escape dismisses transient UI; native panel navigation stays intact.
             if (state.rowMenu !== null) { patch({ rowMenu: null }); return }
-            if (state.previewPath !== null) { patch({ previewPath: null }); return }
+            if (state.previewPath !== null) { closeFilePreview(); return }
             if (state.confirmDelete !== null) { patch({ confirmDelete: null }); return }
             if (state.create !== null) { patch({ create: null }); return }
             if (state.manageMembers !== null) { patch({ manageMembers: null }); return }
@@ -7716,7 +8832,8 @@ class BotEngine {
           return () => { window.removeEventListener('keydown', onKey) }
         }, [])
         const layers: any[] = []
-        if (s.previewPath !== null) layers.push(e(FilePreviewModal, { key: 'preview:' + s.previewPath, path: s.previewPath }))
+        // Docked beside the chat in BotsMain; a modal only with no chat open.
+        if (s.previewPath !== null && s.chatAgentId === null) layers.push(e(FilePreview, { key: 'preview:' + s.previewPath, path: s.previewPath, docked: false }))
         if (s.create !== null) layers.push(e(CreateModal, { key: 'create' }))
         if (s.manageMembers !== null) layers.push(e(ManageMembersModal, { key: 'manage-members' }))
         if (s.settingsAgentId !== null) layers.push(e(AgentSettingsModal, { key: 'agent-settings' }))
@@ -7777,12 +8894,18 @@ class BotEngine {
           (props: any) => e(SidebarNav, props),
         )), 'dsh-bots: sidebar workspaces shadow')
 
+        // Pending-restart status, where the shell shows its own update.
+        c.effect(() => slots.inject('sidebar.footer.action', () => slots.register(
+          { name: 'sidebar.footer.action', id: 'dsh-bots.host-update', order: 90, registrant: 'dsh-bots', locale: NS },
+          (props: any) => e(HostUpdateIndicator, props),
+        )), 'dsh-bots: host update status')
+
         c.effect(() => slots.inject('settings.section', () => slots.register(
           { name: 'settings.section', id: 'bots', order: 40, label: () => t('nav.bots'), registrant: 'dsh-bots', locale: NS },
           () => e(BotsSettings),
         )), 'dsh-bots: settings section')
 
-        reportDiag('apply', { slots: ['main', 'shell.overlay', 'sidebar.workspaces', 'settings.section'] })
+        reportDiag('apply', { slots: ['main', 'shell.overlay', 'sidebar.workspaces', 'sidebar.footer.action', 'settings.section'] })
       }
 
       exports.apply = apply

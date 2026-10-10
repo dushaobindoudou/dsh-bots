@@ -97,6 +97,20 @@ describe('dsh skill bridge', () => {
     expect(JSON.parse(readFileSync(join(sandRoot, 'dsh-bots-skill-bridge.json'), 'utf8')).version).toBe(2)
   })
 
+  it('keeps the v1 exclusion field accurate so an older host shares nothing new', () => {
+    // An older host reads only `excluded`; a v2 file without it read as
+    // "nothing excluded" and that host shared every discovered skill.
+    const { home, sandRoot } = fixture()
+    syncSkillsBridge(home, sandRoot, 'test', { enabled: ['dsh-finance'] })
+    const prefs = JSON.parse(readFileSync(join(sandRoot, 'dsh-bots-skill-bridge.json'), 'utf8'))
+    expect(prefs.excluded).toEqual(['dsh-internal', 'dsh-note'])
+    // Pending skills are mirrored as excluded too.
+    mkdirSync(join(home, '.dsh', 'skills', 'fresh'), { recursive: true })
+    writeFileSync(join(home, '.dsh', 'skills', 'fresh', 'SKILL.md'), '---\nname: fresh\ndescription: new\n---\nbody')
+    syncSkillsBridge(home, sandRoot, 'test')
+    expect(JSON.parse(readFileSync(join(sandRoot, 'dsh-bots-skill-bridge.json'), 'utf8')).excluded).toContain('dsh-fresh')
+  })
+
   it('keeps a pre-prefs bridge exactly as the engine had it', () => {
     const { home, sandRoot } = fixture()
     const cachePath = join(sandRoot, 'plugin-skills', 'cache.json')

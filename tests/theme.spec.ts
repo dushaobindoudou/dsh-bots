@@ -51,11 +51,18 @@ describe('theme tokens', () => {
       '--dsw-shadow-lv2', '--dsw-font-family', '--dsw-alias-border-l3',
       '--dsw-alias-brand-primary', '--dsw-alias-interactive-bg-hover-solid',
       '--dsw-alias-border-l4',
+      // Native ModelSelect's retry strip uses this dual-mode danger fill.
+      '--dsw-alias-interactive-bg-hover-danger',
       '--dsw-font-markdown-code-block-small',
       // RunningStatus pair (2026-10-08 audit): both tokens ship light+dark
       // definitions in dsh-client-ui-theme (color-mix over --dsw-static-*
       // deepseek/blue scales) — the native ChatView running row uses them bare.
       '--dsw-alias-label-deep-diving', '--dsw-alias-label-deep-diving-shimmer',
+      // Routines popover (2026-10-09 audit, dsh-client-ui-theme source):
+      // menu backdrop is mode-invariant (blur(40px) saturate(150%)); warn
+      // tertiary is amber-100 light / amber-900 dark; warn label amber-600
+      // in both — the native ScheduleCatalogAction uses them bare.
+      '--dsw-menu-backdrop-filter', '--dsw-alias-state-warn-tertiary', '--dsw-alias-state-warn-label',
       // The --dsw-radius-* scale does not exist in 0.2.0-rc.2 (native CSS
       // modules hardcode their radii); a bare radius var() must never return.
     ])

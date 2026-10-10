@@ -200,18 +200,23 @@ describe('attachment rail parity (native ComposerAttachments)', () => {
 
 describe('trigger menu parity (native MenuView)', () => {
   it('uses the menu surface, elevation stroke and 20px radius', () => {
-    expect(CLIENT).toMatch(/\.dbs-mention\{[^}]*background:var\(--dsw-specific-menu/)
+    // The menu tint over the opaque base: the token alone is translucent and
+    // only the native MenuSurface blurs what lies behind it (user report:
+    // the transcript read through the plugin's menus).
+    expect(CLIENT).toMatch(/\.dbs-mention\{[^}]*background:linear-gradient\(var\(--dsw-specific-menu,transparent\),var\(--dsw-specific-menu,transparent\)\),var\(--dsw-alias-bg-base,#fff\)/)
     expect(CLIENT).toMatch(/\.dbs-mention\{[^}]*box-shadow:var\(--dsw-elevation-prominent/)
     expect(CLIENT).toMatch(/\.dbs-mention\{[^}]*border-radius:20px/)
-    expect(CLIENT).toMatch(/\.dbs-mention\{[^}]*max-height:320px/)
+    expect(CLIENT).toMatch(/\.dbs-mention\{[^}]*max-height:400px/)
     expect(CLIENT).toMatch(/\.dbs-mention\{[^}]*bottom:calc\(100% \+ 4px\);left:0;right:0/)
   })
 
   it('sizes rows and columns like the native item', () => {
-    expect(CLIENT).toMatch(/\.dbs-mentionRow\{[^}]*min-height:40px/)
+    // Current input-trigger MenuView item: 34px, 6px 8px, 13/20 (the 40px
+    // 14/22 rows read too tall — user report).
+    expect(CLIENT).toMatch(/\.dbs-mentionRow\{[^}]*min-height:34px/)
     expect(CLIENT).toMatch(/\.dbs-mentionRow\{[^}]*border-radius:10px/)
-    expect(CLIENT).toMatch(/\.dbs-mentionRow\{[^}]*font-size:14px;line-height:22px/)
-    expect(CLIENT).toMatch(/\.dbs-mentionName\{[^}]*max-width:40%/)
+    expect(CLIENT).toMatch(/\.dbs-mentionRow\{[^}]*padding:6px 8px;font-size:13px;line-height:20px/)
+    expect(CLIENT).toMatch(/\.dbs-mentionName\{[^}]*max-width:55%/)
     expect(CLIENT).toMatch(/\.dbs-mentionDesc\{[^}]*color:var\(--dsw-alias-label-tertiary\)/)
   })
 
@@ -278,11 +283,15 @@ describe('composer growth and stream scrolling (regressions)', () => {
     expect(CLIENT).toMatch(/cssApi\.supports\('field-sizing', 'content'\)/)
   })
 
-  it('puts the attach control in a LEFT tools group with the native paperclip', () => {
+  it('puts the native + (add files or run commands) in a LEFT tools group', () => {
     expect(CLIENT).toMatch(/\.dbs-composerTools\{[^}]*display:flex;gap:12px/)
     expect(CLIENT).toMatch(/\.dbs-composerTrailing\{[^}]*margin-left:auto/)
     expect(CLIENT).toMatch(/e\('div', \{ className: 'dbs-composerTools' \},/)
-    expect(CLIENT).toMatch(/Ico\('IconPaperclipOutline16', \{ size: 14 \}\) \?\? e\(PaperclipGlyph, null\)/)
+    // dsh-client-ui-conversation InputBar: IconPlusOutlineMedium at 14px,
+    // aria-haspopup listbox, focus kept in the draft on mousedown.
+    expect(CLIENT).toMatch(/Ico\('IconPlusOutline16', \{ size: 14 \}\) \?\? e\(PlusGlyph, null\)/)
+    expect(CLIENT).toMatch(/title: t\('chat\.commands'\), 'aria-label': t\('chat\.commands'\),\n\s*'aria-haspopup': 'listbox'/)
+    expect(CLIENT).toMatch(/onMouseDown: \(ev: any\) => \{ ev\.preventDefault\(\) \},\n\s*onClick: \(\) => \{\n\s*if \(mention !== null && mention\.typed === false\)/)
     expect(CLIENT).not.toMatch(/nat\('Icon[A-Za-z0-9]+'/)
     // The attach button must not sit in the trailing (send) group any more.
     expect(CLIENT).not.toMatch(/dbs-composerTrailing[\s\S]{0,200}dbs-attachBtn/)
@@ -406,7 +415,7 @@ describe('dialogs and entry menus (current surface spec)', () => {
   })
 
   it('renders entry menus on the menu surface with native rows', () => {
-    expect(CLIENT).toMatch(/\.dbs-secMenu\{[^}]*background:var\(--dsw-specific-menu,/)
+    expect(CLIENT).toMatch(/\.dbs-secMenu\{[^}]*background:linear-gradient\(var\(--dsw-specific-menu,transparent\),var\(--dsw-specific-menu,transparent\)\),var\(--dsw-alias-bg-base,#fff\)/)
     expect(CLIENT).toMatch(/\.dbs-secMenu\{[^}]*border:0;border-radius:20px/)
     expect(CLIENT).toMatch(/\.dbs-secMenu\{[^}]*box-shadow:var\(--dsw-elevation-prominent,/)
     expect(CLIENT).toMatch(/\.dbs-secMenuItem\{[^}]*min-height:40px/)
@@ -491,30 +500,78 @@ describe('file preview: chips open the native-renderer modal', () => {
     expect(CLIENT).not.toContain("botsCall('openFile'")
   })
 
-  it('matches workspace-relative paths, not just absolute ones', () => {
+  it('matches workspace-relative and CJK paths, not URLs', () => {
     // Bots write `risk/09999_risk_opinion_20261009.md`; the old
     // leading-slash-only regex truncated the chip to `/09999….md`, which the
-    // host allowlist rightly rejected.
-    expect(CLIENT).toContain(
-      'const MEDIA_PATH_RE = /\\/?(?:[\\w.\\-]+\\/)+[\\w.\\-]+\\.[A-Za-z0-9]{1,8}/g',
-    )
+    // host allowlist rightly rejected. Workspaces carry CJK names, so the
+    // segment class is Unicode; URLs and glued prose must not become chips.
+    const source = /const MEDIA_PATH_RE = (\/.+\/gu)\n/.exec(CLIENT)?.[1]
+    expect(source, 'MEDIA_PATH_RE literal').toBeDefined()
+    const re = new RegExp(source!.slice(1, -3), 'gu')
+    const hits = (text: string) => [...text.matchAll(re)].map((m) => m[0])
+    expect(hits('完成：risk/09999_risk_opinion_20261009.md，请查收')).toEqual(['risk/09999_risk_opinion_20261009.md'])
+    expect(hits('见 /Users/x/.sdk-bots/box-workspace/AI股票交易台/risk/a.md')).toEqual(['/Users/x/.sdk-bots/box-workspace/AI股票交易台/risk/a.md'])
+    expect(hits('保存到risk/x.md了')).toEqual(['risk/x.md'])
+    expect(hits('https://github.com/a/b.md')).toEqual([])
+    expect(hits('~/.sdk-bots/notes/a.md')).toEqual(['~/.sdk-bots/notes/a.md'])
+    expect(CLIENT).toContain("new RegExp(MEDIA_PATH_RE.source, 'yu')")
   })
 
   it('renders the preview with the native renderers over allowlisted reads', () => {
     // Markdown goes through the same MarkdownText the messages use; text
     // uses the diff/code font token; images and PDFs stream as data URLs.
-    expect(CLIENT).toContain('function FilePreviewModal(p: { path: string })')
-    expect(CLIENT).toMatch(/FilePreviewModal[\s\S]{0,5200}e\(MarkdownText, /)
+    expect(CLIENT).toContain('function FilePreview(p: { path: string; docked: boolean })')
+    expect(CLIENT).toMatch(/function FilePreview\([\s\S]{0,6000}e\(MarkdownText, /)
     expect(CLIENT).toMatch(/\.dbs-previewPre\{[^}]*font:var\(--dsw-font-markdown-code-block/)
-    expect(CLIENT).toContain("botsCall<{ mime: string; dataBase64: string; sizeBytes: number }>('readBytes', { path })")
+    expect(CLIENT).toContain("botsCall<{ path: string; mime: string; dataBase64: string; sizeBytes: number }>('readBytes', { path })")
     expect(CLIENT).toContain("'preview.reveal'")
     // Unsupported formats reveal in the system file manager (native revealFile).
     expect(CLIENT).toContain("botsCall('revealFile', { path })")
   })
 
-  it('wires chip, image and mention clicks into the preview overlay', () => {
+  it('wires chip, image and mention clicks into the preview pane', () => {
     expect(CLIENT).toContain('previewPath: null as string | null')
-    expect(CLIENT).toMatch(/onClick: \(\) => patch\(\{ previewPath: p\.path \}\)/)
-    expect(CLIENT).toMatch(/e\(FilePreviewModal, \{ key: 'preview:' \+ s\.previewPath, path: s\.previewPath \}\)/)
+    // Clicks route through openFilePreview into the pane docked beside the
+    // chat; the modal only serves a preview with no conversation open.
+    expect(CLIENT).toMatch(/onClick: \(\) => openFilePreview\(p\.path\)/)
+    expect(CLIENT).toContain("e(FilePreview, { key: 'preview:' + s.previewPath, path: s.previewPath, docked: true })")
+    expect(CLIENT).toContain("if (s.previewPath !== null && s.chatAgentId === null) layers.push(e(FilePreview, { key: 'preview:' + s.previewPath, path: s.previewPath, docked: false }))")
+  })
+})
+
+describe('surfaces added for the workbench follow their native counterparts', () => {
+  it('routines entry = schedule ScheduleCatalogAction (icon seat + 336px popover)', () => {
+    // Values read from dsh-client-ui-schedule's ScheduleCatalogAction module.
+    expect(CLIENT).toMatch(/\.dbs-routinesTrigger\{width:28px;height:28px;color:var\(--dsw-alias-label-tertiary\);[^}]*border-radius:28px/)
+    expect(CLIENT).toMatch(/\.dbs-routinesMenu\{z-index:100;[^}]*width:336px;max-width:min\(336px,100vw - 32px\);max-height:min\(420px,100vh - 140px\);[^}]*border-radius:16px;[^}]*padding:3px;[^}]*position:fixed/)
+    expect(CLIENT).toMatch(/\.dbs-routinesRow\{[^}]*min-height:48px;[^}]*border-radius:10px;[^}]*padding:10px 12px/)
+    expect(CLIENT).toMatch(/\.dbs-routinesTitle\{[^}]*font-size:13px;line-height:18px\}/)
+    expect(CLIENT).toMatch(/\.dbs-routinesMeta\{[^}]*color:var\(--dsw-alias-label-tertiary\);[^}]*font-size:10px;line-height:15px/)
+    // Native anchoring contract: bottom side, 5px gap, 16px viewport margin.
+    expect(CLIENT).toContain('setPosition({ top: rect.bottom + 5, left })')
+    expect(CLIENT).toContain('const width = Math.min(336, window.innerWidth - 32)')
+  })
+
+  it('load-earlier = ChatView .older', () => {
+    expect(CLIENT).toContain('.dbs-older{justify-content:center;display:flex;margin-bottom:12px}')
+    expect(CLIENT).toMatch(/\.dbs-older button\{border-radius:8px;color:var\(--dsw-alias-label-secondary\);background:var\(--dsw-alias-interactive-bg-hover-solid\);[^}]*padding:4px 12px;font-size:12px/)
+    expect(CLIENT).toContain(".dbs-older button:disabled{cursor:default;opacity:.6}")
+    expect(CLIENT).toContain("'chat.older': '加载更早',")
+  })
+
+  it('host update status = settings-general DesktopUpdateIndicator in the sidebar footer', () => {
+    expect(CLIENT).toMatch(/\.dbs-hostUpdate\{[^}]*20%,transparent\);border-radius:8px;height:28px;[^}]*8%,transparent\);[^}]*grid-template-columns:14px max-content;[^}]*padding:0 8px;[^}]*font-size:12px;font-weight:500;line-height:18px/)
+    expect(CLIENT).toContain("{ name: 'sidebar.footer.action', id: 'dsh-bots.host-update'")
+    expect(CLIENT).toContain("e(NATIVE.Tooltip, { label: t('host.staleBody'), side: 'top' }, pill)")
+  })
+
+  it('skill-sharing rows = settings-models row identity and rowTag', () => {
+    expect(CLIENT).toContain('.dbs-bridgeHead b{color:var(--dsw-alias-label-primary);font-size:14px;font-weight:500;line-height:22px}')
+    expect(CLIENT).toContain('.dbs-bridgeBadge{border:.5px solid var(--dsw-alias-border-l3);border-radius:4px;color:var(--dsw-alias-label-secondary);flex:none;padding:1px 6px;font-size:11px;line-height:16px}')
+  })
+
+  it('chat header seats are icon-only like the native session header', () => {
+    expect(CLIENT).not.toContain("t('group.tasks')")
+    expect(CLIENT).toMatch(/title: t\('chat\.members\.manage'\), 'aria-label': t\('chat\.members\.manage'\),\s*onClick: \(\) => patch\(\{ manageMembers: p\.agentId \}\),\s*\}, e\(PeopleGlyph, null\)\)/)
   })
 })

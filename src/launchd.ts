@@ -15,6 +15,29 @@
  */
 
 import { spawnSync } from 'node:child_process'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+
+/** The sdk-bots engine job this plugin owns (launchd on darwin). */
+export const ENGINE_LAUNCHD_LABEL = 'com.sdk-bots.host'
+/** The engine's LaunchAgent plist; also the source of the pinned port hint
+ * (`SAND_HOST_PORT`) gateway discovery falls back to when gateway.json is
+ * lost while the engine is still alive. */
+export const ENGINE_PLIST = join(homedir(), 'Library', 'LaunchAgents', `${ENGINE_LAUNCHD_LABEL}.plist`)
+
+/**
+ * What reconnect should do about an unreachable engine, given whether the
+ * launchd job is currently loaded. 2026-10-10: a live engine whose
+ * gateway.json had been wiped stayed "未连接" forever because the old ladder
+ * treated "job loaded" as "leave it alone" — loaded-but-dead and
+ * loaded-but-hung engines need an in-place bounce, not a wait.
+ */
+export type RecoveryAction = 'none' | 'reload' | 'kickstart'
+
+export function engineRecoveryPlan(engineReachable: boolean, jobLoaded: boolean): RecoveryAction {
+  if (engineReachable) return 'none'
+  return jobLoaded ? 'kickstart' : 'reload'
+}
 
 export interface LaunchctlResult {
   ok: boolean

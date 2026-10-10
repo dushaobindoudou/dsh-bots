@@ -11,9 +11,11 @@
 
 import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
+import { rename, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import type { AgentInfo, GatewayInfo, TranscriptDisplay, TranscriptEntry } from './shared.js'
 import { AVATAR_DATA_URL_MAX } from './shared.js'
+import { ENGINE_PLIST } from './launchd.js'
 
 export interface Discovery {
   port: number
@@ -93,30 +95,131 @@ export function readDiscovery(dataDir: string): Discovery | null {
   }
 }
 
-/** Discovery + `/health` probe with pid match validation. */
-export async function discover(dataDir: string): Promise<GatewayInfo> {
-  const d = readDiscoveryWithFallback(dataDir)
-  if (d === null) return { ok: false, reason: 'no-gateway-json' }
-  const baseUrl = `http://${d.host}:${d.port}`
-  let health: any
+/** GET /health within the discovery budget; null when unreachable, with the
+ * HTTP status preserved so failure reasons keep their old granularity. */
+async function probeHealth(host: string, port: number): Promise<{ status: number; body: any } | null> {
   try {
-    const res = await fetch(`${baseUrl}/health`, { signal: AbortSignal.timeout(5000) })
-    if (!res.ok) return { ok: false, reason: `health-http-${res.status}`, baseUrl, port: d.port, pid: d.pid }
-    health = await res.json() as any
-  } catch (e) {
-    return { ok: false, reason: 'health-failed', baseUrl, port: d.port, pid: d.pid }
+    const res = await fetch(`http://${host}:${port}/health`, { signal: AbortSignal.timeout(5000) })
+    let body: any = null
+    try { body = await res.json() as any } catch { /* non-JSON body still carries the status */ }
+    return { status: res.status, body }
+  } catch {
+    return null
   }
-  if (d.pid !== null && health !== null && health.pid !== d.pid) {
-    return { ok: false, reason: 'stale-gateway-json', baseUrl, port: d.port, pid: d.pid }
+}
+
+/**
+ * The port the engine gateway is pinned to via its LaunchAgent plist env
+ * (`SAND_HOST_PORT`). The engine writes gateway.json only after it binds, so
+ * this pin is exactly where a live engine listens — the probe target when
+ * the discovery file has been lost (2026-10-10: a previous engine instance's
+ * late `clearGatewayDiscovery` wiped it after the next boot had already
+ * bound) while the engine itself is still alive.
+ */
+export function readPinnedGatewayPort(plistPath: string = ENGINE_PLIST): number | null {
+  let xml: string
+  try {
+    xml = readFileSync(plistPath, 'utf8')
+  } catch {
+    return null
   }
+  const m = /<key>SAND_HOST_PORT<\/key>\s*<string>(\d+)<\/string>/.exec(xml)
+  const port = m === null ? Number.NaN : Number(m[1])
+  return Number.isInteger(port) && port > 0 ? port : null
+}
+
+interface HintedDiscovery {
+  d: Discovery
+  health: any
+}
+
+/** The pinned-port probe result, memoized briefly so a burst of RPCs in the
+ * broken window does not become a burst of /health probes. Invalidated by
+ * the self-heal write (the file fast-path takes over) or by expiry. */
+let hintCache: { dataDir: string; hinted: HintedDiscovery; until: number } | null = null
+const HINT_TTL_MS = 10_000
+
+/** Test seam: drop the memoized pinned-port probe result. */
+export function clearGatewayHintCache(): void {
+  hintCache = null
+}
+
+async function hintDiscovery(dataDir: string, plistPath: string, onDisk: Discovery | null): Promise<HintedDiscovery | null> {
+  if (hintCache !== null && hintCache.dataDir === expandHome(dataDir) && Date.now() < hintCache.until) {
+    return hintCache.hinted
+  }
+  const port = readPinnedGatewayPort(plistPath)
+  if (port === null) return null
+  const probe = await probeHealth('127.0.0.1', port)
+  if (probe === null || probe.status !== 200 || !Number.isInteger(probe.body?.pid)) return null
+  // The on-disk record was actually right (engine reachable at its port and
+  // pid) — the caller's original error stands; do not paper over it.
+  if (onDisk !== null && onDisk.port === port && (onDisk.pid === null || onDisk.pid === probe.body.pid)) return null
+  const envToken = process.env['SAND_GATEWAY_TOKEN']
+  const d: Discovery = {
+    port,
+    pid: probe.body.pid,
+    token: envToken !== undefined && TOKEN_RE.test(envToken) ? envToken : null,
+    host: '127.0.0.1',
+  }
+  const hinted = { d, health: probe.body }
+  hintCache = { dataDir: expandHome(dataDir), hinted, until: Date.now() + HINT_TTL_MS }
+  return hinted
+}
+
+/** Materialize a working gateway.json for a live engine whose record was
+ * lost, so every later read (and every other discovery consumer) takes the
+ * cheap file path. Writes only when the on-disk state disagrees with the
+ * probed engine — the engine overwrites the file on its next boot, and any
+ * later pid change re-heals through the same probe. Best-effort: a failure
+ * leaves the in-process synthesized discovery serving. */
+async function healDiscoveryFile(dataDir: string, d: Discovery, startedAt: number | null): Promise<void> {
+  try {
+    const current = readDiscoveryWithFallback(dataDir)
+    if (current !== null && current.port === d.port && (d.pid === null || current.pid === d.pid)) return
+    const file = join(expandHome(dataDir), 'gateway.json')
+    const payload = JSON.stringify({
+      port: d.port,
+      pid: d.pid,
+      ...(startedAt === null ? {} : { startedAt }),
+      scheme: 'http',
+      host: d.host,
+    }, null, 2)
+    const tmp = `${file}.${process.pid}.heal-tmp`
+    await writeFile(tmp, payload, 'utf8')
+    await rename(tmp, file)
+  } catch { /* best effort */ }
+}
+
+/**
+ * Discovery with a lifeline: gateway.json first (validated against a live
+ * /health), then a probe of the plist-pinned port for a live engine whose
+ * discovery file was lost. Returns null only when neither path finds an
+ * engine — otherwise the synthesized record heals the file on its way out.
+ */
+export async function resolveGateway(dataDir: string, plistPath: string = ENGINE_PLIST): Promise<Discovery | null> {
+  const onDisk = readDiscoveryWithFallback(dataDir)
+  if (onDisk !== null) {
+    const probe = await probeHealth(onDisk.host, onDisk.port)
+    if (probe !== null && probe.status === 200 && (onDisk.pid === null || probe.body?.pid === onDisk.pid)) {
+      return onDisk
+    }
+  }
+  const hinted = await hintDiscovery(dataDir, plistPath, onDisk)
+  if (hinted === null) return onDisk
+  await healDiscoveryFile(dataDir, hinted.d, typeof hinted.health?.startedAt === 'number' ? hinted.health.startedAt : null)
+  return hinted.d
+}
+
+function buildGatewayInfo(d: Discovery, health: any): GatewayInfo {
   return {
     ok: true,
-    baseUrl,
+    baseUrl: `http://${d.host}:${d.port}`,
     port: d.port,
     pid: d.pid,
     hasToken: d.token !== null,
     health: {
-      pid: health !== null ? health.pid : null,
+      pid: health !== null && health !== undefined ? health.pid : null,
       isBusy: Boolean(health?.isBusy),
       activeAgentId: health?.activeAgentId ?? null,
       startedAt: health?.startedAt ?? null,
@@ -124,10 +227,37 @@ export async function discover(dataDir: string): Promise<GatewayInfo> {
   }
 }
 
-/** POST one `/api/<method>` command; unwraps `{result}` and throws on errors. */
-export async function callGateway<T>(dataDir: string, method: string, args: Record<string, unknown> = {}): Promise<T> {
+/** Discovery + `/health` probe with pid match validation — and, since the
+ * 2026-10-10 discovery-wipe outage, a pinned-port fallback: a lost
+ * gateway.json no longer reads as "engine down" while `/health` still
+ * answers on the port the plist pins. */
+export async function discover(dataDir: string, plistPath: string = ENGINE_PLIST): Promise<GatewayInfo> {
   const d = readDiscoveryWithFallback(dataDir)
-  if (d === null) throw new Error('gateway.json not found — sdk-bots host 是否在运行？')
+  if (d !== null) {
+    const baseUrl = `http://${d.host}:${d.port}`
+    const probe = await probeHealth(d.host, d.port)
+    if (probe !== null && probe.status === 200 && (d.pid === null || probe.body?.pid === d.pid)) {
+      return buildGatewayInfo(d, probe.body)
+    }
+    const hinted = await hintDiscovery(dataDir, plistPath, d)
+    if (hinted !== null) {
+      await healDiscoveryFile(dataDir, hinted.d, typeof hinted.health?.startedAt === 'number' ? hinted.health.startedAt : null)
+      return buildGatewayInfo(hinted.d, hinted.health)
+    }
+    if (probe === null) return { ok: false, reason: 'health-failed', baseUrl, port: d.port, pid: d.pid }
+    if (probe.status !== 200) return { ok: false, reason: `health-http-${probe.status}`, baseUrl, port: d.port, pid: d.pid }
+    return { ok: false, reason: 'stale-gateway-json', baseUrl, port: d.port, pid: d.pid }
+  }
+  const hinted = await hintDiscovery(dataDir, plistPath, null)
+  if (hinted !== null) {
+    await healDiscoveryFile(dataDir, hinted.d, typeof hinted.health?.startedAt === 'number' ? hinted.health.startedAt : null)
+    return buildGatewayInfo(hinted.d, hinted.health)
+  }
+  return { ok: false, reason: 'no-gateway-json' }
+}
+
+/** POST one `/api/<method>` command; unwraps `{result}` and throws on errors. */
+async function postToGateway<T>(d: Discovery, method: string, args: Record<string, unknown>): Promise<T> {
   const baseUrl = `http://${d.host}:${d.port}`
   const headers: Record<string, string> = { 'content-type': 'application/json' }
   if (d.token !== null) headers['authorization'] = `Bearer ${d.token}`
@@ -148,6 +278,28 @@ export async function callGateway<T>(dataDir: string, method: string, args: Reco
     throw new Error(typeof json.error?.message === 'string' ? json.error.message : JSON.stringify(json.error))
   }
   return (json !== null && typeof json === 'object' && 'result' in json ? json.result : json) as T
+}
+
+/** POST one `/api/<method>` command — through the same lifeline as
+ * `discover`: without gateway.json the pinned-port probe answers, and a
+ * record that went stale under a running engine (the wipe, or an engine
+ * restart the file did not follow) retries once against the live engine. */
+export async function callGateway<T>(dataDir: string, method: string, args: Record<string, unknown> = {}, plistPath: string = ENGINE_PLIST): Promise<T> {
+  const onDisk = readDiscoveryWithFallback(dataDir)
+  if (onDisk === null) {
+    const hinted = await hintDiscovery(dataDir, plistPath, null)
+    if (hinted === null) throw new Error('gateway.json not found — sdk-bots host 是否在运行？')
+    await healDiscoveryFile(dataDir, hinted.d, typeof hinted.health?.startedAt === 'number' ? hinted.health.startedAt : null)
+    return postToGateway<T>(hinted.d, method, args)
+  }
+  try {
+    return await postToGateway<T>(onDisk, method, args)
+  } catch (err) {
+    const hinted = await hintDiscovery(dataDir, plistPath, onDisk)
+    if (hinted === null) throw err
+    await healDiscoveryFile(dataDir, hinted.d, typeof hinted.health?.startedAt === 'number' ? hinted.health.startedAt : null)
+    return postToGateway<T>(hinted.d, method, args)
+  }
 }
 
 /** Project a raw gateway agent onto the wire type. */

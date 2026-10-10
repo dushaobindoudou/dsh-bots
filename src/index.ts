@@ -30,8 +30,8 @@ import type {
   AgentInfo, Config, EventsSinceResult, GatewayInfo, McpServerInfo, McpToolInfo,
   SessionInfo, SseState, TranscriptEntry, WorkspaceInfo,
 } from './shared.js'
-import { callGateway, discover, effectiveDataDir, expandHome, nextNonce, normalizeAgents, readDiscoveryWithFallback, trimAgent, trimEntry } from './gateway.js'
-import { realDelay, realLaunchctl, reloadLaunchdJob } from './launchd.js'
+import { callGateway, discover, effectiveDataDir, expandHome, nextNonce, normalizeAgents, readDiscoveryWithFallback, resolveGateway, trimAgent, trimEntry } from './gateway.js'
+import { realDelay, realLaunchctl, reloadLaunchdJob, engineRecoveryPlan, ENGINE_LAUNCHD_LABEL, ENGINE_PLIST } from './launchd.js'
 import { GatewaySseClient, SseRingBuffer } from './sse.js'
 import { UnreadStore } from './unread.js'
 import { WORKSPACE_VIRTUAL_PREFIX, listAgentWorkspaces, readAgentWorkspace, setAgentWorkspace } from './workspace.js'
@@ -69,8 +69,6 @@ const FREEROUTE_BASE_URL = (process.env.SAND_OPENROUTER_BASE_URL ?? '').trim() |
  * bots run. Reading it lets the settings card show the EFFECTIVE model, and
  * writing it (plus a kickstart) is the only way a pick takes effect.
  */
-const ENGINE_LAUNCHD_LABEL = 'com.sdk-bots.host'
-const ENGINE_PLIST = join(homedir(), 'Library', 'LaunchAgents', `${ENGINE_LAUNCHD_LABEL}.plist`)
 const ENGINE_MODEL_ENV_KEYS = ['SAND_OPENROUTER_MODEL', 'SAND_AGENT_MODEL'] as const
 
 /** Append-only diagnostics file, read when a shadow takeover misbehaves. */
@@ -237,6 +235,34 @@ export class BotsRemote extends TypertRemoteService {
   }
 
   /**
+   * Create a scheduled routine from the composer's 定时任务 form: a prompt
+   * the bot (or the group) runs on a schedule — a 5-field cron, or a
+   * one-shot "@at YYYY-MM-DD HH:MM" that the engine retires after its run.
+   * The engine validates the schedule (a past or malformed @at is refused).
+   */
+  async routineCreate(request: { agentId?: string; name?: string; prompt?: string; schedule?: string } | null): Promise<{ ok: true }> {
+    const agentId = typeof request?.agentId === 'string' ? request.agentId.trim() : ''
+    const prompt = typeof request?.prompt === 'string' ? request.prompt.trim() : ''
+    const schedule = typeof request?.schedule === 'string' ? request.schedule.trim() : ''
+    if (agentId === '' || prompt === '' || schedule === '') throw new Error('routineCreate requires agentId, prompt and schedule')
+    const name = (typeof request?.name === 'string' && request.name.trim() !== '' ? request.name.trim() : prompt.split('\n')[0]!).slice(0, 60)
+    await callGateway<any>(this.cfg.dataDir, 'createAgentAutomation', {
+      id: agentId,
+      spec: { name, prompt, trigger: { type: 'cron', schedule }, isEnabled: true },
+    })
+    return { ok: true }
+  }
+
+  /** Remove one routine (the routines popover's cancel). */
+  async routineDelete(request: { agentId?: string; routineId?: string } | null): Promise<{ ok: true }> {
+    const agentId = typeof request?.agentId === 'string' ? request.agentId.trim() : ''
+    const routineId = typeof request?.routineId === 'string' ? request.routineId.trim() : ''
+    if (agentId === '' || routineId === '') throw new Error('routineDelete requires agentId and routineId')
+    await callGateway<any>(this.cfg.dataDir, 'deleteAgentAutomation', { id: agentId, automationId: routineId })
+    return { ok: true }
+  }
+
+  /**
    * The live turn-process outline (thinking deltas + tool calls with
    * status/summary) for one agent. The sdk-bots gateway deliberately keeps
    * tool internals OUT of the persisted transcript — this outline is the only
@@ -269,8 +295,12 @@ export class BotsRemote extends TypertRemoteService {
     const ring = new SseRingBuffer(3000, (channel, data) => { this.observeTranscript(channel, data) })
     this.sse = new GatewaySseClient({
       ring,
-      resolveBase: () => {
-        const d = readDiscoveryWithFallback(this.cfg.dataDir)
+      resolveBase: async () => {
+        // resolveGateway carries the pinned-port fallback: when gateway.json
+        // was wiped under a live engine, the SSE stream heals with (and then
+        // re-finds on disk) the synthesized record instead of looping on
+        // "no-gateway-json" forever.
+        const d = await resolveGateway(this.cfg.dataDir)
         if (d === null) return null
         return { url: `http://${d.host}:${d.port}`, token: d.token }
       },
@@ -351,27 +381,39 @@ export class BotsRemote extends TypertRemoteService {
     }
   }
 
-  /** The 重新连接 surface: re-run discovery, and when the engine job is
-   * UNLOADED bring it back with the same guarded reload the self-check uses
-   * (a loaded-but-dead job is left alone — the operator restarts that). Then
-   * wait for /health so the client flips to online only when it is true. */
-  async reconnect(request: unknown): Promise<{ ok: boolean; port: number | null; bootstrapped: boolean; waitedMs: number; reason: string | null }> {
+  /** The 重新连接 surface. 2026-10-10 rework: discovery itself now heals the
+   * "engine alive, gateway.json lost" outage through the pinned-port probe,
+   * so a reachable engine returns immediately with nothing restarted. When
+   * the engine is truly unreachable the ladder runs by launchd job state:
+   * unloaded → the guarded bootout/bootstrap/kickstart reload; loaded → an
+   * in-place `kickstart -k` bounce (the old ladder left a loaded-but-dead or
+   * hung job untouched and just waited out the health budget). Then wait for
+   * /health so the client flips to online only when it is true. */
+  async reconnect(request: unknown): Promise<{ ok: boolean; port: number | null; bootstrapped: boolean; kicked: boolean; waitedMs: number; reason: string | null }> {
     let info = await discover(this.cfg.dataDir)
     let bootstrapped = false
+    let kicked = false
     if (info.ok === false && process.platform === 'darwin') {
       const uid = typeof process.getuid === 'function' ? process.getuid() : 501
       const target = `gui/${uid}/${ENGINE_LAUNCHD_LABEL}`
-      if (realLaunchctl(['print', target]).ok === false) {
+      const plan = engineRecoveryPlan(info.ok, realLaunchctl(['print', target]).ok)
+      if (plan === 'reload') {
         const outcome = await reloadLaunchdJob({ uid, label: ENGINE_LAUNCHD_LABEL, plistPath: ENGINE_PLIST, run: realLaunchctl })
         bootstrapped = outcome.restarted
         if (outcome.errors.length > 0) {
           void this.diag({ stage: 'reconnect', detail: { bootstrapped, errors: outcome.errors } })
         }
+      } else if (plan === 'kickstart') {
+        const bounce = realLaunchctl(['kickstart', '-k', target])
+        kicked = bounce.ok
+        if (bounce.ok === false) {
+          void this.diag({ stage: 'reconnect', detail: { kicked, errors: [bounce.stderr] } })
+        }
       }
     }
     const wait = await this.waitEngineHealthy()
     if (wait.ok === false) info = await discover(this.cfg.dataDir)
-    return { ok: wait.ok, port: wait.port, bootstrapped, waitedMs: wait.waitedMs, reason: wait.ok ? null : (wait.reason ?? info.reason ?? null) }
+    return { ok: wait.ok, port: wait.port, bootstrapped, kicked, waitedMs: wait.waitedMs, reason: wait.ok ? null : (wait.reason ?? info.reason ?? null) }
   }
 
   /**
@@ -654,6 +696,19 @@ export class BotsRemote extends TypertRemoteService {
       path: resolved, text: buf.subarray(0, end).toString('utf8'), offset, nextOffset,
       eof: nextOffset >= stat.size, bytes: stat.size, mtimeMs: stat.mtimeMs,
     }
+  }
+
+  /**
+   * Resolve a bot-written path (relative, `/workspace/<slug>`, `~`, CJK) to
+   * the real absolute file, through the same allowlist as every read. The
+   * client hands the result to the shell's own document preview, which
+   * reads through a dsh Session and needs a host path it can open.
+   */
+  async resolvePath(request: { path?: string } | null): Promise<{ path: string; isFile: boolean }> {
+    const { resolved } = this.resolveMediaPath(request?.path)
+    let isFile = false
+    try { isFile = statSync(resolved).isFile() } catch { /* missing: the caller falls back */ }
+    return { path: resolved, isFile }
   }
 
   /** Whole-file bytes for renderers that need them (images, PDF). */
@@ -1393,13 +1448,13 @@ export class BotsRemote extends TypertRemoteService {
 
 for (const m of [
   'gatewayInfo', 'reconnect', 'list', 'workspaces', 'sessions',
-  'create', 'createGroup', 'setGroupMembers', 'groupCap', 'pin', 'setHidden', 'update', 'remove', 'send', 'interrupt', 'readImage', 'readText', 'readBytes', 'revealFile', 'transcriptTail', 'markRead', 'diag',
+  'create', 'createGroup', 'setGroupMembers', 'groupCap', 'pin', 'setHidden', 'update', 'remove', 'send', 'interrupt', 'readImage', 'readText', 'readBytes', 'resolvePath', 'revealFile', 'transcriptTail', 'markRead', 'diag',
   'mcpServers', 'mcpTools', 'mcpAdd', 'mcpRemove', 'mcpRefresh', 'mcpExecute',
   'workspaceList', 'workspaceGet', 'workspaceSet', 'modelConfig', 'setModelConfig', 'applyModel',
   'skillsList', 'skillsSave', 'skillsEnable', 'skillsDelete', 'skillsRunNow', 'skillsImportText',
   'skillsBridgeList', 'skillsBridgeSet', 'skillsInstall', 'setAgentModel',
   'eventsSince', 'sseState',
-  'automationsList',
+  'automationsList', 'routineCreate', 'routineDelete',
   'getAgentOutline',
 ]) {
   markRemoteMethod(BotsRemote.prototype, m)

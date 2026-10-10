@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
-import { effectiveDataDir, normalizeAgents, readDiscovery, readDiscoveryWithFallback, trimAgent } from '../src/gateway.js'
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest'
+import { callGateway, discover, effectiveDataDir, normalizeAgents, readDiscovery, readDiscoveryWithFallback, resolveGateway, readPinnedGatewayPort, clearGatewayHintCache, trimAgent } from '../src/gateway.js'
+import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -103,5 +103,151 @@ describe('readDiscoveryWithFallback / effectiveDataDir (0.2.16 default rename)',
     expect(readDiscoveryWithFallback(orphan, legacy)).toBeNull()
     expect(effectiveDataDir(orphan, legacy)).toBe(orphan)
     rmSync(orphan, { recursive: true, force: true })
+  })
+})
+
+/** The 2026-10-10 outage: the engine was alive and healthy on its pinned
+ * port 7331, but a late `clearGatewayDiscovery` from a previous engine
+ * instance had wiped `~/.sdk-bots/gateway.json` — discovery (gateway.json
+ * only) reported "未连接" forever, `list` threw, and the reconnect ladder
+ * could not help: the launchd job was loaded, so it did nothing but wait.
+ * These pin the repaired discovery: fall back to a /health probe on the
+ * plist-pinned port, synthesize the discovery, and self-heal the file. */
+describe('readPinnedGatewayPort', () => {
+  it('parses SAND_HOST_PORT from the engine plist EnvironmentVariables', () => {
+    withTempDir((dir) => {
+      const plist = join(dir, 'host.plist')
+      writeFileSync(plist, [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<plist version="1.0"><dict>',
+        '  <key>EnvironmentVariables</key><dict>',
+        '    <key>SAND_HOST_PORT</key>',
+        '    <string>7331</string>',
+        '    <key>SAND_AGENT_MODEL</key><string>vol/glm-5-3-flash</string>',
+        '  </dict>',
+        '</dict></plist>',
+      ].join('\n'))
+      expect(readPinnedGatewayPort(plist)).toBe(7331)
+    })
+  })
+
+  it('returns null when the plist is missing or has no port pin', () => {
+    withTempDir((dir) => {
+      expect(readPinnedGatewayPort(join(dir, 'absent.plist'))).toBeNull()
+      const plist = join(dir, 'host.plist')
+      writeFileSync(plist, '<plist><dict><key>SAND_AGENT_MODEL</key><string>m</string></dict></plist>')
+      expect(readPinnedGatewayPort(plist)).toBeNull()
+    })
+  })
+})
+
+const PLIST_WITH_PORT = (): string => {
+  const dir = mkdtempSync(join(tmpdir(), 'bots-plist-'))
+  const plist = join(dir, 'host.plist')
+  writeFileSync(plist, '<dict><key>SAND_HOST_PORT</key><string>43211</string></dict>')
+  return plist
+}
+
+const healthJson = (pid: number) => ({ ok: true, pid, isBusy: false, activeAgentId: null, startedAt: 1791576008732 })
+
+function stubFetch(routes: Array<{ url: string; body: unknown }>): void {
+  vi.stubGlobal('fetch', vi.fn(async (input: any) => {
+    const url = String(input instanceof URL ? input : input?.url ?? input)
+    const route = routes.find((r) => url.includes(r.url))
+    if (route === undefined) throw new Error('unexpected fetch ' + url)
+    return { ok: true, status: 200, json: async () => route.body }
+  }))
+}
+
+afterEach(() => {
+  clearGatewayHintCache()
+  vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
+})
+
+/** The hint suites must not reach the real ~/.sdk-bots/gateway.json through
+ * the legacy fallback: on a machine with a live engine it answers for them
+ * (and with it absent they only passed by accident). HOME points at an empty
+ * directory, so `~` expands somewhere with no discovery at all. */
+function isolateHome(): void {
+  beforeEach(() => { vi.stubEnv('HOME', mkdtempSync(join(tmpdir(), 'bots-home-'))) })
+}
+
+describe('resolveGateway — gateway.json lost but the engine answers its pinned port', () => {
+  isolateHome()
+  it('synthesizes discovery from the health probe and self-heals the file', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bots-hint-'))
+    stubFetch([{ url: '/health', body: healthJson(777) }])
+    const d = await resolveGateway(dir, PLIST_WITH_PORT())
+    expect(d).not.toBeNull()
+    expect(d!.port).toBe(43211)
+    expect(d!.pid).toBe(777)
+    // The synthesized record is written back, so every later read is a cheap
+    // file hit and other discovery consumers heal with it.
+    expect(existsSync(join(dir, 'gateway.json'))).toBe(true)
+    expect(JSON.parse(readFileSync(join(dir, 'gateway.json'), 'utf8')).port).toBe(43211)
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('returns null when the hint probe finds no engine (honest offline)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bots-hint-dead-'))
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('ECONNREFUSED') }))
+    expect(await resolveGateway(dir, PLIST_WITH_PORT())).toBeNull()
+    expect(existsSync(join(dir, 'gateway.json'))).toBe(false)
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('keeps the on-disk record when it is fresh (fast path, no rewrite)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bots-fresh-'))
+    writeFileSync(join(dir, 'gateway.json'), JSON.stringify({ port: 43211, pid: 777, host: '127.0.0.1' }))
+    stubFetch([{ url: '/health', body: healthJson(777) }])
+    const d = await resolveGateway(dir, PLIST_WITH_PORT())
+    expect(d!.port).toBe(43211)
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('overrides a stale on-disk record whose pid no longer matches', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bots-stale-'))
+    writeFileSync(join(dir, 'gateway.json'), JSON.stringify({ port: 43211, pid: 42, host: '127.0.0.1' }))
+    stubFetch([{ url: '/health', body: healthJson(999) }])
+    const d = await resolveGateway(dir, PLIST_WITH_PORT())
+    expect(d!.pid).toBe(999)
+    expect(JSON.parse(readFileSync(join(dir, 'gateway.json'), 'utf8')).pid).toBe(999)
+    rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+describe('discover / callGateway through the hint fallback', () => {
+  isolateHome()
+  it('discover reports the live engine when the discovery file is gone', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bots-disc-'))
+    stubFetch([
+      { url: '/health', body: healthJson(25966) },
+      { url: '/health', body: healthJson(25966) },
+    ])
+    const info = await discover(dir, PLIST_WITH_PORT())
+    expect(info.ok).toBe(true)
+    expect(info.port).toBe(43211)
+    expect(info.health?.pid).toBe(25966)
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('callGateway answers a roster read even without gateway.json', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bots-call-'))
+    stubFetch([
+      { url: '/health', body: healthJson(25966) },
+      { url: '/api/listAgents', body: { result: [{ id: 'a1', name: '速报员', isGroup: false }] } },
+    ])
+    const agents = await callGateway<any>(dir, 'listAgents', {}, PLIST_WITH_PORT())
+    expect(agents).toHaveLength(1)
+    expect(agents[0].name).toBe('速报员')
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('keeps the honest error when the engine is truly down (no hint pin reachable)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bots-down-'))
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('ECONNREFUSED') }))
+    await expect(callGateway<any>(dir, 'listAgents', {}, PLIST_WITH_PORT())).rejects.toThrow(/gateway\.json not found/)
+    rmSync(dir, { recursive: true, force: true })
   })
 })

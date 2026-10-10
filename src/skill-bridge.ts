@@ -194,8 +194,14 @@ export interface BridgeRow {
 
 export interface BridgeSyncResult { discovered: number; bridged: number; pending: number; firstRun: boolean; rows: BridgeRow[] }
 
-/** Persisted decisions: shared id → sha256 at share time, declined ids. */
-interface BridgePrefs { version: 2; shared: Record<string, string>; declined: string[] }
+/**
+ * Persisted decisions: shared id → sha256 at share time, declined ids.
+ * `excluded` mirrors every discovered-but-unshared id in the v1 field: an
+ * older host (still running, or after a downgrade) reads only `excluded`, and
+ * without the mirror it took a v2 file as "nothing excluded" and shared every
+ * skill on its next 15s sync.
+ */
+interface BridgePrefs { version: 2; shared: Record<string, string>; declined: string[]; excluded: string[] }
 
 function readPrefs(prefsPath: string, refs: DshSkillRef[], existing: BridgeCache | null): { prefs: BridgePrefs; migrated: boolean } | null {
   let raw: any
@@ -203,7 +209,7 @@ function readPrefs(prefsPath: string, refs: DshSkillRef[], existing: BridgeCache
   if (raw !== null && raw.version === 2 && raw.shared !== null && typeof raw.shared === 'object' && Array.isArray(raw.declined)) {
     const shared: Record<string, string> = {}
     for (const [id, hash] of Object.entries(raw.shared)) if (typeof hash === 'string') shared[id] = hash
-    return { prefs: { version: 2, shared, declined: raw.declined.filter((id: unknown) => typeof id === 'string') }, migrated: false }
+    return { prefs: { version: 2, shared, declined: raw.declined.filter((id: unknown) => typeof id === 'string'), excluded: [] }, migrated: false }
   }
   const hashOf = new Map(refs.map((r) => [r.id, r.sha256]))
   if (raw !== null && Array.isArray(raw.excluded)) {
@@ -211,14 +217,14 @@ function readPrefs(prefsPath: string, refs: DshSkillRef[], existing: BridgeCache
     const excluded = raw.excluded.filter((id: unknown): id is string => typeof id === 'string')
     const shared: Record<string, string> = {}
     for (const ref of refs) if (!excluded.includes(ref.id)) shared[ref.id] = ref.sha256
-    return { prefs: { version: 2, shared, declined: excluded }, migrated: true }
+    return { prefs: { version: 2, shared, declined: excluded, excluded: [] }, migrated: true }
   }
   const old = existing?.skills.filter((s) => s.pluginId === 'dsh-bots') ?? []
   if (old.length > 0) {
     // Pre-prefs bridge: what the engine already had stays shared.
     const shared: Record<string, string> = {}
     for (const s of old) { const hash = hashOf.get(s.id); if (hash !== undefined) shared[s.id] = hash }
-    return { prefs: { version: 2, shared, declined: [] }, migrated: true }
+    return { prefs: { version: 2, shared, declined: [], excluded: [] }, migrated: true }
   }
   return null
 }
@@ -246,7 +252,7 @@ export function syncSkillsBridge(
   } catch { /* initial sync */ }
   const loaded = readPrefs(prefsPath, refs, existing)
   const firstRun = loaded === null
-  const prefs: BridgePrefs = loaded?.prefs ?? { version: 2, shared: {}, declined: [] }
+  const prefs: BridgePrefs = loaded?.prefs ?? { version: 2, shared: {}, declined: [], excluded: [] }
   if (opts.enabled != null) {
     for (const ref of refs) {
       if (opts.enabled.includes(ref.id)) {
@@ -262,6 +268,8 @@ export function syncSkillsBridge(
   for (const ref of refs) {
     if (bundledRoots.has(ref.root) && !(ref.id in prefs.shared) && !prefs.declined.includes(ref.id)) prefs.shared[ref.id] = ref.sha256
   }
+  // v1 mirror for older hosts: everything discovered and not shared.
+  prefs.excluded = refs.filter((r) => !(r.id in prefs.shared)).map((r) => r.id)
   const body = JSON.stringify(prefs, null, 2) + '\n'
   mkdirSync(sandRoot, { recursive: true })
   let oldPrefs = ''

@@ -41,8 +41,11 @@ function bake(file, pairs) {
   const path = join(lib, file)
   let source = readFileSync(path, 'utf8')
   for (const [pattern, value, label] of pairs) {
-    if (!pattern.test(source)) {
-      console.error(`bake-version: ${label} sentinel not found in lib/${file} — src may have drifted`)
+    const hits = source.match(new RegExp(pattern.source, 'g'))?.length ?? 0
+    if (hits !== 1) {
+      // Zero: src drifted. More than one: a second declaration would stay
+      // unbaked and silently win or lose depending on scope.
+      console.error(`bake-version: expected exactly one ${label} sentinel in lib/${file}, found ${hits}`)
       process.exit(1)
     }
     source = source.replace(pattern, value)

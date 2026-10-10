@@ -13,12 +13,17 @@ import { dirname, join } from 'node:path'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const HOST = readFileSync(join(ROOT, 'src', 'index.ts'), 'utf8')
+const LAUNCHD = readFileSync(join(ROOT, 'src', 'launchd.ts'), 'utf8')
 const CLIENT = readFileSync(join(ROOT, 'src', 'client.ts'), 'utf8')
 
 describe('engine model knob (host)', () => {
   it('reads the effective model off the engine launchd job', () => {
-    expect(HOST).toContain("const ENGINE_LAUNCHD_LABEL = 'com.sdk-bots.host'")
-    expect(HOST).toContain("join(homedir(), 'Library', 'LaunchAgents'")
+    // The label/plist constants live in launchd.ts since the 2026-10-10
+    // reconnect rework (gateway discovery imports the plist for its
+    // pinned-port hint); index.ts imports them.
+    expect(LAUNCHD).toContain("export const ENGINE_LAUNCHD_LABEL = 'com.sdk-bots.host'")
+    expect(LAUNCHD).toContain("join(homedir(), 'Library', 'LaunchAgents'")
+    expect(HOST).toContain("ENGINE_LAUNCHD_LABEL, ENGINE_PLIST } from './launchd.js'")
     expect(HOST).toMatch(/private engineModelInfo\(\): \{ modelId: string \| null/)
     expect(HOST).toMatch(/<key>SAND_OPENROUTER_MODEL<\\\/key>/)
   })
@@ -75,7 +80,7 @@ describe('model card (client)', () => {
   it('offers a DeepSeek provider bucket above the upstream buckets', () => {
     expect(CLIENT).toContain("t('settings.model.deepseek')")
     expect(CLIENT).toMatch(/key: '__deepseek'/)
-    expect(CLIENT).toMatch(/DSH · \$\{p\.name\}（\$\{p\.models\.length\}）/)
+    expect(CLIENT).toMatch(/label: `DSH · \$\{pv\.name\}`/)
   })
 
   it('shows the effective engine model and an explicit apply action', () => {
@@ -97,7 +102,15 @@ describe('model card (client)', () => {
   })
 
   it('tells the truth about when a pick takes effect', () => {
-    expect(CLIENT).toContain('引擎只在启动时读取模型环境变量')
-    expect(CLIENT).toContain('The engine reads its model from an environment variable at startup')
+    expect(CLIENT).toContain('全局默认模型在 Bots 服务启动时加载')
+    expect(CLIENT).toContain('The global default loads when the Bots service starts')
+  })
+
+  it('picks through the composer-style menu, not a provider select', () => {
+    // One trigger opening the same grouped, searchable ModelMenu as the
+    // composer seat; providers are group headers, not a first select.
+    expect(CLIENT).toMatch(/function ModelCard\(\)[\s\S]{0,6000}e\(ModelMenu, \{/)
+    expect(CLIENT).toMatch(/function ComposerModelPicker\([\s\S]{0,6000}e\(ModelMenu, \{/)
+    expect(CLIENT).not.toMatch(/function ModelCard\(\)[\s\S]{0,8000}e\('select'/)
   })
 })

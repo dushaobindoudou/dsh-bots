@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Bots",
-    "description": "在侧栏管理 Bot 与群组，并为每个 Bot 开独立会话直聊"
+    "description": "在侧栏创建 AI 助手与群聊：一对一深入对话、多 Bot 分工协作，支持技能、工具扩展和按 Bot 选择模型。"
   }
 }

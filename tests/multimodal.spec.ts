@@ -82,15 +82,16 @@ describe('multimodal composer', () => {
     expect(CLIENT).toMatch(/e\(MediaImage, \{ path: en\.filePath \}\)/)
   })
 
-  it('offers a file picker behind the native paperclip button', () => {
+  it('offers a file picker as the command menu\'s first entry', () => {
     expect(CLIENT).toMatch(/accept: 'image\/png,image\/jpeg,image\/gif,image\/webp,image\/bmp'/)
-    // Native InputBar draws the attach control with IconPaperclipOutline16 in
-    // the LEFT tools group; the local glyph only stands in if it is missing.
+    // The native InputBar's + opens the command menu (the same one `/`
+    // opens); adding images is its first row, drawn with the paperclip.
     // Ico builds the ELEMENT — passing the raw export renders a function child
-    // and the paperclip silently vanished.
+    // and the glyph silently vanished.
     expect(CLIENT).toMatch(/Ico\('IconPaperclipOutline16', \{ size: 14 \}\) \?\? e\(PaperclipGlyph, null\)/)
     expect(CLIENT).not.toMatch(/nat\('Icon[A-Za-z0-9]+'/)
-    expect(CLIENT).toContain('t(\'chat.attach\')')
+    expect(CLIENT).toContain("name: t('chat.attach'), description: t('chat.command.imageDesc'), command: 'image'")
+    expect(CLIENT).toMatch(/if \(a\.command === 'image'\) \{[\s\S]{0,400}picker\.click\(\)/)
   })
 
   it('accepts pasted screenshots from the clipboard', () => {

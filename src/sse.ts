@@ -120,7 +120,9 @@ function toState(ring: SseRingBuffer, live: { running: boolean; ok: boolean; las
  */
 export class GatewaySseClient {
   private readonly ring: SseRingBuffer
-  private readonly resolveBase: () => { url: string; token: string | null } | null
+  /** Sync or async: an async resolver may probe the pinned-port fallback
+   * (discovery file lost, engine alive) before every reconnect attempt. */
+  private readonly resolveBase: () => { url: string; token: string | null } | null | Promise<{ url: string; token: string | null } | null>
   private readonly reconnectBaseMs: number
   private readonly channels?: string[]
   private readonly onConnected?: () => void
@@ -136,7 +138,7 @@ export class GatewaySseClient {
 
   constructor(opts: {
     ring?: SseRingBuffer
-    resolveBase: () => { url: string; token: string | null } | null
+    resolveBase: () => { url: string; token: string | null } | null | Promise<{ url: string; token: string | null } | null>
     reconnectBaseMs?: number
     /** Optional `channels` subscription subset, e.g. `transcript,agents`. */
     channels?: string[]
@@ -184,7 +186,7 @@ export class GatewaySseClient {
 
   private async connect(): Promise<void> {
     if (this.stopped) return
-    const base = this.resolveBase()
+    const base = await this.resolveBase()
     if (base === null) {
       this.lastError = 'no-gateway-json'
       this.schedule()
