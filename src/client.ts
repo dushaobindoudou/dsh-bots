@@ -393,6 +393,7 @@
 .dbs-member:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dbs-member.checked{color:var(--dsw-alias-state-business-primary,#1a6dff)}
 .dbs-error{margin:4px 8px;padding:5px 9px;border-radius:8px;font-size:12px;line-height:18px;cursor:pointer;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-state-error-primary,#f85149)}
+.dbs-sidebarNotice{margin:4px 8px;padding:5px 9px;border-radius:8px;font-size:12px;line-height:18px;cursor:pointer;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary)}
 
 
 
@@ -980,6 +981,10 @@
         'settings.tab.mcp': 'MCP',
         'settings.tab.skills': '技能',
         'settings.tabs': 'Bots 设置页签',
+        'create.needName': '请填写名称',
+        'create.needMembers': '至少选择 1 位成员',
+        'create.working': '创建中…',
+        'create.duplicateGroup': '未新建：已有成员完全相同的群聊「{name}」，已为你打开',
         'time.tomorrow': '明天',
         'chat.command.schedule': '定时任务',
         'chat.command.scheduleDesc': '在指定时间让 Bot 做一件事，也可以按天或按周重复',
@@ -1252,6 +1257,10 @@
         'settings.tab.mcp': 'MCP',
         'settings.tab.skills': 'Skills',
         'settings.tabs': 'Bots settings tabs',
+        'create.needName': 'Enter a name',
+        'create.needMembers': 'Pick at least one member',
+        'create.working': 'Creating…',
+        'create.duplicateGroup': 'Not created: a group with exactly these members already exists ("{name}") — opened it',
         'time.tomorrow': 'Tomorrow',
         'chat.command.schedule': 'Scheduled task',
         'chat.command.scheduleDesc': 'Have the bot do something at a set time, once or on repeat',
@@ -1577,6 +1586,9 @@
         sectionsOpen: null as Record<string, boolean> | null,
         /** Bumped on a language switch so module-scope `t` output re-renders. */
         localeRev: 0,
+        /** A short sidebar note (not an error; the roster refresh clears
+         * `error` on every success, which would swallow it). */
+        sidebarNotice: null as string | null,
         /** Bumped when a routine is created or cancelled here, so the chat
          * header's routines entry re-reads. */
         routinesRev: 0,
@@ -5253,6 +5265,9 @@ class BotEngine {
           s.error !== null
             ? e('div', { className: 'dbs-error', onClick: () => patch({ error: null }) }, errText(s.error))
             : null,
+          s.sidebarNotice !== null
+            ? e('div', { className: 'dbs-sidebarNotice', role: 'status', onClick: () => patch({ sidebarNotice: null }) }, s.sidebarNotice)
+            : null,
           offline
             // Engine unreachable: the reconnect card LEADS — an eternal
             // loading spinner (the list RPC can't answer) or a stale list
@@ -8294,23 +8309,43 @@ class BotEngine {
        * the wfx main-window modal parameters (rgba(0,0,0,.45), bg-layer-1,
        * 14px radius, entrance animation). ESC and backdrop clicks dismiss.
        */
+      let sidebarNoticeTimer: any = null
+      function showSidebarNotice(text: string): void {
+        patch({ sidebarNotice: text })
+        if (sidebarNoticeTimer !== null) clearTimeout(sidebarNoticeTimer)
+        sidebarNoticeTimer = setTimeout(() => { sidebarNoticeTimer = null; patch({ sidebarNotice: null }) }, 10_000)
+      }
+
       function CreateModal() {
         const s = useStore()
         const [err, setErr] = React.useState(null as string | null)
         const isGroup = s.create === 'group'
         const singles = (s.agents as any[]).filter((a: any) => !a.isGroup && a.isHiddenFromSidebar !== true)
         const picked = Object.keys(s.createMembers).filter((k) => s.createMembers[k])
-        const nameOk = s.createName.trim() !== ''
-        const valid = nameOk && (!isGroup || picked.length > 0)
+        // What still blocks creation, said out loud: a greyed-out 创建 and a
+        // silent Enter read as "the button does nothing" (user report).
+        const missing = s.createName.trim() === '' ? t('create.needName')
+          : isGroup && picked.length === 0 ? t('create.needMembers') : null
+        const [tried, setTried] = React.useState(false)
 
         async function submit() {
-          if (!valid || s.createWorking) return
+          if (s.createWorking) return
+          if (missing !== null) { setTried(true); return }
+          const known = new Set((state.agents as any[]).map((a: any) => a.id))
           patch({ createWorking: true, error: null }); setErr(null)
           try {
-            if (isGroup) await botsCall('createGroup', { name: s.createName.trim(), memberIds: picked })
-            else await botsCall('create', { name: s.createName.trim(), description: s.createDesc.trim() })
+            const created: any = isGroup
+              ? await botsCall('createGroup', { name: s.createName.trim(), memberIds: picked })
+              : await botsCall('create', { name: s.createName.trim(), description: s.createDesc.trim() })
             patch({ create: null, createName: '', createDesc: '', createMembers: {}, createWorking: false })
             await refreshAgents()
+            const id = typeof created?.id === 'string' && created.id !== '' ? created.id : null
+            if (id !== null) {
+              // The engine answers a member set that matches an existing group
+              // with THAT group rather than a new one — say so, then open it.
+              if (isGroup && known.has(id)) showSidebarNotice(t('create.duplicateGroup', { name: String(created.name ?? '') }))
+              openChat(id)
+            }
             return
           } catch (e2: any) { setErr(errText(e2)) }
           patch({ createWorking: false })
@@ -8358,8 +8393,11 @@ class BotEngine {
                           e('span', { className: 'dbs-title' }, m.name))),
                     isGroup && singles.length > 0
                       ? e('div', { className: 'dbs-meta', style: { padding: '6px 6px 0' } },
-                          t('chat.group', { n: picked.length }))
+                          picked.length === 0 ? t('create.needMembers') : t('chat.group', { n: picked.length }))
                       : null),
+              tried && missing !== null
+                ? e('div', { className: 'dbs-error', role: 'alert' }, missing)
+                : null,
               err !== null
                 ? e('div', { className: 'dbs-error', onClick: () => { setErr(null) } }, err)
                 : null),
@@ -8368,10 +8406,12 @@ class BotEngine {
                 variant: 'ghost', size: 'sm', disabled: s.createWorking,
                 onClick: () => patch({ create: null }),
               }, t('action.cancel')),
+              // Stays clickable while incomplete: a click says what is
+              // missing instead of doing nothing.
               e(Button, {
-                variant: 'primary', size: 'sm', disabled: !valid || s.createWorking,
+                variant: 'primary', size: 'sm', disabled: s.createWorking,
                 onClick: () => void submit(),
-              }, t('action.create')))))
+              }, s.createWorking ? t('create.working') : t('action.create')))))
       }
 
       /**

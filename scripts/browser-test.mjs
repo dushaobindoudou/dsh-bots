@@ -14,6 +14,7 @@ const autos = []
 // Routines the composer's 定时任务 form creates (routineCreate/routineDelete).
 const createdRoutines = []
 const routineCalls = []
+const createGroupCalls = []
 const skills = [
   { id: 'weekly', name: '周报生成', description: '每周五生成周报草稿', body: '# 步骤', source: 'workflow', isEnabledForAgent: true, trigger: null, disableModelInvocation: true },
   { id: 'dsh-bridged', name: 'DSH 桥接技能', description: '来自 ~/.dsh/skills', body: 'bridged', source: 'plugin', isEnabledForAgent: true, trigger: null },
@@ -126,6 +127,12 @@ const server = createServer(async (req, res) => {
         value = (request.agentId === 'bot'
           ? [{ id: 'r1', name: '晨报汇总', prompt: '汇总昨日进展', isEnabled: true, schedule: '0 9 * * *', triggerDescription: '每天 09:00', nextRunAt: Date.now() + 3600000, lastStatus: 'ok' }]
           : []).concat(createdRoutines.filter((r) => r.agentId === request.agentId).map((r) => r.routine))
+      }
+      else if (method === 'createGroup') {
+        // Like the engine: a member set matching an existing group returns
+        // that group instead of creating one.
+        createGroupCalls.push(request)
+        value = (request.memberIds ?? []).join(',') === group.memberIds.join(',') ? group : { id: 'room-new', name: request.name, isGroup: true, memberIds: request.memberIds }
       }
       else if (method === 'routineCreate') {
         routineCalls.push({ agentId: request.agentId, prompt: request.prompt, schedule: request.schedule })
@@ -522,6 +529,32 @@ try {
   // tab lists the engine library with per-bot enablement (plugin rows locked)
   // and create/edit flows through the same save RPC.
   await page.setViewportSize({ width: 1280, height: 900 })
+  // 新建群聊 answers every click: an incomplete form says what is missing
+  // (user report: "点击新建群聊没反应" — a greyed 创建 / silent Enter), and a
+  // member set matching an existing group says so and opens that group.
+  const groupsHead = page.locator('.dbs-secHead').first()
+  await groupsHead.hover()
+  await groupsHead.locator('[aria-label="新建群聊"]').click()
+  const dialog = page.locator('.dbs-modalCard')
+  await dialog.waitFor()
+  assert.match(await dialog.innerText(), /至少选择 1 位成员/)
+  await dialog.locator('input').first().fill('新项目组')
+  await dialog.locator('input').first().press('Enter')
+  await dialog.locator('.dbs-error', { hasText: '至少选择 1 位成员' }).waitFor()
+  await dialog.getByRole('button', { name: '创建', exact: true }).click()
+  assert.equal(createGroupCalls.length, 0, 'an incomplete form never calls createGroup')
+  await dialog.locator('.dbs-member', { hasText: '测试 Bot' }).click()
+  await dialog.getByRole('button', { name: '创建', exact: true }).click()
+  await dialog.waitFor({ state: 'detached' })
+  assert.deepEqual(createGroupCalls.at(-1), { name: '新项目组', memberIds: ['bot'] })
+  // A notice, not an error: the roster refresh clears `error` on success.
+  const dupNotice = page.locator('.dbs-sidebarNotice', { hasText: '未新建：已有成员完全相同的群聊「项目群」' })
+  await dupNotice.waitFor()
+  await page.locator('.dbs-chatbarName', { hasText: '项目群' }).waitFor()
+  await page.waitForTimeout(1500)
+  assert.equal(await dupNotice.count(), 1, 'the notice survives roster refreshes')
+  await dupNotice.click()
+  await dupNotice.waitFor({ state: 'detached' })
   await page.getByRole('button', { name: 'Plugin settings' }).click()
   // Overview: product capabilities and status — no gateway plumbing.
   await page.getByText('能做什么', { exact: true }).waitFor()

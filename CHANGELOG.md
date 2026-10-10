@@ -8,6 +8,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **新建群聊 always answers** (report: "点击新建群聊没反应"): the dialog
+  disabled 创建 until a name *and* a member were set, and Enter returned
+  silently, so an incomplete form looked dead. 创建 now stays clickable and
+  says what is missing (至少选择 1 位成员 / 请填写名称), the member hint says
+  it up front, the button reads 创建中… while working, and a created bot or
+  group opens. A member set matching an existing group — which the engine
+  answers with that group instead of a new one — now says so in a sidebar
+  notice and opens it, instead of closing the dialog with nothing new.
 - **The data dir follows the engine's data, not a stray discovery file**
   (2026-10-10: previews failed with `ENOENT … ~/.dsh-bots/box-workspace/
   intel/…md`). With the engine's `~/.sdk-bots/gateway.json` wiped, the data
