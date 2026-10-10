@@ -130,5 +130,34 @@ class DataBusTest(unittest.TestCase):
         self.assertFalse(result['ok'])
         self.assertIn('search --name', result['hint'])
 
+    def _kline(self, code, adjust):
+        raw = json.dumps({'code': 0, 'data': {'hk00883': {'day': [['2026-10-08', '23.62', '24.04', '24.40', '23.62', '79504694']]},
+                                              'sh600519': {'qfqday': [['2026-10-08', '1252.9', '1255.79', '1258', '1242', '25168']]}}})
+        with patch.object(bus, '_http', return_value=raw), contextlib.redirect_stdout(io.StringIO()) as out:
+            try:
+                bus.cmd_kline(code, 'day', None, None, adjust, 5)
+            except SystemExit:
+                pass
+        return json.loads(out.getvalue())
+
+    def test_hk_kline_defaults_to_unadjusted_and_says_so(self):
+        # HK bars live under the plain key; asking for qfq used to report
+        # "无K线数据" for every HK stock although the bars were there.
+        result = self._kline('00883', None)
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['data']['adjust'], 'none')
+        self.assertEqual(result['data']['candles'][0]['close'], 24.04)
+        self.assertIn('不复权', result['data']['notes'][0])
+
+    def test_hk_kline_refuses_an_adjustment_the_source_does_not_have(self):
+        result = self._kline('00883', 'qfq')
+        self.assertFalse(result['ok'])
+        self.assertIn('--adjust none', result['hint'])
+
+    def test_a_share_kline_still_defaults_to_qfq(self):
+        result = self._kline('600519', None)
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['data']['adjust'], 'qfq')
+
 if __name__ == '__main__':
     unittest.main()

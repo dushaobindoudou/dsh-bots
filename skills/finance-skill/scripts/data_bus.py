@@ -318,10 +318,22 @@ def cmd_search(query, market=None, limit=10, include_derivatives=False):
                  source="tencent:smartbox")
 
 
-def cmd_kline(code, period="day", start=None, end=None, adjust="qfq", limit=30):
+def cmd_kline(code, period="day", start=None, end=None, adjust=None, limit=30):
+    # Tencent serves HK bars only unadjusted (under the plain period key); a
+    # qfq request used to come back "无K线数据" although the bars exist, and
+    # bots then reported HK history as missing. HK defaults to 不复权 and says
+    # so; an explicit qfq/hfq on HK is refused rather than relabeled.
+    market = normalize(code)["market"]
+    if adjust is None:
+        adjust = "" if market == "hk" else "qfq"
+    elif market == "hk" and adjust in ("qfq", "hfq"):
+        return _emit(False, error="港股数据源（腾讯）不提供复权K线", source="tencent:web.ifzq.gtimg.cn",
+                     hint="用 --adjust none 取不复权日线，并在结论中注明“不复权”；不要把不复权数据当作前复权使用")
     k = _tx_kline(code, period, start, end, adjust, limit)
     out = {"symbol": k["symbol"], "adjust": adjust or "none", "period": period,
            "count": min(len(k["rows"]), limit), "candles": _clean_rows(k["rows"], limit)}
+    if market == "hk":
+        out["notes"] = ["港股K线为不复权数据（数据源不提供复权序列）；跨除权日的涨跌幅需自行核对"]
     if k.get("qt") and isinstance(k["qt"], list):
         try:
             quote, _ = _tx_quote_from_fields(k["qt"], k["symbol"])
@@ -474,7 +486,7 @@ def main():
     s.add_argument("--all", action="store_true", help="包含权证/牛熊证")
     s = sub.add_parser("kline")
     s.add_argument("--code", required=True); s.add_argument("--period", default="day", choices=["day", "week", "month", "daily", "weekly", "monthly"])
-    s.add_argument("--start"); s.add_argument("--end"); s.add_argument("--adjust", default="qfq", choices=["qfq", "hfq", "none"])
+    s.add_argument("--start"); s.add_argument("--end"); s.add_argument("--adjust", choices=["qfq", "hfq", "none"], help="默认：A股/美股 qfq，港股 none（数据源无复权序列）")
     s.add_argument("--limit", type=int, default=30)
     s = sub.add_parser("financial")
     s.add_argument("--code", required=True); s.add_argument("--statement", default="indicator")
@@ -503,7 +515,7 @@ def main():
         elif a.cmd == "search":
             cmd_search(a.name, a.market, a.limit, a.all)
         elif a.cmd == "kline":
-            cmd_kline(a.code, {"daily": "day", "weekly": "week", "monthly": "month"}.get(a.period, a.period), a.start, a.end, "" if a.adjust == "none" else a.adjust, a.limit)
+            cmd_kline(a.code, {"daily": "day", "weekly": "week", "monthly": "month"}.get(a.period, a.period), a.start, a.end, None if a.adjust is None else "" if a.adjust == "none" else a.adjust, a.limit)
         elif a.cmd == "financial":
             cmd_financial(a.code, a.statement, a.limit)
         elif a.cmd == "fundflow":

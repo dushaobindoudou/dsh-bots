@@ -22,6 +22,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
   otherwise null — and every A/HK quote notes that `amount` is the day's
   turnover, not market cap (the bots had reported 智谱's 31.45 亿 turnover as
   its "市值"; its total market cap is ≈ 3,128 亿 HKD).
+- **HK K-lines are no longer reported missing**: Tencent serves HK bars only
+  unadjusted (plain `day` key), and the default `qfq` request came back
+  "无K线数据" for every HK stock — the bots then said 00100/02513 had "only
+  one day of data" (they have 185/186 bars since their January listings).
+  HK `kline` now defaults to 不复权 and labels it (`adjust: none` + note); an
+  explicit `--adjust qfq/hfq` on HK is refused with that explanation rather
+  than relabeled. A shares keep `qfq` by default.
 - SKILL.md red lines and the runbook gain the matching rules: 查不到≠不存在,
   use only returned fields (other bots' conclusions are claims, not
   evidence), and re-verify with tools when the user corrects a fact.
