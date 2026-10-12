@@ -1,6 +1,6 @@
 {
   "name": "dsh-bots",
-  "version": "0.2.69",
+  "version": "0.2.70",
   "description": "Bots for DeepSeek Harness: create AI bots and group chats in the dsh web sidebar, with skills, tools and per-bot models.",
   "icon": "./icon.svg",
   "type": "module",
